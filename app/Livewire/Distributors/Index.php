@@ -96,9 +96,10 @@ class Index extends Component
     public function render()
     {
         $distributors = Distributor::query()
-            ->when($this->search, fn ($q) => $q
-                ->where('name', 'ilike', "%{$this->search}%")
-                ->orWhere('distributor_code', 'ilike', "%{$this->search}%"))
+            ->when($this->search, fn ($q) => $q->where(function ($sub) {
+                $sub->where('name', 'ilike', "%{$this->search}%")
+                    ->orWhere('distributor_code', 'ilike', "%{$this->search}%");
+            }))
             ->orderBy('name')
             ->paginate(15);
 

@@ -6,6 +6,7 @@ use App\Models\Distributor;
 use App\Models\DistributorItem;
 use App\Models\StockEntry;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 use Livewire\Attributes\Layout;
 use Livewire\Component;
@@ -58,11 +59,32 @@ class Dashboard extends Component
         $slowMovers = collect();
 
         if ($latest) {
-            $currentRows = $this->baseQuery()
-                ->with(['distributor', 'distributorItem.netsuiteItem'])
-                ->where('tanggal', $latest)
-                ->when($this->search, fn ($q) => $q->whereHas('distributorItem', fn ($qq) => $qq->where('item_name', 'ilike', "%{$this->search}%")))
-                ->get();
+            if ($this->distributorId) {
+                $currentRows = $this->baseQuery()
+                    ->with(['distributor', 'distributorItem.netsuiteItem'])
+                    ->where('tanggal', $latest)
+                    ->when($this->search, fn ($q) => $q->whereHas('distributorItem', fn ($qq) => $qq->where('item_name', 'ilike', "%{$this->search}%")))
+                    ->get();
+            } else {
+                // Ambil snapshot terbaru dari masing-masing distributor agar tidak ada distributor yang tertinggal
+                $latestPerDist = StockEntry::query()
+                    ->select('distributor_id', DB::raw('MAX(tanggal) as max_tanggal'))
+                    ->groupBy('distributor_id')
+                    ->get();
+
+                $currentRows = StockEntry::query()
+                    ->with(['distributor', 'distributorItem.netsuiteItem'])
+                    ->where(function ($query) use ($latestPerDist) {
+                        foreach ($latestPerDist as $ld) {
+                            $query->orWhere(function ($sub) use ($ld) {
+                                $sub->where('distributor_id', $ld->distributor_id)
+                                    ->where('tanggal', $ld->max_tanggal);
+                            });
+                        }
+                    })
+                    ->when($this->search, fn ($q) => $q->whereHas('distributorItem', fn ($qq) => $qq->where('item_name', 'ilike', "%{$this->search}%")))
+                    ->get();
+            }
 
             $previousByItem = $previous
                 ? $this->baseQuery()->where('tanggal', $previous)->pluck('quantity', 'distributor_item_id')
@@ -103,7 +125,7 @@ class Dashboard extends Component
             // Ranking: movers between latest and previous snapshot.
             if ($previous) {
                 $ranked = $stockTable->filter(fn ($r) => $r->delta !== null && $r->delta != 0)
-                    ->sortByDesc(fn ($r) => $r->delta_pct);
+                    ->sortByDesc(fn ($r) => abs($r->delta_pct));
 
                 $topMovers = $ranked->take(6)->values();
                 $slowMovers = $stockTable->filter(fn ($r) => $r->delta === null || $r->delta == 0)

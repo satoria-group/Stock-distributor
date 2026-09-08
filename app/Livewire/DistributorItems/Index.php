@@ -32,6 +32,8 @@ class Index extends Component
 
     public ?int $netsuite_item_id = null;
 
+    public ?int $distributor_id = null;
+
     public function mount(): void
     {
         Gate::authorize('viewAny', DistributorItem::class);
@@ -52,41 +54,83 @@ class Index extends Component
         $this->resetPage();
     }
 
+    public function openCreate(): void
+    {
+        Gate::authorize('create', DistributorItem::class);
+        $this->editingId = null;
+        $this->distributor_id = $this->distributorFilter ? (int) $this->distributorFilter : null;
+        $this->item_name = '';
+        $this->satuan = '';
+        $this->netsuite_item_id = null;
+        $this->resetErrorBag();
+        $this->showModal = true;
+    }
+
     public function openEdit(int $id): void
     {
         $item = DistributorItem::findOrFail($id);
         Gate::authorize('update', $item);
 
         $this->editingId = $item->id;
+        $this->distributor_id = $item->distributor_id;
         $this->item_name = $item->item_name;
         $this->satuan = (string) $item->satuan;
         $this->netsuite_item_id = $item->netsuite_item_id;
+        $this->resetErrorBag();
         $this->showModal = true;
     }
 
     public function save(): void
     {
-        $data = $this->validate([
+        $rules = [
             'item_name' => ['required', 'string', 'max:255'],
             'satuan' => ['nullable', 'string', 'max:50'],
             'netsuite_item_id' => ['nullable', 'exists:netsuite_items,id'],
-        ]);
+        ];
 
-        $item = DistributorItem::findOrFail($this->editingId);
-        Gate::authorize('update', $item);
+        if (! $this->editingId) {
+            $rules['distributor_id'] = ['required', 'exists:distributors,id'];
+        }
+
+        $data = $this->validate($rules);
 
         $netsuiteSatuan = $data['netsuite_item_id']
             ? NetsuiteItem::find($data['netsuite_item_id'])?->default_satuan
             : null;
 
-        $item->update([
-            ...$data,
-            'netsuite_satuan' => $netsuiteSatuan,
-        ]);
+        if ($this->editingId) {
+            $item = DistributorItem::findOrFail($this->editingId);
+            Gate::authorize('update', $item);
+
+            $item->update([
+                'item_name' => $data['item_name'],
+                'satuan' => $data['satuan'],
+                'netsuite_item_id' => $data['netsuite_item_id'],
+                'netsuite_satuan' => $netsuiteSatuan,
+            ]);
+        } else {
+            Gate::authorize('create', DistributorItem::class);
+
+            DistributorItem::create([
+                'distributor_id' => $data['distributor_id'],
+                'item_name' => $data['item_name'],
+                'satuan' => $data['satuan'],
+                'netsuite_item_id' => $data['netsuite_item_id'],
+                'netsuite_satuan' => $netsuiteSatuan,
+            ]);
+        }
 
         $this->showModal = false;
-        $this->reset(['editingId', 'item_name', 'satuan', 'netsuite_item_id']);
+        $this->reset(['editingId', 'distributor_id', 'item_name', 'satuan', 'netsuite_item_id']);
         session()->flash('status', 'Mapping item tersimpan.');
+    }
+
+    public function delete(int $id): void
+    {
+        $item = DistributorItem::findOrFail($id);
+        Gate::authorize('delete', $item);
+        $item->delete();
+        session()->flash('status', 'Mapping item dihapus.');
     }
 
     public function render()

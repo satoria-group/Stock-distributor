@@ -17,6 +17,14 @@
                 Belum ter-mapping @if($unmappedCount) ({{ $unmappedCount }}) @endif
             </button>
         </div>
+
+        <div class="flex-1"></div>
+
+        @can('create', \App\Models\DistributorItem::class)
+        <button wire:click="openCreate" class="text-sm bg-brand hover:bg-brand-dark text-white font-medium rounded-lg px-4 py-2">
+            + Tambah Item Mapping
+        </button>
+        @endcan
     </div>
 
     <div class="bg-white border border-[#e7e9e3] rounded-xl overflow-hidden">
@@ -52,9 +60,12 @@
                                 <span class="text-xs font-mono uppercase bg-amber-100 text-amber-700 rounded-full px-2 py-0.5">Belum ter-mapping</span>
                             @endif
                         </td>
-                        <td class="px-4 py-2.5 text-right">
+                        <td class="px-4 py-2.5 text-right space-x-2">
                             @can('update', $item)
-                            <button wire:click="openEdit({{ $item->id }})" class="text-brand hover:underline text-xs font-medium">Edit Mapping</button>
+                            <button wire:click="openEdit({{ $item->id }})" class="text-brand hover:underline text-xs font-medium">Edit</button>
+                            @endcan
+                            @can('delete', $item)
+                            <button wire:click="delete({{ $item->id }})" wire:confirm="Hapus mapping item ini?" class="text-red-600 hover:underline text-xs font-medium">Hapus</button>
                             @endcan
                         </td>
                     </tr>
@@ -70,11 +81,36 @@
     @if ($showModal)
     <div class="fixed inset-0 bg-black/30 flex items-center justify-center z-50" wire:click.self="$set('showModal', false)">
         <div class="bg-white rounded-xl shadow-lg w-full max-w-md p-6">
-            <h3 class="text-base font-semibold mb-1">Edit Mapping Item</h3>
-            <p class="text-xs text-gray-500 mb-4 font-mono">{{ $item_name }}</p>
+            <h3 class="text-base font-semibold mb-1">{{ $editingId ? 'Edit Mapping Item' : 'Tambah Mapping Item Baru' }}</h3>
+            <p class="text-xs text-gray-500 mb-4 font-mono">{{ $editingId ? $item_name : 'Daftarkan nama item versi distributor' }}</p>
             <form wire:submit="save" class="space-y-4">
+                @if (! $editingId)
                 <div>
-                    <label class="block text-xs font-mono uppercase tracking-wide text-gray-500 mb-1.5">Produk Netsuite</label>
+                    <label class="block text-xs font-mono uppercase tracking-wide text-gray-500 mb-1.5">Distributor</label>
+                    <select wire:model="distributor_id" class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand">
+                        <option value="">— Pilih Distributor —</option>
+                        @foreach ($distributors as $d)
+                            <option value="{{ $d->id }}">{{ $d->name }} ({{ $d->distributor_code }})</option>
+                        @endforeach
+                    </select>
+                    @error('distributor_id') <p class="text-xs text-red-600 mt-1">{{ $message }}</p> @enderror
+                </div>
+                @endif
+
+                <div>
+                    <label class="block text-xs font-mono uppercase tracking-wide text-gray-500 mb-1.5">Nama Item (Versi Distributor)</label>
+                    <input type="text" wire:model="item_name" placeholder="Contoh: RINGER LACTATE 500 mL" class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand">
+                    @error('item_name') <p class="text-xs text-red-600 mt-1">{{ $message }}</p> @enderror
+                </div>
+
+                <div>
+                    <label class="block text-xs font-mono uppercase tracking-wide text-gray-500 mb-1.5">Satuan (Distributor)</label>
+                    <input type="text" wire:model="satuan" placeholder="Contoh: BOTOL, BOX, PCS" class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand">
+                    @error('satuan') <p class="text-xs text-red-600 mt-1">{{ $message }}</p> @enderror
+                </div>
+
+                <div>
+                    <label class="block text-xs font-mono uppercase tracking-wide text-gray-500 mb-1.5">Produk Netsuite (Opsional)</label>
                     <select wire:model="netsuite_item_id" class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand">
                         <option value="">— Belum ter-mapping —</option>
                         @foreach ($netsuiteItems as $ns)
@@ -83,10 +119,7 @@
                     </select>
                     @error('netsuite_item_id') <p class="text-xs text-red-600 mt-1">{{ $message }}</p> @enderror
                 </div>
-                <div>
-                    <label class="block text-xs font-mono uppercase tracking-wide text-gray-500 mb-1.5">Satuan (Distributor)</label>
-                    <input type="text" wire:model="satuan" class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand">
-                </div>
+
                 <div class="flex justify-end gap-2 pt-2">
                     <button type="button" wire:click="$set('showModal', false)" class="text-sm text-gray-600 px-4 py-2 rounded-lg hover:bg-gray-100">Batal</button>
                     <button type="submit" class="text-sm bg-brand hover:bg-brand-dark text-white font-medium px-4 py-2 rounded-lg">Simpan</button>

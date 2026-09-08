@@ -3,16 +3,16 @@
         <!-- Tab Navigation -->
         <div class="flex items-center gap-2 border-b border-[#e7e9e3] pb-3 mb-4">
             <button type="button" wire:click="$set('activeTab', 'import')"
-                    class="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-semibold transition cursor-pointer {{ $activeTab === 'import' ? 'bg-brand text-white shadow-sm' : 'text-gray-600 hover:bg-gray-100' }}"
-                    style="{{ $activeTab === 'import' ? 'background-color: #0d6d5f; color: #ffffff;' : '' }}">
+                    class="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-semibold transition cursor-pointer <?php echo e($activeTab === 'import' ? 'bg-brand text-white shadow-sm' : 'text-gray-600 hover:bg-gray-100'); ?>"
+                    style="<?php echo e($activeTab === 'import' ? 'background-color: #0d6d5f; color: #ffffff;' : ''); ?>">
                 <svg width="16" height="16" style="width: 16px; height: 16px; min-width: 16px; flex-shrink: 0;" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path>
                 </svg>
                 Import File Excel (Otomatis)
             </button>
             <button type="button" wire:click="$set('activeTab', 'manual')"
-                    class="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-semibold transition cursor-pointer {{ $activeTab === 'manual' ? 'bg-brand text-white shadow-sm' : 'text-gray-600 hover:bg-gray-100' }}"
-                    style="{{ $activeTab === 'manual' ? 'background-color: #0d6d5f; color: #ffffff;' : '' }}">
+                    class="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-semibold transition cursor-pointer <?php echo e($activeTab === 'manual' ? 'bg-brand text-white shadow-sm' : 'text-gray-600 hover:bg-gray-100'); ?>"
+                    style="<?php echo e($activeTab === 'manual' ? 'background-color: #0d6d5f; color: #ffffff;' : ''); ?>">
                 <svg width="16" height="16" style="width: 16px; height: 16px; min-width: 16px; flex-shrink: 0;" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
                 </svg>
@@ -21,7 +21,7 @@
         </div>
 
         <!-- Tab 1: Import Excel -->
-        <div class="{{ $activeTab === 'import' ? '' : 'hidden' }}"
+        <div class="<?php echo e($activeTab === 'import' ? '' : 'hidden'); ?>"
              x-data="{ isUploading: false, progress: 0 }"
              x-on:livewire-upload-start="isUploading = true"
              x-on:livewire-upload-finish="isUploading = false"
@@ -67,14 +67,14 @@
                     <span>Sedang mengunggah berkas ke server (<span x-text="progress + '%'"></span>)... Mohon tunggu sebentar.</span>
                 </div>
 
-                @if ($file && ! $errors->has('file'))
+                <?php if(\Livewire\Mechanisms\ExtendBlade\ExtendBlade::isRenderingLivewireComponent()): ?><!--[if BLOCK]><![endif]--><?php endif; ?><?php if($file && ! $errors->has('file')): ?>
                     <div class="flex items-center gap-1.5 text-xs text-emerald-700 bg-emerald-50 border border-emerald-200 px-3 py-1.5 rounded-lg font-medium">
                         <svg width="14" height="14" style="width: 14px; height: 14px; flex-shrink: 0;" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
                         </svg>
                         <span>Berkas siap diproses. Klik tombol <b>Import File</b> untuk memuat data.</span>
                     </div>
-                @endif
+                <?php endif; ?><?php if(\Livewire\Mechanisms\ExtendBlade\ExtendBlade::isRenderingLivewireComponent()): ?><!--[if ENDBLOCK]><![endif]--><?php endif; ?>
 
                 <div class="text-[11px] text-gray-500 flex items-center gap-1.5">
                     <svg width="14" height="14" style="width: 14px; height: 14px; min-width: 14px; max-width: 14px; flex-shrink: 0; color: #0d6d5f;" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -82,12 +82,19 @@
                     </svg>
                     <span>Distributor dan Tanggal snapshot akan <b>otomatis dideteksi</b> langsung dari baris data file spreadsheet.</span>
                 </div>
-                @error('file') <p class="text-xs text-red-600 mt-1 font-medium">{{ $message }}</p> @enderror
+                <?php if(\Livewire\Mechanisms\ExtendBlade\ExtendBlade::isRenderingLivewireComponent()): ?><!--[if BLOCK]><![endif]--><?php endif; ?><?php $__errorArgs = ['file'];
+$__bag = $errors->getBag($__errorArgs[1] ?? 'default');
+if ($__bag->has($__errorArgs[0])) :
+if (isset($message)) { $__messageOriginal = $message; }
+$message = $__bag->first($__errorArgs[0]); ?> <p class="text-xs text-red-600 mt-1 font-medium"><?php echo e($message); ?></p> <?php unset($message);
+if (isset($__messageOriginal)) { $message = $__messageOriginal; }
+endif;
+unset($__errorArgs, $__bag); ?><?php if(\Livewire\Mechanisms\ExtendBlade\ExtendBlade::isRenderingLivewireComponent()): ?><!--[if ENDBLOCK]><![endif]--><?php endif; ?>
             </div>
         </div>
 
         <!-- Tab 2: Muat Data Manual -->
-        <div class="{{ $activeTab === 'manual' ? '' : 'hidden' }}">
+        <div class="<?php echo e($activeTab === 'manual' ? '' : 'hidden'); ?>">
             <div class="space-y-3">
                 <div class="flex flex-wrap items-end gap-3">
                     <div>
@@ -98,9 +105,9 @@
                         <label class="block text-xs font-mono uppercase tracking-wide text-gray-500 mb-1.5">Distributor</label>
                         <select wire:model="distributorId" class="rounded-lg border border-gray-300 px-3 py-2 text-sm w-64 focus:outline-none focus:ring-2 focus:ring-brand">
                             <option value="">— Pilih Distributor —</option>
-                            @foreach ($distributors as $d)
-                                <option value="{{ $d->id }}">{{ $d->name }} ({{ $d->distributor_code }})</option>
-                            @endforeach
+                            <?php if(\Livewire\Mechanisms\ExtendBlade\ExtendBlade::isRenderingLivewireComponent()): ?><!--[if BLOCK]><![endif]--><?php endif; ?><?php $__currentLoopData = $distributors; $__env->addLoop($__currentLoopData); foreach($__currentLoopData as $d): $__env->incrementLoopIndices(); $loop = $__env->getLastLoop(); ?>
+                                <option value="<?php echo e($d->id); ?>"><?php echo e($d->name); ?> (<?php echo e($d->distributor_code); ?>)</option>
+                            <?php endforeach; $__env->popLoop(); $loop = $__env->getLastLoop(); ?><?php if(\Livewire\Mechanisms\ExtendBlade\ExtendBlade::isRenderingLivewireComponent()): ?><!--[if ENDBLOCK]><![endif]--><?php endif; ?>
                         </select>
                     </div>
                     <button wire:click="loadExisting" class="text-sm border border-gray-300 hover:bg-gray-50 rounded-lg px-4 py-2 font-medium cursor-pointer">
@@ -113,21 +120,28 @@
                     </svg>
                     <span>Pilih tanggal & distributor untuk melihat snapshot stock tersimpan atau menambah baris secara manual.</span>
                 </div>
-                @error('load') <p class="text-xs text-red-600 mt-1">{{ $message }}</p> @enderror
+                <?php if(\Livewire\Mechanisms\ExtendBlade\ExtendBlade::isRenderingLivewireComponent()): ?><!--[if BLOCK]><![endif]--><?php endif; ?><?php $__errorArgs = ['load'];
+$__bag = $errors->getBag($__errorArgs[1] ?? 'default');
+if ($__bag->has($__errorArgs[0])) :
+if (isset($message)) { $__messageOriginal = $message; }
+$message = $__bag->first($__errorArgs[0]); ?> <p class="text-xs text-red-600 mt-1"><?php echo e($message); ?></p> <?php unset($message);
+if (isset($__messageOriginal)) { $message = $__messageOriginal; }
+endif;
+unset($__errorArgs, $__bag); ?><?php if(\Livewire\Mechanisms\ExtendBlade\ExtendBlade::isRenderingLivewireComponent()): ?><!--[if ENDBLOCK]><![endif]--><?php endif; ?>
 
-                @if ($recentDates->isNotEmpty())
+                <?php if(\Livewire\Mechanisms\ExtendBlade\ExtendBlade::isRenderingLivewireComponent()): ?><!--[if BLOCK]><![endif]--><?php endif; ?><?php if($recentDates->isNotEmpty()): ?>
                     <div class="pt-2 text-xs text-gray-500 border-t border-gray-100">
                         Riwayat tanggal tersimpan untuk distributor ini:
-                        @foreach ($recentDates as $d)
-                            <button type="button" wire:click="setDateAndLoad('{{ $d->toDateString() }}')" class="font-mono underline mr-2 text-brand hover:text-brand-dark cursor-pointer">{{ $d->format('d M Y') }}</button>
-                        @endforeach
+                        <?php if(\Livewire\Mechanisms\ExtendBlade\ExtendBlade::isRenderingLivewireComponent()): ?><!--[if BLOCK]><![endif]--><?php endif; ?><?php $__currentLoopData = $recentDates; $__env->addLoop($__currentLoopData); foreach($__currentLoopData as $d): $__env->incrementLoopIndices(); $loop = $__env->getLastLoop(); ?>
+                            <button type="button" wire:click="setDateAndLoad('<?php echo e($d->toDateString()); ?>')" class="font-mono underline mr-2 text-brand hover:text-brand-dark cursor-pointer"><?php echo e($d->format('d M Y')); ?></button>
+                        <?php endforeach; $__env->popLoop(); $loop = $__env->getLastLoop(); ?><?php if(\Livewire\Mechanisms\ExtendBlade\ExtendBlade::isRenderingLivewireComponent()): ?><!--[if ENDBLOCK]><![endif]--><?php endif; ?>
                     </div>
-                @endif
+                <?php endif; ?><?php if(\Livewire\Mechanisms\ExtendBlade\ExtendBlade::isRenderingLivewireComponent()): ?><!--[if ENDBLOCK]><![endif]--><?php endif; ?>
             </div>
         </div>
     </div>
 
-        @if (! empty($skippedItems))
+        <?php if(\Livewire\Mechanisms\ExtendBlade\ExtendBlade::isRenderingLivewireComponent()): ?><!--[if BLOCK]><![endif]--><?php endif; ?><?php if(! empty($skippedItems)): ?>
             <div class="mt-4 rounded-xl border border-amber-300 bg-amber-50/90 p-5 shadow-sm">
                 <div class="flex items-start gap-3 mb-3">
                     <div class="w-8 h-8 rounded-full bg-amber-100 text-amber-700 flex items-center justify-center shrink-0 mt-0.5">
@@ -137,7 +151,7 @@
                     </div>
                     <div>
                         <h4 class="font-bold text-gray-900 text-sm">
-                            {{ count($skippedItems) }} Nama Item Tidak Dikenali di Master Distributor
+                            <?php echo e(count($skippedItems)); ?> Nama Item Tidak Dikenali di Master Distributor
                         </h4>
                         <p class="text-xs text-gray-600 mt-0.5">
                             Item berikut terdeteksi dari file Excel namun belum terdaftar di Master Mapping. Klik <b>"Ajukan Semua Item Ini ke Admin"</b> agar otomatis didaftarkan (status: <i>Belum ter-mapping</i>) dan langsung dimuat ke grid stock tanpa perlu input manual.
@@ -158,25 +172,26 @@
                             </tr>
                         </thead>
                         <tbody class="divide-y divide-gray-100">
-                            @php
+                            <?php
                                 $displayRows = ! empty($skippedRowsData)
                                     ? $skippedRowsData
                                     : array_map(fn($n) => ['item_name' => $n, 'satuan' => 'PCS', 'quantity' => 0, 'expired_date' => null, 'batch_no' => null], $skippedItems);
-                            @endphp
-                            @foreach ($displayRows as $idx => $item)
+                            ?>
+                            <?php if(\Livewire\Mechanisms\ExtendBlade\ExtendBlade::isRenderingLivewireComponent()): ?><!--[if BLOCK]><![endif]--><?php endif; ?><?php $__currentLoopData = $displayRows; $__env->addLoop($__currentLoopData); foreach($__currentLoopData as $idx => $item): $__env->incrementLoopIndices(); $loop = $__env->getLastLoop(); ?>
                                 <tr class="hover:bg-amber-50/50">
-                                    <td class="text-center px-3 py-2 text-gray-400 font-mono">{{ $idx + 1 }}</td>
-                                    <td class="px-3 py-2 font-medium text-gray-900">{{ $item['item_name'] }}</td>
-                                    <td class="px-3 py-2 font-mono text-gray-600">{{ $item['satuan'] ?? 'PCS' }}</td>
-                                    <td class="px-3 py-2 text-right font-mono font-semibold text-gray-900">{{ number_format($item['quantity'] ?? 0, 0, ',', '.') }}</td>
+                                    <td class="text-center px-3 py-2 text-gray-400 font-mono"><?php echo e($idx + 1); ?></td>
+                                    <td class="px-3 py-2 font-medium text-gray-900"><?php echo e($item['item_name']); ?></td>
+                                    <td class="px-3 py-2 font-mono text-gray-600"><?php echo e($item['satuan'] ?? 'PCS'); ?></td>
+                                    <td class="px-3 py-2 text-right font-mono font-semibold text-gray-900"><?php echo e(number_format($item['quantity'] ?? 0, 0, ',', '.')); ?></td>
                                     <td class="px-3 py-2 font-mono text-gray-500">
-                                        {{ $item['expired_date'] ?? '—' }}
-                                        @if(! empty($item['batch_no']))
-                                            <span class="text-[10px] text-gray-400">({{ $item['batch_no'] }})</span>
-                                        @endif
+                                        <?php echo e($item['expired_date'] ?? '—'); ?>
+
+                                        <?php if(\Livewire\Mechanisms\ExtendBlade\ExtendBlade::isRenderingLivewireComponent()): ?><!--[if BLOCK]><![endif]--><?php endif; ?><?php if(! empty($item['batch_no'])): ?>
+                                            <span class="text-[10px] text-gray-400">(<?php echo e($item['batch_no']); ?>)</span>
+                                        <?php endif; ?><?php if(\Livewire\Mechanisms\ExtendBlade\ExtendBlade::isRenderingLivewireComponent()): ?><!--[if ENDBLOCK]><![endif]--><?php endif; ?>
                                     </td>
                                 </tr>
-                            @endforeach
+                            <?php endforeach; $__env->popLoop(); $loop = $__env->getLastLoop(); ?><?php if(\Livewire\Mechanisms\ExtendBlade\ExtendBlade::isRenderingLivewireComponent()): ?><!--[if ENDBLOCK]><![endif]--><?php endif; ?>
                         </tbody>
                     </table>
                 </div>
@@ -184,7 +199,7 @@
                 <!-- Tombol Ajukan Langsung -->
                 <div class="flex flex-wrap items-center justify-between gap-3 pt-1">
                     <span class="text-xs text-amber-900 font-medium">
-                        Total item yang akan diajukan: <b>{{ count($skippedItems) }} item</b>
+                        Total item yang akan diajukan: <b><?php echo e(count($skippedItems)); ?> item</b>
                     </span>
                     <button type="button" wire:click="submitRequestMapping" wire:loading.attr="disabled"
                             class="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg bg-brand hover:bg-brand-dark text-white font-medium text-xs shadow transition cursor-pointer"
@@ -197,7 +212,7 @@
                             <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path>
                         </svg>
                         <span wire:loading.remove wire:target="submitRequestMapping">
-                            Ajukan Semua Item Ini ke Admin & Masukkan ke Grid ({{ count($skippedItems) }} Item)
+                            Ajukan Semua Item Ini ke Admin & Masukkan ke Grid (<?php echo e(count($skippedItems)); ?> Item)
                         </span>
                         <span wire:loading wire:target="submitRequestMapping">
                             Sedang Memproses & Memuat ke Grid...
@@ -205,7 +220,7 @@
                     </button>
                 </div>
             </div>
-        @endif
+        <?php endif; ?><?php if(\Livewire\Mechanisms\ExtendBlade\ExtendBlade::isRenderingLivewireComponent()): ?><!--[if ENDBLOCK]><![endif]--><?php endif; ?>
 
     <!-- Grid Card Utama -->
     <div class="bg-white border border-[#e7e9e3] rounded-xl p-5 shadow-xs">
@@ -214,10 +229,12 @@
             <div>
                 <div class="flex items-center gap-2">
                     <h3 class="text-base font-bold text-gray-900">
-                        Grid Stock — {{ $distributorId ? $distributors->firstWhere('id', $distributorId)?->name : 'Pilih distributor dulu' }}
+                        Grid Stock — <?php echo e($distributorId ? $distributors->firstWhere('id', $distributorId)?->name : 'Pilih distributor dulu'); ?>
+
                     </h3>
                     <span class="font-mono text-xs text-gray-500 bg-gray-100 px-2 py-0.5 rounded">
-                        {{ $tanggal }}
+                        <?php echo e($tanggal); ?>
+
                     </span>
                 </div>
                 <!-- Real-time Live Counters -->
@@ -267,20 +284,21 @@
             </div>
 
             <!-- Tambah Baris Manual ke Grid -->
-            @if ($distributorId)
+            <?php if(\Livewire\Mechanisms\ExtendBlade\ExtendBlade::isRenderingLivewireComponent()): ?><!--[if BLOCK]><![endif]--><?php endif; ?><?php if($distributorId): ?>
             <div class="flex items-center gap-2 flex-1 justify-end flex-wrap">
                 <div class="flex-1 max-w-md">
                     <select id="add-item-select"
                             class="w-full rounded-lg border border-gray-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-brand">
                         <option value="">— + Pilih Item Master untuk Ditambah —</option>
-                        @foreach ($availableItems as $ai)
-                            <option value="{{ $ai->id }}"
-                                    data-name="{{ $ai->item_name }}"
-                                    data-satuan="{{ $ai->satuan }}"
-                                    data-mapped="{{ $ai->isMapped() ? '1' : '0' }}">
-                                {{ $ai->item_name }} ({{ $ai->satuan }}) {{ $ai->isMapped() ? '✓' : '⚠ Belum Ter-mapping' }}
+                        <?php if(\Livewire\Mechanisms\ExtendBlade\ExtendBlade::isRenderingLivewireComponent()): ?><!--[if BLOCK]><![endif]--><?php endif; ?><?php $__currentLoopData = $availableItems; $__env->addLoop($__currentLoopData); foreach($__currentLoopData as $ai): $__env->incrementLoopIndices(); $loop = $__env->getLastLoop(); ?>
+                            <option value="<?php echo e($ai->id); ?>"
+                                    data-name="<?php echo e($ai->item_name); ?>"
+                                    data-satuan="<?php echo e($ai->satuan); ?>"
+                                    data-mapped="<?php echo e($ai->isMapped() ? '1' : '0'); ?>">
+                                <?php echo e($ai->item_name); ?> (<?php echo e($ai->satuan); ?>) <?php echo e($ai->isMapped() ? '✓' : '⚠ Belum Ter-mapping'); ?>
+
                             </option>
-                        @endforeach
+                        <?php endforeach; $__env->popLoop(); $loop = $__env->getLastLoop(); ?><?php if(\Livewire\Mechanisms\ExtendBlade\ExtendBlade::isRenderingLivewireComponent()): ?><!--[if ENDBLOCK]><![endif]--><?php endif; ?>
                     </select>
                 </div>
                 <button type="button" onclick="window.addNewGridRow && window.addNewGridRow()"
@@ -291,7 +309,7 @@
                     Tambah Baris
                 </button>
             </div>
-            @endif
+            <?php endif; ?><?php if(\Livewire\Mechanisms\ExtendBlade\ExtendBlade::isRenderingLivewireComponent()): ?><!--[if ENDBLOCK]><![endif]--><?php endif; ?>
         </div>
 
         <!-- Panduan Visual Grid (Micro-hint) -->
@@ -314,7 +332,7 @@
         </div>
     </div>
 
-    @if ($showSuccessModal)
+    <?php if(\Livewire\Mechanisms\ExtendBlade\ExtendBlade::isRenderingLivewireComponent()): ?><!--[if BLOCK]><![endif]--><?php endif; ?><?php if($showSuccessModal): ?>
     <div class="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-in fade-in duration-200" wire:click.self="$set('showSuccessModal', false)">
         <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 text-center border border-[#e7e9e3]">
             <div class="w-14 h-14 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mx-auto mb-4 shadow-sm">
@@ -329,25 +347,25 @@
             <div class="bg-[#f8faf8] border border-[#e7e9e3] rounded-xl p-4 text-left space-y-2.5 text-xs mb-6">
                 <div class="flex justify-between items-start gap-2">
                     <span class="text-gray-500 shrink-0">Distributor:</span>
-                    <span class="font-semibold text-gray-800 text-right truncate max-w-[220px]">{{ $saveSummary['distributor_name'] ?? '—' }}</span>
+                    <span class="font-semibold text-gray-800 text-right truncate max-w-[220px]"><?php echo e($saveSummary['distributor_name'] ?? '—'); ?></span>
                 </div>
                 <div class="flex justify-between">
                     <span class="text-gray-500">Tanggal Snapshot:</span>
-                    <span class="font-mono font-medium text-gray-800">{{ isset($saveSummary['tanggal']) ? \Illuminate\Support\Carbon::parse($saveSummary['tanggal'])->format('d M Y') : '—' }}</span>
+                    <span class="font-mono font-medium text-gray-800"><?php echo e(isset($saveSummary['tanggal']) ? \Illuminate\Support\Carbon::parse($saveSummary['tanggal'])->format('d M Y') : '—'); ?></span>
                 </div>
                 <div class="flex justify-between items-center pt-2 border-t border-gray-200">
                     <span class="text-gray-500 font-medium">Total Item Tersimpan:</span>
-                    <span class="font-bold text-sm text-gray-900">{{ $saveSummary['total'] ?? 0 }} item</span>
+                    <span class="font-bold text-sm text-gray-900"><?php echo e($saveSummary['total'] ?? 0); ?> item</span>
                 </div>
                 <div class="flex flex-wrap gap-1.5 pt-1">
                     <span class="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-mono bg-emerald-100 text-emerald-800">
-                        ✓ {{ $saveSummary['mapped'] ?? 0 }} Ter-mapping
+                        ✓ <?php echo e($saveSummary['mapped'] ?? 0); ?> Ter-mapping
                     </span>
-                    @if (($saveSummary['unmapped'] ?? 0) > 0)
+                    <?php if(\Livewire\Mechanisms\ExtendBlade\ExtendBlade::isRenderingLivewireComponent()): ?><!--[if BLOCK]><![endif]--><?php endif; ?><?php if(($saveSummary['unmapped'] ?? 0) > 0): ?>
                     <span class="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-mono bg-amber-100 text-amber-800">
-                        ⚠ {{ $saveSummary['unmapped'] ?? 0 }} Belum ter-mapping
+                        ⚠ <?php echo e($saveSummary['unmapped'] ?? 0); ?> Belum ter-mapping
                     </span>
-                    @endif
+                    <?php endif; ?><?php if(\Livewire\Mechanisms\ExtendBlade\ExtendBlade::isRenderingLivewireComponent()): ?><!--[if ENDBLOCK]><![endif]--><?php endif; ?>
                 </div>
             </div>
 
@@ -356,7 +374,7 @@
                         class="flex-1 px-4 py-2.5 rounded-lg border border-gray-300 text-xs font-medium text-gray-700 hover:bg-gray-50 transition">
                     Tetap di Halaman Ini
                 </button>
-                <a href="{{ route('dashboard') }}"
+                <a href="<?php echo e(route('dashboard')); ?>"
                    class="flex-1 px-4 py-2.5 rounded-lg bg-brand hover:bg-brand-dark text-white text-xs font-medium transition text-center inline-flex items-center justify-center gap-1.5 shadow-sm">
                     Lihat Dashboard
                     <svg width="14" height="14" style="width: 14px; height: 14px; min-width: 14px; max-width: 14px; flex-shrink: 0;" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -366,7 +384,7 @@
             </div>
         </div>
     </div>
-    @endif
+    <?php endif; ?><?php if(\Livewire\Mechanisms\ExtendBlade\ExtendBlade::isRenderingLivewireComponent()): ?><!--[if ENDBLOCK]><![endif]--><?php endif; ?>
 
     <style>
         /* Indikasi jelas sel editable pada AG Grid */
@@ -400,7 +418,10 @@
         }
     </style>
 
-    @script
+        <?php
+        $__scriptKey = '3880225432-0';
+        ob_start();
+    ?>
     <script>
         let gridApi = null;
 
@@ -673,7 +694,7 @@
             applyRowData(rows);
         }
 
-        initGrid(@js($rows));
+        initGrid(<?php echo \Illuminate\Support\Js::from($rows)->toHtml() ?>);
 
         $wire.on('rows-loaded', (event) => {
             handleRowsLoaded(event);
@@ -685,7 +706,7 @@
 
         if (window.Livewire) {
             window.Livewire.hook('morph.updated', ({ component }) => {
-                if (component?.id === '{{ $this->getId() }}') {
+                if (component?.id === '<?php echo e($this->getId()); ?>') {
                     const currentRows = $wire.get('rows');
                     if (currentRows && currentRows.length > 0) {
                         applyRowData(currentRows);
@@ -705,5 +726,10 @@
             $wire.call('saveRows', rows);
         };
     </script>
-    @endscript
+        <?php
+        $__output = ob_get_clean();
+
+        \Livewire\store($this)->push('scripts', $__output, $__scriptKey)
+    ?>
 </div>
+<?php /**PATH C:\Users\Najmi\Documents\satoria\Stock-distributor\resources\views/livewire/stock/upload.blade.php ENDPATH**/ ?>

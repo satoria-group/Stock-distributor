@@ -21,6 +21,8 @@ class Upload extends Component
 
     public ?int $distributorId = null;
 
+    public string $activeTab = 'import';
+
     /** @var array<int, array> current grid rows, kept in sync with AG Grid on save */
     public array $rows = [];
 
@@ -28,7 +30,21 @@ class Upload extends Component
 
     public array $skippedItems = [];
 
+    public array $skippedRowsData = [];
+
+    public bool $showRequestModal = false;
+
+    public bool $showSingleRequestModal = false;
+
+    public string $requestItemName = '';
+
+    public string $requestSatuan = 'PCS';
+
     public ?int $addItemId = null;
+
+    public bool $showSuccessModal = false;
+
+    public array $saveSummary = [];
 
     public function mount(): void
     {
@@ -38,6 +54,8 @@ class Upload extends Component
 
     public function loadExisting(): void
     {
+        $this->activeTab = 'manual';
+
         if (! $this->tanggal || ! $this->distributorId) {
             $this->addError('load', 'Pilih tanggal dan distributor dulu.');
 
@@ -49,6 +67,9 @@ class Upload extends Component
             ->where('tanggal', $this->tanggal)
             ->where('distributor_id', $this->distributorId)
             ->get();
+
+        $this->skippedItems = [];
+        $this->skippedRowsData = [];
 
         if ($existing->isEmpty()) {
             $this->rows = [];
@@ -76,13 +97,30 @@ class Upload extends Component
         $this->loadExisting();
     }
 
+    public function updatedFile(): void
+    {
+        $this->resetErrorBag('file');
+    }
+
     public function importFile(): void
     {
         Gate::authorize('create', StockEntry::class);
 
-        $this->validate(['file' => ['required', 'file', 'mimes:xlsx,xls']]);
+        $this->validate([
+            'file' => ['required', 'file', 'mimes:xlsx,xls'],
+        ], [
+            'file.required' => 'File Excel belum selesai diunggah atau belum dipilih. Mohon tunggu sejenak hingga file siap.',
+            'file.mimes' => 'Format file harus berupa berkas Excel (.xlsx atau .xls).',
+        ]);
 
-        $spreadsheet = IOFactory::load($this->file->getRealPath());
+        try {
+            $spreadsheet = IOFactory::load($this->file->getRealPath());
+        } catch (\Throwable $e) {
+            $this->addError('file', 'Gagal membaca file spreadsheet: '.$e->getMessage());
+
+            return;
+        }
+
         $sheet = $spreadsheet->getSheetByName('Template') ?? $spreadsheet->getActiveSheet();
         $data = $sheet->toArray();
 
@@ -127,10 +165,11 @@ class Upload extends Component
 
         $knownItems = DistributorItem::where('distributor_id', $distributor->id)
             ->get()
-            ->keyBy(fn ($i) => mb_strtolower(trim($i->item_name)));
+            ->keyBy(fn ($i) => mb_strtolower(trim(preg_replace('/\s+/', ' ', $i->item_name))));
 
         $rows = [];
         $skipped = [];
+        $skippedRowsData = [];
 
         foreach ($bodyRows as $r) {
             $itemName = trim((string) ($r[$col['Distributor Item Name']] ?? ''));
@@ -138,40 +177,194 @@ class Upload extends Component
                 continue;
             }
 
-            $key = mb_strtolower($itemName);
+            $key = mb_strtolower(trim(preg_replace('/\s+/', ' ', $itemName)));
             $distItem = $knownItems->get($key);
+
+            $qty = (float) ($r[$col['Quantity']] ?? 0);
+            $satuan = isset($col['Satuan']) ? trim((string) ($r[$col['Satuan']] ?? '')) : null;
+            $ed = isset($col['ED']) ? $this->parseExcelDate($r[$col['ED']] ?? null) : null;
+            $batch = isset($col['Batch No']) ? trim((string) ($r[$col['Batch No']] ?? '')) : null;
 
             if (! $distItem) {
                 $skipped[] = $itemName;
 
+                if (! isset($skippedRowsData[$key])) {
+                    $skippedRowsData[$key] = [
+                        'item_name' => $itemName,
+                        'satuan' => $satuan ?: 'PCS',
+                        'quantity' => $qty,
+                        'expired_date' => $ed,
+                        'batch_no' => $batch ?: null,
+                    ];
+                } else {
+                    $skippedRowsData[$key]['quantity'] += $qty;
+                    if ($ed && empty($skippedRowsData[$key]['expired_date'])) {
+                        $skippedRowsData[$key]['expired_date'] = $ed;
+                    }
+                    if ($batch && empty($skippedRowsData[$key]['batch_no'])) {
+                        $skippedRowsData[$key]['batch_no'] = $batch;
+                    }
+                }
+
                 continue;
             }
 
-            $qty = (float) ($r[$col['Quantity']] ?? 0);
-            $satuan = isset($col['Satuan']) ? trim((string) ($r[$col['Satuan']] ?? '')) : $distItem->satuan;
-            $ed = isset($col['ED']) ? $this->parseExcelDate($r[$col['ED']] ?? null) : null;
-            $batch = isset($col['Batch No']) ? trim((string) ($r[$col['Batch No']] ?? '')) : null;
-
-            $rows[$distItem->id] = [
-                'distributor_item_id' => $distItem->id,
-                'item_name' => $distItem->item_name,
-                'satuan' => $satuan ?: $distItem->satuan,
-                'quantity' => $qty,
-                'expired_date' => $ed,
-                'batch_no' => $batch ?: null,
-                'mapped' => $distItem->isMapped(),
-            ];
+            if (isset($rows[$distItem->id])) {
+                $rows[$distItem->id]['quantity'] += $qty;
+            } else {
+                $rows[$distItem->id] = [
+                    'distributor_item_id' => $distItem->id,
+                    'item_name' => $distItem->item_name,
+                    'satuan' => $satuan ?: $distItem->satuan,
+                    'quantity' => $qty,
+                    'expired_date' => $ed,
+                    'batch_no' => $batch ?: null,
+                    'mapped' => $distItem->isMapped(),
+                ];
+            }
         }
 
         $this->tanggal = $tanggal ?? $this->tanggal;
         $this->distributorId = $distributor->id;
         $this->rows = array_values($rows);
         $this->skippedItems = array_values(array_unique($skipped));
-        $this->file = null;
+        $this->skippedRowsData = array_values($skippedRowsData);
+        $this->dispatch('rows-loaded', rows: $this->rows);
+        $this->dispatch('file-imported');
+
+        session()->flash('status', 'Import selesai: '.count($this->rows)." baris dimuat ke grid untuk {$distributor->name} — {$this->tanggal}.");
+    }
+
+    public function openRequestModal(): void
+    {
+        $this->showRequestModal = true;
+    }
+
+    public function submitRequestMapping(): void
+    {
+        Gate::authorize('create', StockEntry::class);
+
+        if (! $this->distributorId || (empty($this->skippedRowsData) && empty($this->skippedItems))) {
+            $this->showRequestModal = false;
+
+            return;
+        }
+
+        $itemsToProcess = ! empty($this->skippedRowsData)
+            ? $this->skippedRowsData
+            : array_map(fn ($name) => [
+                'item_name' => $name,
+                'satuan' => 'PCS',
+                'quantity' => 0,
+                'expired_date' => null,
+                'batch_no' => null,
+            ], $this->skippedItems);
+
+        $addedCount = 0;
+        DB::transaction(function () use ($itemsToProcess, &$addedCount) {
+            foreach ($itemsToProcess as $itemData) {
+                $rawName = trim($itemData['item_name']);
+                $normalized = mb_strtolower(trim(preg_replace('/\s+/', ' ', $rawName)));
+
+                $existing = DistributorItem::where('distributor_id', $this->distributorId)
+                    ->whereRaw('LOWER(TRIM(item_name)) = ?', [$normalized])
+                    ->first();
+
+                if ($existing) {
+                    $distItem = $existing;
+                } else {
+                    $distItem = DistributorItem::create([
+                        'distributor_id' => $this->distributorId,
+                        'item_name' => $rawName,
+                        'satuan' => $itemData['satuan'] ?: 'PCS',
+                        'netsuite_item_id' => null,
+                    ]);
+                }
+
+                $alreadyInGrid = collect($this->rows)->firstWhere('distributor_item_id', $distItem->id);
+                if (! $alreadyInGrid) {
+                    $this->rows[] = [
+                        'distributor_item_id' => $distItem->id,
+                        'item_name' => $distItem->item_name,
+                        'satuan' => $itemData['satuan'] ?: $distItem->satuan,
+                        'quantity' => (float) ($itemData['quantity'] ?? 0),
+                        'expired_date' => $itemData['expired_date'] ?? null,
+                        'batch_no' => $itemData['batch_no'] ?? null,
+                        'mapped' => $distItem->isMapped(),
+                    ];
+                    $addedCount++;
+                }
+            }
+        });
+
+        $this->skippedItems = [];
+        $this->skippedRowsData = [];
+        $this->showRequestModal = false;
 
         $this->dispatch('rows-loaded', rows: $this->rows);
 
-        session()->flash('status', 'Import selesai: '.count($this->rows)." baris dimuat ke grid untuk {$distributor->name} — {$this->tanggal}.");
+        session()->flash('status', "{$addedCount} item berhasil diajukan ke Admin (status: Belum ter-mapping) dan telah dimuat ke grid stock.");
+    }
+
+    public function openSingleRequestModal(): void
+    {
+        $this->requestItemName = '';
+        $this->requestSatuan = 'PCS';
+        $this->resetErrorBag(['requestItemName', 'requestSatuan']);
+        $this->showSingleRequestModal = true;
+    }
+
+    public function submitSingleRequest(): void
+    {
+        Gate::authorize('create', StockEntry::class);
+
+        if (! $this->distributorId) {
+            $this->addError('requestItemName', 'Pilih distributor terlebih dahulu.');
+
+            return;
+        }
+
+        $this->validate([
+            'requestItemName' => ['required', 'string', 'min:2', 'max:255'],
+            'requestSatuan' => ['required', 'string', 'max:50'],
+        ]);
+
+        $rawName = trim($this->requestItemName);
+        $normalized = mb_strtolower(trim(preg_replace('/\s+/', ' ', $rawName)));
+
+        $existing = DistributorItem::where('distributor_id', $this->distributorId)
+            ->whereRaw('LOWER(TRIM(item_name)) = ?', [$normalized])
+            ->first();
+
+        if ($existing) {
+            $distItem = $existing;
+        } else {
+            $distItem = DistributorItem::create([
+                'distributor_id' => $this->distributorId,
+                'item_name' => $rawName,
+                'satuan' => trim($this->requestSatuan) ?: 'PCS',
+                'netsuite_item_id' => null,
+            ]);
+        }
+
+        $alreadyInGrid = collect($this->rows)->firstWhere('distributor_item_id', $distItem->id);
+        if (! $alreadyInGrid) {
+            $this->rows[] = [
+                'distributor_item_id' => $distItem->id,
+                'item_name' => $distItem->item_name,
+                'satuan' => $distItem->satuan,
+                'quantity' => 0,
+                'expired_date' => null,
+                'batch_no' => null,
+                'mapped' => $distItem->isMapped(),
+            ];
+            $this->dispatch('rows-loaded', rows: $this->rows);
+        }
+
+        $this->showSingleRequestModal = false;
+        $this->reset(['requestItemName', 'requestSatuan']);
+
+        session()->flash('status', "Item '{$distItem->item_name}' berhasil diajukan ke Admin dan ditambahkan ke grid stock.");
     }
 
     public function addRow(): void
@@ -201,6 +394,16 @@ class Upload extends Component
         ];
 
         $this->addItemId = null;
+        $this->dispatch('rows-loaded', rows: $this->rows);
+    }
+
+    public function removeRow(int $distributorItemId): void
+    {
+        $this->rows = collect($this->rows)
+            ->reject(fn ($r) => (int) ($r['distributor_item_id'] ?? 0) === $distributorItemId)
+            ->values()
+            ->all();
+
         $this->dispatch('rows-loaded', rows: $this->rows);
     }
 
@@ -246,6 +449,17 @@ class Upload extends Component
                 $item->isMapped() ? $mappedCount++ : $unmappedCount++;
             }
         });
+
+        $dist = Distributor::find($this->distributorId);
+        $this->saveSummary = [
+            'tanggal' => $this->tanggal,
+            'distributor_name' => $dist?->name ?? '—',
+            'distributor_code' => $dist?->distributor_code ?? '—',
+            'total' => $mappedCount + $unmappedCount,
+            'mapped' => $mappedCount,
+            'unmapped' => $unmappedCount,
+        ];
+        $this->showSuccessModal = true;
 
         session()->flash('status', "Tersimpan: {$mappedCount} item ter-mapping, {$unmappedCount} item belum ter-mapping (tetap tersimpan sebagai snapshot {$this->tanggal}).");
         $this->loadExisting();
