@@ -11,6 +11,12 @@ use Livewire\Attributes\Layout;
 use Livewire\Component;
 use Livewire\WithFileUploads;
 use PhpOffice\PhpSpreadsheet\IOFactory;
+use PhpOffice\PhpSpreadsheet\Spreadsheet;
+use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
+use PhpOffice\PhpSpreadsheet\Style\Fill;
+use PhpOffice\PhpSpreadsheet\Style\Alignment;
+use PhpOffice\PhpSpreadsheet\Style\Border;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 
 #[Layout('layouts.app', ['title' => 'Upload Stock Harian', 'subtitle' => 'Import Template harian, koreksi langsung di grid, lalu simpan sebagai snapshot stock.'])]
 class Upload extends Component
@@ -184,7 +190,8 @@ class Upload extends Component
             $key = mb_strtolower(trim(preg_replace('/\s+/', ' ', $itemName)));
             $distItem = $knownItems->get($key);
 
-            $qty = (float) ($r[$col['Quantity']] ?? 0);
+            $rawQty = str_replace([',', ' '], '', trim((string) ($r[$col['Quantity']] ?? 0)));
+            $qty = (float) $rawQty;
             $satuan = isset($col['Satuan']) ? trim((string) ($r[$col['Satuan']] ?? '')) : null;
             $ed = isset($col['ED']) ? $this->parseExcelDate($r[$col['ED']] ?? null) : null;
             $batch = isset($col['Batch No']) ? trim((string) ($r[$col['Batch No']] ?? '')) : null;
@@ -467,6 +474,250 @@ class Upload extends Component
 
         session()->flash('status', "Tersimpan: {$mappedCount} item ter-mapping, {$unmappedCount} item belum ter-mapping (tetap tersimpan sebagai snapshot {$this->tanggal}).");
         $this->loadExisting();
+    }
+
+    public function downloadTemplate(): StreamedResponse
+    {
+        Gate::authorize('viewAny', StockEntry::class);
+
+        $spreadsheet = new Spreadsheet();
+
+        // ----------------------------------------------------
+        // SHEET 1: Template (Main Upload Sheet)
+        // ----------------------------------------------------
+        $sheet = $spreadsheet->getActiveSheet();
+        $sheet->setTitle('Template');
+
+        $headers = ['Tanggal', 'ID DISTRIBUTOR', 'Distributor Item Name', 'Satuan', 'Quantity', 'Batch No', 'ED'];
+        $sheet->fromArray($headers, null, 'A1');
+
+        $headerStyle = [
+            'font' => [
+                'bold' => true,
+                'color' => ['rgb' => 'FFFFFF'],
+                'size' => 11,
+            ],
+            'fill' => [
+                'fillType' => Fill::FILL_SOLID,
+                'startColor' => ['rgb' => '0D6D5F'], // Satoria Teal Brand
+            ],
+            'alignment' => [
+                'horizontal' => Alignment::HORIZONTAL_CENTER,
+                'vertical' => Alignment::VERTICAL_CENTER,
+            ],
+            'borders' => [
+                'allBorders' => [
+                    'borderStyle' => Border::BORDER_THIN,
+                    'color' => ['rgb' => '07352D'],
+                ],
+            ],
+        ];
+        $sheet->getStyle('A1:G1')->applyFromArray($headerStyle);
+        $sheet->getRowDimension(1)->setRowHeight(26);
+
+        // Realistic Satoria Sample Rows
+        $today = now()->toDateString();
+        $sampleRows = [
+            [$today, 'SDLSURABAYA', 'DEXTROSE 5% 500 ml', 'BOTOL', 1200, '026C05', '2027-12-31'],
+            [$today, 'SDLSURABAYA', 'DEXTROSE 10% 500 ml', 'BOTOL', 850, '026C06', '2027-12-31'],
+            [$today, 'SDLSURABAYA', 'SODIUM CHLORIDE 0.9% 500 ml', 'BOTOL', 2400, '026D12', '2028-06-30'],
+            [$today, 'SDLSURABAYA', 'RINGER LACTATE 500 ml', 'BOTOL', 1600, '026E01', '2028-09-30'],
+            [$today, 'SDLSURABAYA', 'SATORIA MEDIKA Disposable Infusion Set Y-Port 20drops/mL @1', 'PCH', 500, 'B26U01', '2029-01-31'],
+        ];
+        $sheet->fromArray($sampleRows, null, 'A2');
+
+        $rowCount = count($sampleRows) + 1;
+
+        $dataStyle = [
+            'borders' => [
+                'allBorders' => [
+                    'borderStyle' => Border::BORDER_THIN,
+                    'color' => ['rgb' => 'CBD5E1'],
+                ],
+            ],
+            'alignment' => [
+                'vertical' => Alignment::VERTICAL_CENTER,
+            ],
+        ];
+        $sheet->getStyle("A2:G{$rowCount}")->applyFromArray($dataStyle);
+
+        for ($r = 2; $r <= $rowCount; $r++) {
+            $sheet->getRowDimension($r)->setRowHeight(20);
+            if ($r % 2 === 1) {
+                $sheet->getStyle("A{$r}:G{$r}")->getFill()
+                    ->setFillType(Fill::FILL_SOLID)
+                    ->getStartColor()->setRGB('F8FAFC');
+            }
+        }
+
+        $sheet->getStyle("A2:B{$rowCount}")->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER);
+        $sheet->getStyle("C2:C{$rowCount}")->getAlignment()->setHorizontal(Alignment::HORIZONTAL_LEFT);
+        $sheet->getStyle("D2:D{$rowCount}")->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER);
+        $sheet->getStyle("E2:E{$rowCount}")->getAlignment()->setHorizontal(Alignment::HORIZONTAL_RIGHT);
+        $sheet->getStyle("E2:E{$rowCount}")->getNumberFormat()->setFormatCode('#,##0');
+        $sheet->getStyle("F2:F{$rowCount}")->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER);
+        $sheet->getStyle("G2:G{$rowCount}")->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER);
+
+        foreach (range('A', 'G') as $col) {
+            $sheet->getColumnDimension($col)->setAutoSize(true);
+        }
+        $sheet->freezePane('A2');
+        $sheet->setAutoFilter("A1:G{$rowCount}");
+
+        // ----------------------------------------------------
+        // SHEET 2: Daftar Distributor (Master Code Reference)
+        // ----------------------------------------------------
+        $distSheet = $spreadsheet->createSheet();
+        $distSheet->setTitle('Daftar Distributor');
+
+        $distHeaders = ['Kode Distributor (ID DISTRIBUTOR)', 'Nama Distributor', 'Status'];
+        $distSheet->fromArray($distHeaders, null, 'A1');
+
+        $distHeaderStyle = [
+            'font' => [
+                'bold' => true,
+                'color' => ['rgb' => 'FFFFFF'],
+                'size' => 11,
+            ],
+            'fill' => [
+                'fillType' => Fill::FILL_SOLID,
+                'startColor' => ['rgb' => '1E293B'], // Slate 800
+            ],
+            'alignment' => [
+                'horizontal' => Alignment::HORIZONTAL_CENTER,
+                'vertical' => Alignment::VERTICAL_CENTER,
+            ],
+            'borders' => [
+                'allBorders' => [
+                    'borderStyle' => Border::BORDER_THIN,
+                    'color' => ['rgb' => '0F172A'],
+                ],
+            ],
+        ];
+        $distSheet->getStyle('A1:C1')->applyFromArray($distHeaderStyle);
+        $distSheet->getRowDimension(1)->setRowHeight(26);
+
+        $distributors = Distributor::where('is_active', true)
+            ->orderBy('distributor_code')
+            ->get(['distributor_code', 'name']);
+
+        $distRows = [];
+        foreach ($distributors as $d) {
+            $distRows[] = [$d->distributor_code, $d->name, 'Aktif'];
+        }
+        $distSheet->fromArray($distRows, null, 'A2');
+
+        $distRowCount = count($distRows) + 1;
+        $distSheet->getStyle("A2:C{$distRowCount}")->applyFromArray([
+            'borders' => [
+                'allBorders' => [
+                    'borderStyle' => Border::BORDER_THIN,
+                    'color' => ['rgb' => 'CBD5E1'],
+                ],
+            ],
+            'alignment' => [
+                'vertical' => Alignment::VERTICAL_CENTER,
+            ],
+        ]);
+
+        for ($r = 2; $r <= $distRowCount; $r++) {
+            $distSheet->getRowDimension($r)->setRowHeight(19);
+            if ($r % 2 === 1) {
+                $distSheet->getStyle("A{$r}:C{$r}")->getFill()
+                    ->setFillType(Fill::FILL_SOLID)
+                    ->getStartColor()->setRGB('F8FAFC');
+            }
+        }
+
+        $distSheet->getStyle("A2:A{$distRowCount}")->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER);
+        $distSheet->getStyle("C2:C{$distRowCount}")->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER);
+
+        foreach (['A', 'B', 'C'] as $col) {
+            $distSheet->getColumnDimension($col)->setAutoSize(true);
+        }
+        $distSheet->freezePane('A2');
+        $distSheet->setAutoFilter("A1:C{$distRowCount}");
+
+        // ----------------------------------------------------
+        // SHEET 3: Panduan Pengisian
+        // ----------------------------------------------------
+        $guideSheet = $spreadsheet->createSheet();
+        $guideSheet->setTitle('Panduan Pengisian');
+
+        $guideSheet->setCellValue('A1', 'PANDUAN PENGISIAN TEMPLATE UPLOAD STOK DISTRIBUTOR');
+        $guideSheet->getStyle('A1')->getFont()->setBold(true)->setSize(13)->getColor()->setRGB('0D6D5F');
+        $guideSheet->getRowDimension(1)->setRowHeight(28);
+
+        $guideSheet->setCellValue('A2', 'Satoria Group — Manajemen Distribusi & Inventori Farmasi');
+        $guideSheet->getStyle('A2')->getFont()->setItalic(true)->setSize(10)->getColor()->setRGB('64748B');
+
+        $colGuideHeaders = ['Nama Kolom', 'Wajib / Opsional', 'Contoh Nilai', 'Penjelasan & Aturan Validasi'];
+        $guideSheet->fromArray($colGuideHeaders, null, 'A4');
+        $guideSheet->getStyle('A4:D4')->applyFromArray([
+            'font' => ['bold' => true, 'color' => ['rgb' => 'FFFFFF'], 'size' => 10],
+            'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => '0D6D5F']],
+            'alignment' => ['horizontal' => Alignment::HORIZONTAL_CENTER, 'vertical' => Alignment::VERTICAL_CENTER],
+            'borders' => ['allBorders' => ['borderStyle' => Border::BORDER_THIN, 'color' => ['rgb' => '07352D']]],
+        ]);
+        $guideSheet->getRowDimension(4)->setRowHeight(24);
+
+        $colGuideData = [
+            ['Tanggal', 'WAJIB', '2026-08-31', 'Tanggal posisi snapshot stok (format disarankan YYYY-MM-DD atau DD/MM/YYYY). Semua baris dalam 1 file harus tanggal yang sama.'],
+            ['ID DISTRIBUTOR', 'WAJIB', 'SDLSURABAYA', 'Kode resmi distributor Satoria. Harus persis sesuai dengan sheet "Daftar Distributor".'],
+            ['Distributor Item Name', 'WAJIB', 'DEXTROSE 5% 500 ml', 'Nama item produk sesuai yang terdaftar di sistem distributor.'],
+            ['Satuan', 'OPSIONAL', 'BOTOL / PCH / BOX', 'Satuan kemasan. Jika kosong, sistem akan menggunakan satuan default dari Master Produk.'],
+            ['Quantity', 'WAJIB', '1200', 'Jumlah stok akhir fisik/sistem distributor (hanya angka numerik).'],
+            ['Batch No', 'DISARANKAN', '026C05', 'Nomor batch produksi fisik obat/alkes untuk ketertelusuran produk di gudang.'],
+            ['ED', 'DISARANKAN', '2027-12-31', 'Tanggal kedaluwarsa (Expired Date) produk (format YYYY-MM-DD atau DD/MM/YYYY).'],
+        ];
+        $guideSheet->fromArray($colGuideData, null, 'A5');
+        $guideEnd = 4 + count($colGuideData);
+        $guideSheet->getStyle("A5:D{$guideEnd}")->applyFromArray([
+            'borders' => ['allBorders' => ['borderStyle' => Border::BORDER_THIN, 'color' => ['rgb' => 'CBD5E1']]],
+            'alignment' => ['vertical' => Alignment::VERTICAL_CENTER],
+        ]);
+
+        for ($r = 5; $r <= $guideEnd; $r++) {
+            $guideSheet->getRowDimension($r)->setRowHeight(24);
+            if ($r % 2 === 1) {
+                $guideSheet->getStyle("A{$r}:D{$r}")->getFill()->setFillType(Fill::FILL_SOLID)->getStartColor()->setRGB('F8FAFC');
+            }
+        }
+        $guideSheet->getStyle("A5:A{$guideEnd}")->getFont()->setBold(true);
+        $guideSheet->getStyle("B5:B{$guideEnd}")->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER);
+
+        $noteStart = $guideEnd + 2;
+        $guideSheet->setCellValue("A{$noteStart}", 'CATATAN PENTING:');
+        $guideSheet->getStyle("A{$noteStart}")->getFont()->setBold(true)->getColor()->setRGB('B91C1C');
+
+        $notes = [
+            "1. Pastikan sheet utama data tetap bernama 'Template' (atau sheet urutan pertama).",
+            "2. Jangan menyisipkan baris kosong di atas baris 1 (Header harus di baris A1:G1).",
+            "3. Selalu periksa kode pada sheet 'Daftar Distributor' agar tidak terjadi penolakan akibat kode distributor salah.",
+            "4. Hapus atau timpa baris contoh yang disediakan pada sheet Template sebelum mengunggah file.",
+            "5. Jika terdapat item baru yang belum terdaftar di Satoria, sistem akan memberikan opsi pemetaan atau permintaan mapping produk baru.",
+        ];
+        foreach ($notes as $idx => $n) {
+            $rowIdx = $noteStart + 1 + $idx;
+            $guideSheet->setCellValue("A{$rowIdx}", $n);
+            $guideSheet->getStyle("A{$rowIdx}")->getFont()->setSize(9)->getColor()->setRGB('334155');
+        }
+
+        foreach (['A', 'B', 'C', 'D'] as $col) {
+            $guideSheet->getColumnDimension($col)->setAutoSize(true);
+        }
+
+        // Return active sheet to Template so user opens directly to it
+        $spreadsheet->setActiveSheetIndex(0);
+
+        $filename = 'template_upload_stock_satoria.xlsx';
+
+        return response()->streamDownload(function () use ($spreadsheet) {
+            $writer = new Xlsx($spreadsheet);
+            $writer->save('php://output');
+        }, $filename, [
+            'Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        ]);
     }
 
     private function parseExcelDate($value): ?string

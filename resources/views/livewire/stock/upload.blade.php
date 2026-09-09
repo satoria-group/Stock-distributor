@@ -27,16 +27,23 @@
              x-on:livewire-upload-finish="isUploading = false"
              x-on:livewire-upload-error="isUploading = false"
              x-on:livewire-upload-progress="progress = $event.detail.progress">
-            <div class="space-y-3">
-                <div class="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
+            <div class="space-y-4">
+                <!-- Top Card: File Input & Download Action -->
+                <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-5 p-4 rounded-xl bg-[#f8faf9] border border-[#e2e8e5]">
+                    <!-- Left: Upload Input -->
                     <div class="flex-1 max-w-xl">
-                        <label class="block text-xs font-mono uppercase tracking-wide text-gray-500 mb-1.5">Pilih File Template Excel (.xlsx / .xls)</label>
+                        <label class="block text-xs font-mono uppercase tracking-wide text-gray-700 font-semibold mb-1.5 flex items-center gap-1.5">
+                            <svg class="w-4 h-4" style="color: #0d6d5f;" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path>
+                            </svg>
+                            Pilih File Excel Template (.xlsx / .xls)
+                        </label>
                         <div class="flex items-center gap-2">
                             <input type="file" wire:model="file" accept=".xlsx,.xls"
                                    x-ref="fileInput"
                                    x-on:file-imported.window="$refs.fileInput.value = ''"
                                    wire:key="upload-file-input"
-                                   class="block w-full text-xs text-gray-700 file:mr-3 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-gray-100 file:text-gray-700 hover:file:bg-gray-200 border border-gray-300 rounded-lg cursor-pointer">
+                                   class="block w-full text-xs text-gray-700 file:mr-3 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-white file:text-gray-700 hover:file:bg-gray-100 border border-gray-300 rounded-lg cursor-pointer bg-white shadow-2xs">
                             <button type="button" wire:click="importFile"
                                     :disabled="isUploading"
                                     wire:loading.attr="disabled"
@@ -55,6 +62,32 @@
                                 <span wire:loading wire:target="importFile">Membaca File...</span>
                             </button>
                         </div>
+                    </div>
+
+                    <!-- Right: Download Template Button -->
+                    <div class="shrink-0 flex flex-col sm:flex-row items-start sm:items-center gap-3 pt-3 lg:pt-0 border-t lg:border-t-0 lg:border-l border-gray-200 lg:pl-6">
+                        <div>
+                            <div class="flex items-center gap-1.5">
+                                <span class="text-xs font-bold text-gray-800">Format Resmi Excel</span>
+                                <span class="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-emerald-100 text-emerald-800">.XLSX</span>
+                            </div>
+                            <p class="text-[11px] text-gray-500 mt-0.5">Sudah dilengkapi Sheet Template, Daftar Kode Distributor, & Panduan.</p>
+                        </div>
+                        <button type="button" wire:click="downloadTemplate"
+                                wire:loading.attr="disabled"
+                                wire:target="downloadTemplate"
+                                class="inline-flex items-center gap-2 px-3.5 py-2.5 rounded-lg border border-emerald-600/30 bg-white hover:bg-emerald-50 text-emerald-800 text-xs font-semibold shadow-xs hover:shadow transition cursor-pointer disabled:opacity-50"
+                                title="Download template format Excel resmi (.xlsx) untuk upload stok harian">
+                            <svg wire:loading.remove wire:target="downloadTemplate" class="text-emerald-700" width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+                            </svg>
+                            <svg wire:loading wire:target="downloadTemplate" class="animate-spin text-emerald-700" width="14" height="14" fill="none" viewBox="0 0 24 24">
+                                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path>
+                            </svg>
+                            <span wire:loading.remove wire:target="downloadTemplate">Unduh Template Excel</span>
+                            <span wire:loading wire:target="downloadTemplate">Menyiapkan...</span>
+                        </button>
                     </div>
                 </div>
 
@@ -76,12 +109,31 @@
                     </div>
                 @endif
 
-                <div class="text-[11px] text-gray-500 flex items-center gap-1.5">
-                    <svg width="14" height="14" style="width: 14px; height: 14px; min-width: 14px; max-width: 14px; flex-shrink: 0; color: #0d6d5f;" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-                    </svg>
-                    <span>Distributor dan Tanggal snapshot akan <b>otomatis dideteksi</b> langsung dari baris data file spreadsheet.</span>
+                <!-- Instructions Badges -->
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-3 pt-1">
+                    <div class="flex items-start gap-2.5 p-3 rounded-xl bg-emerald-50/50 border border-emerald-200/60 text-[11px] text-emerald-950">
+                        <div class="w-6 h-6 rounded-lg bg-emerald-100 flex items-center justify-center shrink-0 text-emerald-700 font-bold text-xs mt-0.5">1</div>
+                        <div>
+                            <span class="font-bold block text-emerald-900">Sheet 'Template' (Data Utama)</span>
+                            <span class="text-emerald-800">Isi baris data stok. Kolom wajib: <i>Tanggal</i>, <i>ID DISTRIBUTOR</i>, <i>Distributor Item Name</i>, & <i>Quantity</i>.</span>
+                        </div>
+                    </div>
+                    <div class="flex items-start gap-2.5 p-3 rounded-xl bg-blue-50/50 border border-blue-200/60 text-[11px] text-blue-950">
+                        <div class="w-6 h-6 rounded-lg bg-blue-100 flex items-center justify-center shrink-0 text-blue-700 font-bold text-xs mt-0.5">2</div>
+                        <div>
+                            <span class="font-bold block text-blue-900">Sheet 'Daftar Distributor'</span>
+                            <span class="text-blue-800">Pastikan <code>ID DISTRIBUTOR</code> sama persis dengan kode pada sheet referensi (contoh: <code>SDLSURABAYA</code>, <code>KFTDJAKARTA1</code>).</span>
+                        </div>
+                    </div>
+                    <div class="flex items-start gap-2.5 p-3 rounded-xl bg-amber-50/50 border border-amber-200/60 text-[11px] text-amber-950">
+                        <div class="w-6 h-6 rounded-lg bg-amber-100 flex items-center justify-center shrink-0 text-amber-700 font-bold text-xs mt-0.5">3</div>
+                        <div>
+                            <span class="font-bold block text-amber-900">Deteksi & Batch Otomatis</span>
+                            <span class="text-amber-800">Distributor & Tanggal terdeteksi otomatis. Kolom <i>Batch No</i> & <i>ED</i> disarankan untuk pelacakan fisik gudang.</span>
+                        </div>
+                    </div>
                 </div>
+
                 @error('file') <p class="text-xs text-red-600 mt-1 font-medium">{{ $message }}</p> @enderror
             </div>
         </div>
