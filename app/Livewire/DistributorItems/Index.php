@@ -5,6 +5,8 @@ namespace App\Livewire\DistributorItems;
 use App\Models\Distributor;
 use App\Models\DistributorItem;
 use App\Models\NetsuiteItem;
+use App\Services\ItemMatchingService;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 use Livewire\Attributes\Layout;
 use Livewire\Component;
@@ -23,6 +25,12 @@ class Index extends Component
     public string $mappingFilter = 'all';
 
     public bool $showModal = false;
+
+    public bool $showBulkModal = false;
+
+    public array $selectedBulkIds = [];
+
+    public array $modalSuggestions = [];
 
     public ?int $editingId = null;
 
@@ -54,6 +62,89 @@ class Index extends Component
         $this->resetPage();
     }
 
+    public function updatedItemName(): void
+    {
+        if (trim($this->item_name) !== '') {
+            $service = app(ItemMatchingService::class);
+            $this->modalSuggestions = $service->findMatches($this->item_name)['top_matches'] ?? [];
+        } else {
+            $this->modalSuggestions = [];
+        }
+    }
+
+    public function selectSuggestion(int $netsuiteId): void
+    {
+        $this->netsuite_item_id = $netsuiteId;
+    }
+
+    public function approveMapping(int $distributorItemId, int $netsuiteItemId): void
+    {
+        $item = DistributorItem::findOrFail($distributorItemId);
+        Gate::authorize('update', $item);
+
+        $netsuite = NetsuiteItem::findOrFail($netsuiteItemId);
+
+        $item->update([
+            'netsuite_item_id' => $netsuite->id,
+            'netsuite_satuan' => $netsuite->default_satuan,
+        ]);
+
+        session()->flash('status', "1-Click Berhasil: Item '{$item->item_name}' telah disetujui & dipetakan ke [{$netsuite->netsuite_id}] {$netsuite->netsuite_name}.");
+    }
+
+    public function openBulkModal(): void
+    {
+        Gate::authorize('create', DistributorItem::class);
+
+        $service = app(ItemMatchingService::class);
+        $unmapped = DistributorItem::unmapped()->get();
+        $suggestions = $service->getSuggestionsForCollection($unmapped);
+
+        $this->selectedBulkIds = array_keys($suggestions);
+        $this->showBulkModal = true;
+    }
+
+    public function toggleAllBulk(array $availableIds): void
+    {
+        if (count($this->selectedBulkIds) === count($availableIds)) {
+            $this->selectedBulkIds = [];
+        } else {
+            $this->selectedBulkIds = $availableIds;
+        }
+    }
+
+    public function approveSelectedBulk(): void
+    {
+        Gate::authorize('create', DistributorItem::class);
+
+        if (empty($this->selectedBulkIds)) {
+            $this->addError('bulk', 'Pilih minimal satu item untuk disetujui.');
+
+            return;
+        }
+
+        $service = app(ItemMatchingService::class);
+        $items = DistributorItem::whereIn('id', $this->selectedBulkIds)->unmapped()->get();
+
+        $approvedCount = 0;
+        DB::transaction(function () use ($items, $service, &$approvedCount) {
+            foreach ($items as $item) {
+                $match = $service->findMatches($item->item_name);
+                if ($match['best_match']) {
+                    $item->update([
+                        'netsuite_item_id' => $match['best_match']->id,
+                        'netsuite_satuan' => $match['best_match']->default_satuan,
+                    ]);
+                    $approvedCount++;
+                }
+            }
+        });
+
+        $this->showBulkModal = false;
+        $this->selectedBulkIds = [];
+        session()->flash('status', "Berhasil! {$approvedCount} item telah disetujui dan dipetakan secara massal ke Master Netsuite.");
+    }
+
     public function openCreate(): void
     {
         Gate::authorize('create', DistributorItem::class);
@@ -62,6 +153,7 @@ class Index extends Component
         $this->item_name = '';
         $this->satuan = '';
         $this->netsuite_item_id = null;
+        $this->modalSuggestions = [];
         $this->resetErrorBag();
         $this->showModal = true;
     }
@@ -76,6 +168,10 @@ class Index extends Component
         $this->item_name = $item->item_name;
         $this->satuan = (string) $item->satuan;
         $this->netsuite_item_id = $item->netsuite_item_id;
+
+        $service = app(ItemMatchingService::class);
+        $this->modalSuggestions = $service->findMatches($item->item_name)['top_matches'] ?? [];
+
         $this->resetErrorBag();
         $this->showModal = true;
     }
@@ -121,7 +217,7 @@ class Index extends Component
         }
 
         $this->showModal = false;
-        $this->reset(['editingId', 'distributor_id', 'item_name', 'satuan', 'netsuite_item_id']);
+        $this->reset(['editingId', 'distributor_id', 'item_name', 'satuan', 'netsuite_item_id', 'modalSuggestions']);
         session()->flash('status', 'Mapping item tersimpan.');
     }
 
@@ -144,11 +240,22 @@ class Index extends Component
             ->orderBy('item_name')
             ->paginate(20);
 
+        $service = app(ItemMatchingService::class);
+        $unmappedOnPage = $items->getCollection()->filter(fn ($i) => ! $i->isMapped());
+        $suggestions = $service->getSuggestionsForCollection($unmappedOnPage);
+
+        // Bulk suggestions across all unmapped items (for toolbar badge & bulk review modal)
+        $allUnmapped = DistributorItem::unmapped()->with('distributor')->get();
+        $bulkSuggestions = $service->getSuggestionsForCollection($allUnmapped);
+
         return view('livewire.distributor-items.index', [
             'items' => $items,
             'distributors' => Distributor::orderBy('name')->get(),
             'netsuiteItems' => NetsuiteItem::orderBy('netsuite_name')->get(),
-            'unmappedCount' => DistributorItem::unmapped()->count(),
+            'unmappedCount' => $allUnmapped->count(),
+            'suggestions' => $suggestions,
+            'bulkSuggestions' => $bulkSuggestions,
+            'allUnmapped' => $allUnmapped,
         ]);
     }
 }

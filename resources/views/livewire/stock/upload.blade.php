@@ -32,11 +32,11 @@
                 <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-5 p-4 rounded-xl bg-[#f8faf9] border border-[#e2e8e5]">
                     <!-- Left: Upload Input -->
                     <div class="flex-1 max-w-xl">
-                        <label class="block text-xs font-mono uppercase tracking-wide text-gray-700 font-semibold mb-1.5 flex items-center gap-1.5">
-                            <svg class="w-4 h-4" style="color: #0d6d5f;" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <label class="flex items-center gap-1.5 text-xs font-mono uppercase tracking-wide text-gray-700 font-semibold mb-1.5">
+                            <svg width="15" height="15" style="width: 15px; height: 15px; min-width: 15px; max-width: 15px; flex-shrink: 0; color: #0d6d5f;" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path>
                             </svg>
-                            Pilih File Excel Template (.xlsx / .xls)
+                            <span>Pilih File Excel Template (.xlsx / .xls)</span>
                         </label>
                         <div class="flex items-center gap-2">
                             <input type="file" wire:model="file" accept=".xlsx,.xls"

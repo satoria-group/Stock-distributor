@@ -28,9 +28,34 @@ class Dashboard extends Component
 
     public int $perPage = 15;
 
+    public string $sortBy = 'item_name';
+
+    public string $sortDir = 'asc';
+
     public function mount(): void
     {
         Gate::authorize('dashboard.view');
+    }
+
+    public function setSort(string $column): void
+    {
+        if ($this->sortBy === $column) {
+            $this->sortDir = $this->sortDir === 'asc' ? 'desc' : 'asc';
+        } else {
+            $this->sortBy = $column;
+            $this->sortDir = 'asc';
+        }
+        $this->resetPage();
+    }
+
+    public function resetFilters(): void
+    {
+        $this->selectedBranchId = null;
+        $this->satuanFilter = '';
+        $this->search = '';
+        $this->sortBy = 'item_name';
+        $this->sortDir = 'asc';
+        $this->resetPage();
     }
 
     public function updatedSelectedGroup(): void
@@ -348,7 +373,49 @@ class Dashboard extends Component
                 'delta' => $delta,
                 'delta_pct' => $deltaPct,
             ];
-        })->sortBy(fn ($r) => $r->entry->distributorItem?->item_name ?? '')->values();
+        });
+
+        // 9. Interactive Column Sorting
+        $isDesc = $this->sortDir === 'desc';
+        $mappedTableRows = $mappedTableRows->sort(function ($a, $b) use ($isDesc) {
+            switch ($this->sortBy) {
+                case 'quantity':
+                    $valA = (float) $a->entry->quantity;
+                    $valB = (float) $b->entry->quantity;
+                    break;
+                case 'satuan':
+                    $valA = strtolower((string) ($a->entry->satuan ?? ''));
+                    $valB = strtolower((string) ($b->entry->satuan ?? ''));
+                    break;
+                case 'distributor':
+                    $valA = strtolower((string) ($a->entry->distributor?->name ?? ''));
+                    $valB = strtolower((string) ($b->entry->distributor?->name ?? ''));
+                    break;
+                case 'delta':
+                    $valA = $a->delta_pct !== null ? (float) $a->delta_pct : ($isDesc ? -9999999 : 9999999);
+                    $valB = $b->delta_pct !== null ? (float) $b->delta_pct : ($isDesc ? -9999999 : 9999999);
+                    break;
+                case 'expired_date':
+                    $valA = $a->entry->expired_date ? $a->entry->expired_date->timestamp : ($isDesc ? 0 : PHP_INT_MAX);
+                    $valB = $b->entry->expired_date ? $b->entry->expired_date->timestamp : ($isDesc ? 0 : PHP_INT_MAX);
+                    break;
+                case 'batch_no':
+                    $valA = strtolower((string) ($a->entry->batch_no ?? ''));
+                    $valB = strtolower((string) ($b->entry->batch_no ?? ''));
+                    break;
+                case 'item_name':
+                default:
+                    $valA = strtolower((string) ($a->entry->distributorItem?->item_name ?? ''));
+                    $valB = strtolower((string) ($b->entry->distributorItem?->item_name ?? ''));
+                    break;
+            }
+
+            if ($valA == $valB) {
+                return 0;
+            }
+
+            return ($valA < $valB xor $isDesc) ? -1 : 1;
+        })->values();
 
         // Paginate secara manual
         $page = $this->getPage();

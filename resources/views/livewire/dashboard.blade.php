@@ -176,7 +176,22 @@
         <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-3 pb-4 border-b border-[#e7e9e3] mb-4">
             <div>
                 <h3 class="text-sm font-bold text-gray-900">Detail Stock On Hand</h3>
-                <p class="text-xs text-gray-500 mt-0.5">Daftar stok per cabang distributor dan perubahan kuantitas</p>
+                <div class="flex items-center gap-2 mt-0.5">
+                    <p class="text-xs text-gray-500">Daftar stok per cabang distributor dan perubahan kuantitas</p>
+                    @if ($sortBy !== 'item_name' || $sortDir !== 'asc')
+                        <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-mono bg-emerald-50 text-emerald-800 border border-emerald-200">
+                            <span>Sortir: <b>{{ match($sortBy) {
+                                'quantity' => 'Kuantitas',
+                                'distributor' => 'Distributor',
+                                'satuan' => 'Satuan',
+                                'delta' => 'Δ vs Sebelumnya',
+                                'expired_date' => 'ED / Batch',
+                                default => 'Nama Produk',
+                            } }}</b> ({{ $sortDir === 'asc' ? 'A→Z / Terkecil' : 'Z→A / Terbanyak' }})</span>
+                            <button type="button" wire:click="$set('sortBy', 'item_name'); $set('sortDir', 'asc');" class="text-emerald-600 hover:text-emerald-900 ml-0.5 font-bold cursor-pointer" title="Kembalikan sortir default">×</button>
+                        </span>
+                    @endif
+                </div>
             </div>
 
             <!-- Filter Controls -->
@@ -206,7 +221,7 @@
                 <!-- Search Input -->
                 <div class="relative w-48 sm:w-60">
                     <div class="absolute inset-y-0 left-0 pl-2.5 flex items-center pointer-events-none text-gray-400">
-                        <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <svg width="13" height="13" style="width: 13px; height: 13px; min-width: 13px; flex-shrink: 0;" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
                         </svg>
                     </div>
@@ -216,10 +231,14 @@
                 </div>
 
                 <!-- Reset Filter Button -->
-                @if ($selectedBranchId || $satuanFilter || $search)
-                    <button type="button" wire:click="$set('selectedBranchId', null); $set('satuanFilter', ''); $set('search', '')"
-                            class="px-2.5 py-2 rounded-lg text-xs font-medium text-gray-500 hover:text-gray-800 hover:bg-gray-100 border border-gray-200 transition cursor-pointer">
-                        Reset Filter
+                @if ($selectedBranchId || $satuanFilter || $search || $sortBy !== 'item_name' || $sortDir !== 'asc')
+                    <button type="button" wire:click="resetFilters"
+                            class="px-2.5 py-2 rounded-lg text-xs font-medium text-gray-500 hover:text-gray-800 hover:bg-gray-100 border border-gray-200 transition cursor-pointer inline-flex items-center gap-1.5"
+                            title="Reset semua filter dan sortir ke kondisi awal">
+                        <svg width="12" height="12" style="width: 12px; height: 12px; min-width: 12px; flex-shrink: 0;" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
+                        </svg>
+                        <span>Reset</span>
                     </button>
                 @endif
             </div>
@@ -231,12 +250,150 @@
                 <thead class="bg-[#f7f5ed] text-gray-600 font-mono uppercase text-[11px] border-b border-gray-200">
                     <tr>
                         <th class="text-center py-2.5 px-3 w-12">No</th>
-                        <th class="text-left py-2.5 px-3">Item Produk</th>
-                        <th class="text-center py-2.5 px-3 w-20">Satuan</th>
-                        <th class="text-left py-2.5 px-3">Cabang Distributor</th>
-                        <th class="text-right py-2.5 px-3 w-28">Kuantitas</th>
-                        <th class="text-right py-2.5 px-3 w-32">Δ vs Sebelumnya</th>
-                        <th class="text-left py-2.5 px-3 w-40">ED / Batch</th>
+
+                        <!-- Item Produk (Sortable) -->
+                        <th wire:click="setSort('item_name')"
+                            class="text-left py-2.5 px-3 cursor-pointer select-none hover:bg-[#edeae0] transition group"
+                            title="Klik untuk mengurutkan berdasarkan Nama Produk">
+                            <div class="inline-flex items-center gap-1.5">
+                                <span class="{{ $sortBy === 'item_name' ? 'text-brand font-bold' : '' }}" style="{{ $sortBy === 'item_name' ? 'color: #0d6d5f;' : '' }}">Item Produk</span>
+                                @if ($sortBy === 'item_name')
+                                    @if ($sortDir === 'asc')
+                                        <svg width="12" height="12" style="width: 12px; height: 12px; min-width: 12px; flex-shrink: 0; color: #0d6d5f;" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 15l7-7 7 7"></path>
+                                        </svg>
+                                    @else
+                                        <svg width="12" height="12" style="width: 12px; height: 12px; min-width: 12px; flex-shrink: 0; color: #0d6d5f;" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M19 9l-7 7-7-7"></path>
+                                        </svg>
+                                    @endif
+                                @else
+                                    <svg width="12" height="12" style="width: 12px; height: 12px; min-width: 12px; flex-shrink: 0;" class="text-gray-300 group-hover:text-gray-500 transition" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4"></path>
+                                    </svg>
+                                @endif
+                            </div>
+                        </th>
+
+                        <!-- Satuan (Sortable) -->
+                        <th wire:click="setSort('satuan')"
+                            class="text-center py-2.5 px-3 w-20 cursor-pointer select-none hover:bg-[#edeae0] transition group"
+                            title="Klik untuk mengurutkan berdasarkan Satuan">
+                            <div class="inline-flex items-center justify-center gap-1.5 w-full">
+                                <span class="{{ $sortBy === 'satuan' ? 'text-brand font-bold' : '' }}" style="{{ $sortBy === 'satuan' ? 'color: #0d6d5f;' : '' }}">Satuan</span>
+                                @if ($sortBy === 'satuan')
+                                    @if ($sortDir === 'asc')
+                                        <svg width="12" height="12" style="width: 12px; height: 12px; min-width: 12px; flex-shrink: 0; color: #0d6d5f;" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 15l7-7 7 7"></path>
+                                        </svg>
+                                    @else
+                                        <svg width="12" height="12" style="width: 12px; height: 12px; min-width: 12px; flex-shrink: 0; color: #0d6d5f;" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M19 9l-7 7-7-7"></path>
+                                        </svg>
+                                    @endif
+                                @else
+                                    <svg width="12" height="12" style="width: 12px; height: 12px; min-width: 12px; flex-shrink: 0;" class="text-gray-300 group-hover:text-gray-500 transition" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4"></path>
+                                    </svg>
+                                @endif
+                            </div>
+                        </th>
+
+                        <!-- Cabang Distributor (Sortable) -->
+                        <th wire:click="setSort('distributor')"
+                            class="text-left py-2.5 px-3 cursor-pointer select-none hover:bg-[#edeae0] transition group"
+                            title="Klik untuk mengurutkan berdasarkan Cabang Distributor">
+                            <div class="inline-flex items-center gap-1.5">
+                                <span class="{{ $sortBy === 'distributor' ? 'text-brand font-bold' : '' }}" style="{{ $sortBy === 'distributor' ? 'color: #0d6d5f;' : '' }}">Cabang Distributor</span>
+                                @if ($sortBy === 'distributor')
+                                    @if ($sortDir === 'asc')
+                                        <svg width="12" height="12" style="width: 12px; height: 12px; min-width: 12px; flex-shrink: 0; color: #0d6d5f;" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 15l7-7 7 7"></path>
+                                        </svg>
+                                    @else
+                                        <svg width="12" height="12" style="width: 12px; height: 12px; min-width: 12px; flex-shrink: 0; color: #0d6d5f;" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M19 9l-7 7-7-7"></path>
+                                        </svg>
+                                    @endif
+                                @else
+                                    <svg width="12" height="12" style="width: 12px; height: 12px; min-width: 12px; flex-shrink: 0;" class="text-gray-300 group-hover:text-gray-500 transition" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4"></path>
+                                    </svg>
+                                @endif
+                            </div>
+                        </th>
+
+                        <!-- Kuantitas (Sortable) -->
+                        <th wire:click="setSort('quantity')"
+                            class="text-right py-2.5 px-3 w-28 cursor-pointer select-none hover:bg-[#edeae0] transition group"
+                            title="Klik untuk mengurutkan berdasarkan Kuantitas Stok">
+                            <div class="inline-flex items-center justify-end gap-1.5 w-full">
+                                <span class="{{ $sortBy === 'quantity' ? 'text-brand font-bold' : '' }}" style="{{ $sortBy === 'quantity' ? 'color: #0d6d5f;' : '' }}">Kuantitas</span>
+                                @if ($sortBy === 'quantity')
+                                    @if ($sortDir === 'asc')
+                                        <svg width="12" height="12" style="width: 12px; height: 12px; min-width: 12px; flex-shrink: 0; color: #0d6d5f;" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 15l7-7 7 7"></path>
+                                        </svg>
+                                    @else
+                                        <svg width="12" height="12" style="width: 12px; height: 12px; min-width: 12px; flex-shrink: 0; color: #0d6d5f;" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M19 9l-7 7-7-7"></path>
+                                        </svg>
+                                    @endif
+                                @else
+                                    <svg width="12" height="12" style="width: 12px; height: 12px; min-width: 12px; flex-shrink: 0;" class="text-gray-300 group-hover:text-gray-500 transition" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4"></path>
+                                    </svg>
+                                @endif
+                            </div>
+                        </th>
+
+                        <!-- Delta vs Sebelumnya (Sortable) -->
+                        <th wire:click="setSort('delta')"
+                            class="text-right py-2.5 px-3 w-32 cursor-pointer select-none hover:bg-[#edeae0] transition group"
+                            title="Klik untuk mengurutkan berdasarkan Perubahan Delta">
+                            <div class="inline-flex items-center justify-end gap-1.5 w-full">
+                                <span class="{{ $sortBy === 'delta' ? 'text-brand font-bold' : '' }}" style="{{ $sortBy === 'delta' ? 'color: #0d6d5f;' : '' }}">Δ vs Sebelumnya</span>
+                                @if ($sortBy === 'delta')
+                                    @if ($sortDir === 'asc')
+                                        <svg width="12" height="12" style="width: 12px; height: 12px; min-width: 12px; flex-shrink: 0; color: #0d6d5f;" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 15l7-7 7 7"></path>
+                                        </svg>
+                                    @else
+                                        <svg width="12" height="12" style="width: 12px; height: 12px; min-width: 12px; flex-shrink: 0; color: #0d6d5f;" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M19 9l-7 7-7-7"></path>
+                                        </svg>
+                                    @endif
+                                @else
+                                    <svg width="12" height="12" style="width: 12px; height: 12px; min-width: 12px; flex-shrink: 0;" class="text-gray-300 group-hover:text-gray-500 transition" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4"></path>
+                                    </svg>
+                                @endif
+                            </div>
+                        </th>
+
+                        <!-- ED / Batch (Sortable) -->
+                        <th wire:click="setSort('expired_date')"
+                            class="text-left py-2.5 px-3 w-40 cursor-pointer select-none hover:bg-[#edeae0] transition group"
+                            title="Klik untuk mengurutkan berdasarkan Tanggal Kedaluwarsa">
+                            <div class="inline-flex items-center gap-1.5">
+                                <span class="{{ $sortBy === 'expired_date' ? 'text-brand font-bold' : '' }}" style="{{ $sortBy === 'expired_date' ? 'color: #0d6d5f;' : '' }}">ED / Batch</span>
+                                @if ($sortBy === 'expired_date')
+                                    @if ($sortDir === 'asc')
+                                        <svg width="12" height="12" style="width: 12px; height: 12px; min-width: 12px; flex-shrink: 0; color: #0d6d5f;" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 15l7-7 7 7"></path>
+                                        </svg>
+                                    @else
+                                        <svg width="12" height="12" style="width: 12px; height: 12px; min-width: 12px; flex-shrink: 0; color: #0d6d5f;" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M19 9l-7 7-7-7"></path>
+                                        </svg>
+                                    @endif
+                                @else
+                                    <svg width="12" height="12" style="width: 12px; height: 12px; min-width: 12px; flex-shrink: 0;" class="text-gray-300 group-hover:text-gray-500 transition" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4"></path>
+                                    </svg>
+                                @endif
+                            </div>
+                        </th>
                     </tr>
                 </thead>
                 <tbody class="divide-y divide-gray-100">
