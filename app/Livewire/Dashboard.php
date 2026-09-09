@@ -12,11 +12,15 @@ use Illuminate\Support\Facades\Gate;
 use Livewire\Attributes\Layout;
 use Livewire\Component;
 use Livewire\WithPagination;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 
 #[Layout('layouts.app', ['title' => 'Dashboard Stock Distributor', 'subtitle' => 'Ringkasan posisi stok on hand, analitik per sediaan, dan kontrol logistik'])]
 class Dashboard extends Component
 {
     use WithPagination;
+
+    // Main Navigation Tabs: 'stock' (Posisi Stok), 'expiry' (FEFO), 'compliance' (Kepatuhan Upload)
+    public string $activeTab = 'stock';
 
     public string $selectedGroup = 'ALL';
 
@@ -32,9 +36,63 @@ class Dashboard extends Component
 
     public string $sortDir = 'asc';
 
+    // Tab 2: Monitoring Kedaluwarsa (FEFO)
+    public string $expiryRiskFilter = 'all'; // 'all', 'critical', 'warning', 'safe', 'expired'
+
+    public string $expirySearch = '';
+
+    // Tab 3: Kepatuhan Upload Cabang
+    public string $complianceDate = '';
+
+    public string $complianceStatus = 'all'; // 'all', 'submitted', 'missing'
+
+    public string $complianceSearch = '';
+
     public function mount(): void
     {
         Gate::authorize('dashboard.view');
+    }
+
+    public function switchTab(string $tab, ?string $subFilter = null): void
+    {
+        $this->activeTab = $tab;
+        if ($tab === 'expiry' && $subFilter) {
+            $this->expiryRiskFilter = $subFilter;
+        }
+        if ($tab === 'compliance' && $subFilter) {
+            $this->complianceStatus = $subFilter;
+        }
+        $this->resetPage();
+    }
+
+    public function updatedActiveTab(): void
+    {
+        $this->resetPage();
+    }
+
+    public function updatedExpiryRiskFilter(): void
+    {
+        $this->resetPage();
+    }
+
+    public function updatedExpirySearch(): void
+    {
+        $this->resetPage();
+    }
+
+    public function updatedComplianceDate(): void
+    {
+        $this->resetPage();
+    }
+
+    public function updatedComplianceStatus(): void
+    {
+        $this->resetPage();
+    }
+
+    public function updatedComplianceSearch(): void
+    {
+        $this->resetPage();
     }
 
     public function setSort(string $column): void
@@ -55,6 +113,10 @@ class Dashboard extends Component
         $this->search = '';
         $this->sortBy = 'item_name';
         $this->sortDir = 'asc';
+        $this->expiryRiskFilter = 'all';
+        $this->expirySearch = '';
+        $this->complianceStatus = 'all';
+        $this->complianceSearch = '';
         $this->resetPage();
     }
 
@@ -437,6 +499,154 @@ class Dashboard extends Component
             ->take(8)
             ->values();
 
+        // 10. Tab 2: Monitoring Kedaluwarsa (FEFO Watchlist)
+        $fefoAllRows = $allCurrentEntries->filter(fn ($r) => $r->expired_date !== null)->map(function ($e) {
+            $days = (int) Carbon::today()->diffInDays($e->expired_date, false);
+            if ($days < 0) {
+                $tier = 'expired';
+                $label = 'Sudah Expired';
+                $badgeClass = 'bg-red-100 text-red-800 border-red-300';
+                $action = 'Karantina & Siapkan Retur';
+            } elseif ($days <= 90) {
+                $tier = 'critical';
+                $label = 'Kritis (< 3 Bulan)';
+                $badgeClass = 'bg-rose-100 text-rose-800 border-rose-300';
+                $action = 'Prioritas Pengeluaran (FEFO) Segera';
+            } elseif ($days <= 180) {
+                $tier = 'warning';
+                $label = 'Waspada (3 - 6 Bulan)';
+                $badgeClass = 'bg-amber-100 text-amber-800 border-amber-300';
+                $action = 'Monitoring & Akselerasi Penjualan';
+            } else {
+                $tier = 'safe';
+                $label = 'Aman (> 6 Bulan)';
+                $badgeClass = 'bg-emerald-100 text-emerald-800 border-emerald-300';
+                $action = 'Stok Terkendali Sesuai Rencana';
+            }
+
+            return (object) [
+                'entry' => $e,
+                'days' => $days,
+                'tier' => $tier,
+                'label' => $label,
+                'badgeClass' => $badgeClass,
+                'action' => $action,
+            ];
+        });
+
+        $fefoSummary = [
+            'total' => $fefoAllRows->count(),
+            'expired' => $fefoAllRows->where('tier', 'expired')->count(),
+            'critical' => $fefoAllRows->where('tier', 'critical')->count(),
+            'warning' => $fefoAllRows->where('tier', 'warning')->count(),
+            'safe' => $fefoAllRows->where('tier', 'safe')->count(),
+            'total_qty_at_risk' => (float) $fefoAllRows->whereIn('tier', ['expired', 'critical', 'warning'])->sum(fn ($r) => (float) $r->entry->quantity),
+        ];
+
+        $fefoFiltered = $fefoAllRows;
+        if ($this->expiryRiskFilter !== 'all') {
+            $fefoFiltered = $fefoFiltered->where('tier', $this->expiryRiskFilter);
+        }
+        if (trim($this->expirySearch) !== '') {
+            $term = mb_strtolower(trim($this->expirySearch));
+            $fefoFiltered = $fefoFiltered->filter(function ($r) use ($term) {
+                $name = mb_strtolower($r->entry->distributorItem?->item_name ?? '');
+                $ns = mb_strtolower($r->entry->distributorItem?->netsuiteItem?->netsuite_name ?? '');
+                $dist = mb_strtolower($r->entry->distributor?->name ?? '');
+                $code = mb_strtolower($r->entry->distributor?->distributor_code ?? '');
+                $batch = mb_strtolower($r->entry->batch_no ?? '');
+
+                return str_contains($name, $term) || str_contains($ns, $term) || str_contains($dist, $term) || str_contains($code, $term) || str_contains($batch, $term);
+            });
+        }
+        $fefoFiltered = $fefoFiltered->sortBy('days')->values();
+
+        $fefoTotal = $fefoFiltered->count();
+        $fefoSlice = $fefoFiltered->slice(($page - 1) * $this->perPage, $this->perPage)->values();
+        $fefoTablePaginated = new LengthAwarePaginator(
+            $fefoSlice,
+            $fefoTotal,
+            $this->perPage,
+            $page,
+            ['path' => '#', 'pageName' => 'page']
+        );
+
+        // 11. Tab 3: Kepatuhan Upload Cabang (Compliance Tracker)
+        $targetComplianceDate = $this->complianceDate ?: ($latestSnapshotDate ?: Carbon::today()->toDateString());
+
+        $submittedDistributorIds = StockEntry::where('tanggal', $targetComplianceDate)
+            ->distinct()
+            ->pluck('distributor_id')
+            ->all();
+
+        $lastUploads = StockEntry::query()
+            ->select('distributor_id', DB::raw('MAX(tanggal) as last_date'), DB::raw('COUNT(*) as total_rows'), DB::raw('SUM(quantity) as total_qty'))
+            ->groupBy('distributor_id')
+            ->get()
+            ->keyBy('distributor_id');
+
+        $complianceAllRows = $availableBranches->map(function ($b) use ($submittedDistributorIds, $lastUploads, $targetComplianceDate) {
+            $hasSubmitted = in_array($b->id, $submittedDistributorIds);
+            $last = $lastUploads->get($b->id);
+            $lastDate = $last?->last_date;
+            $daysOverdue = null;
+            if (! $hasSubmitted && $lastDate) {
+                $daysOverdue = (int) Carbon::parse($lastDate)->diffInDays(Carbon::parse($targetComplianceDate));
+            }
+
+            return (object) [
+                'distributor' => $b,
+                'hasSubmitted' => $hasSubmitted,
+                'lastDate' => $lastDate,
+                'daysOverdue' => $daysOverdue,
+                'totalRows' => $last?->total_rows ?? 0,
+                'totalQty' => (float) ($last?->total_qty ?? 0),
+            ];
+        });
+
+        $complianceSummary = [
+            'total_branches' => $complianceAllRows->count(),
+            'total_submitted' => $complianceAllRows->where('hasSubmitted', true)->count(),
+            'total_missing' => $complianceAllRows->where('hasSubmitted', false)->count(),
+            'compliance_rate' => $complianceAllRows->count() > 0 ? round(($complianceAllRows->where('hasSubmitted', true)->count() / $complianceAllRows->count()) * 100, 1) : 0,
+            'target_date' => $targetComplianceDate,
+        ];
+
+        $complianceFiltered = $complianceAllRows;
+        if ($this->complianceStatus === 'submitted') {
+            $complianceFiltered = $complianceFiltered->where('hasSubmitted', true);
+        } elseif ($this->complianceStatus === 'missing') {
+            $complianceFiltered = $complianceFiltered->where('hasSubmitted', false);
+        }
+
+        if (trim($this->complianceSearch) !== '') {
+            $term = mb_strtolower(trim($this->complianceSearch));
+            $complianceFiltered = $complianceFiltered->filter(function ($r) use ($term) {
+                $name = mb_strtolower($r->distributor->name ?? '');
+                $code = mb_strtolower($r->distributor->distributor_code ?? '');
+
+                return str_contains($name, $term) || str_contains($code, $term);
+            });
+        }
+
+        $complianceFiltered = $complianceFiltered->sort(function ($a, $b) {
+            if ($a->hasSubmitted !== $b->hasSubmitted) {
+                return $a->hasSubmitted ? 1 : -1;
+            }
+
+            return strcmp($a->distributor->distributor_code, $b->distributor->distributor_code);
+        })->values();
+
+        $complianceTotal = $complianceFiltered->count();
+        $complianceSlice = $complianceFiltered->slice(($page - 1) * $this->perPage, $this->perPage)->values();
+        $complianceTablePaginated = new LengthAwarePaginator(
+            $complianceSlice,
+            $complianceTotal,
+            $this->perPage,
+            $page,
+            ['path' => '#', 'pageName' => 'page']
+        );
+
         // Dispatch browser event agar chart selalu sinkron dengan data terfilter
         $this->dispatch('charts-updated', [
             'top' => $chartTopProducts,
@@ -452,6 +662,117 @@ class Dashboard extends Component
             'chartDonut' => $chartDonut,
             'expiryAlerts' => $expiryAlerts,
             'totalDisplayRows' => $totalRows,
+            'activeTab' => $this->activeTab,
+            'selectedGroup' => $this->selectedGroup,
+            'selectedBranchId' => $this->selectedBranchId,
+            'search' => $this->search,
+            'satuanFilter' => $this->satuanFilter,
+            'sortBy' => $this->sortBy,
+            'sortDir' => $this->sortDir,
+            'perPage' => $this->perPage,
+            'expiryRiskFilter' => $this->expiryRiskFilter,
+            'expirySearch' => $this->expirySearch,
+            'complianceDate' => $this->complianceDate,
+            'complianceStatus' => $this->complianceStatus,
+            'complianceSearch' => $this->complianceSearch,
+            'fefoTable' => $fefoTablePaginated,
+            'fefoSummary' => $fefoSummary,
+            'complianceTable' => $complianceTablePaginated,
+            'complianceSummary' => $complianceSummary,
+        ]);
+    }
+
+    public function exportNearEdCsv(): StreamedResponse
+    {
+        Gate::authorize('dashboard.view');
+
+        $latestPerDistQuery = StockEntry::query()
+            ->select('distributor_id', DB::raw('MAX(tanggal) as max_tanggal'))
+            ->groupBy('distributor_id');
+
+        if ($this->selectedBranchId) {
+            $latestPerDistQuery->where('distributor_id', $this->selectedBranchId);
+        }
+
+        $latestPerDist = $latestPerDistQuery->get();
+
+        $entries = collect();
+        if ($latestPerDist->isNotEmpty()) {
+            $entries = StockEntry::query()
+                ->with(['distributor', 'distributorItem.netsuiteItem'])
+                ->where(function ($query) use ($latestPerDist) {
+                    foreach ($latestPerDist as $ld) {
+                        $query->orWhere(function ($sub) use ($ld) {
+                            $sub->where('distributor_id', $ld->distributor_id)
+                                ->where('tanggal', $ld->max_tanggal);
+                        });
+                    }
+                })
+                ->whereNotNull('expired_date')
+                ->get();
+        }
+
+        $mapped = $entries->map(function ($e) {
+            $days = (int) Carbon::today()->diffInDays($e->expired_date, false);
+            if ($days < 0) {
+                $status = 'Sudah Expired';
+            } elseif ($days <= 90) {
+                $status = 'Kritis (< 3 Bulan)';
+            } elseif ($days <= 180) {
+                $status = 'Waspada (3 - 6 Bulan)';
+            } else {
+                $status = 'Aman (> 6 Bulan)';
+            }
+
+            return [
+                'entry' => $e,
+                'days' => $days,
+                'status' => $status,
+            ];
+        })->sortBy('days')->values();
+
+        $filename = 'laporan_near_ed_' . Carbon::today()->format('Y-m-d') . '.csv';
+
+        return response()->streamDownload(function () use ($mapped) {
+            $handle = fopen('php://output', 'w');
+            fprintf($handle, chr(0xEF).chr(0xBB).chr(0xBF)); // UTF-8 BOM
+            fputcsv($handle, [
+                'Grup',
+                'Kode Distributor',
+                'Nama Cabang / Distributor',
+                'Nama Item Distributor',
+                'Kode Netsuite',
+                'Nama Produk Netsuite',
+                'Nomor Batch',
+                'Tanggal Kedaluwarsa',
+                'Sisa Hari',
+                'Status Kedaluwarsa',
+                'Kuantitas',
+                'Satuan',
+            ]);
+
+            foreach ($mapped as $r) {
+                $e = $r['entry'];
+                $ns = $e->distributorItem?->netsuiteItem;
+                fputcsv($handle, [
+                    self::getDistributorGroup($e->distributor?->distributor_code),
+                    $e->distributor?->distributor_code,
+                    $e->distributor?->name,
+                    $e->distributorItem?->item_name ?? '—',
+                    $ns?->netsuite_id ?? '—',
+                    $ns?->netsuite_name ?? 'Belum Mapping',
+                    $e->batch_no ?? '—',
+                    $e->expired_date ? $e->expired_date->format('Y-m-d') : '—',
+                    $r['days'],
+                    $r['status'],
+                    $e->quantity,
+                    $e->satuan,
+                ]);
+            }
+            fclose($handle);
+        }, $filename, [
+            'Content-Type' => 'text/csv; charset=UTF-8',
+            'Content-Disposition' => "attachment; filename=\"{$filename}\"",
         ]);
     }
 }
