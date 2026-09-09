@@ -3,13 +3,13 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Masuk — {{ config('app.name') }}</title>
+    <title>Masuk — <?php echo e(config('app.name')); ?></title>
 
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:ital,wght@0,300;0,400;0,500;0,600;0,700;0,800;1,400;1,600&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
 
-    @vite(['resources/css/app.css', 'resources/js/app.js'])
+    <?php echo app('Illuminate\Foundation\Vite')(['resources/css/app.css', 'resources/js/app.js']); ?>
 </head>
 <body class="bg-[#f8fafc] text-slate-900 font-sans antialiased min-h-screen flex items-center justify-center p-5 selection:bg-[#0d6d5f] selection:text-white" style="font-family: 'Plus Jakarta Sans', sans-serif;">
     <div class="w-full max-w-md">
@@ -32,20 +32,20 @@
                 <p class="text-xs text-slate-500 mt-0.5">Silakan masuk dengan akun internal Satoria Anda</p>
             </div>
 
-            @if ($errors->any())
+            <?php if(\Livewire\Mechanisms\ExtendBlade\ExtendBlade::isRenderingLivewireComponent()): ?><!--[if BLOCK]><![endif]--><?php endif; ?><?php if($errors->any()): ?>
                 <div class="mb-5 rounded-2xl bg-rose-50 border border-rose-200 text-rose-700 text-xs px-4 py-3 font-semibold flex items-center gap-2">
                     <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
                     </svg>
-                    <span>{{ $errors->first() }}</span>
+                    <span><?php echo e($errors->first()); ?></span>
                 </div>
-            @endif
+            <?php endif; ?><?php if(\Livewire\Mechanisms\ExtendBlade\ExtendBlade::isRenderingLivewireComponent()): ?><!--[if ENDBLOCK]><![endif]--><?php endif; ?>
 
-            <form method="POST" action="{{ route('login') }}" class="space-y-4">
-                @csrf
+            <form method="POST" action="<?php echo e(route('login')); ?>" class="space-y-4">
+                <?php echo csrf_field(); ?>
                 <div>
                     <label class="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1.5">Alamat Email</label>
-                    <input type="email" name="email" value="{{ old('email') }}" required autofocus
+                    <input type="email" name="email" value="<?php echo e(old('email')); ?>" required autofocus
                            placeholder="nama@satoriagroup.co.id"
                            class="w-full rounded-xl border border-slate-200 px-4 py-2.5 text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#0d6d5f]/25 focus:border-[#0d6d5f] transition shadow-2xs">
                 </div>
@@ -82,8 +82,9 @@
         </div>
 
         <p class="text-center text-[11px] text-slate-400 mt-6 font-medium">
-            &copy; {{ date('Y') }} PT Satoria Agro Industri / Satoria Logistics Hub
+            &copy; <?php echo e(date('Y')); ?> PT Satoria Agro Industri / Satoria Logistics Hub
         </p>
     </div>
 </body>
 </html>
+<?php /**PATH C:\Users\Najmi\Documents\satoria\Stock-distributor\resources\views/auth/login.blade.php ENDPATH**/ ?>

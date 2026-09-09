@@ -1,77 +1,107 @@
 <div>
-    <div class="flex items-center justify-between gap-4 mb-5">
-        <input type="text" wire:model.live.debounce.300ms="search" placeholder="Cari kode atau nama distributor..."
-               class="w-80 rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand focus:border-brand">
+    <div class="flex flex-wrap items-center justify-between gap-4 mb-6">
+        <div class="relative w-full sm:w-96">
+            <div class="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400">
+                <svg width="15" height="15" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
+                </svg>
+            </div>
+            <input type="text" wire:model.live.debounce.300ms="search" placeholder="Cari kode atau nama distributor..."
+                   class="w-full pl-10 pr-4 py-2.5 text-xs rounded-xl border border-slate-200 bg-white text-slate-800 focus:outline-none focus:ring-2 focus:ring-[#0d6d5f]/25 focus:border-[#0d6d5f] transition shadow-2xs">
+        </div>
 
         @can('create', \App\Models\Distributor::class)
-        <button wire:click="openCreate" class="bg-brand hover:bg-brand-dark text-white text-sm font-medium rounded-lg px-4 py-2">
-            + Tambah Distributor
+        <button wire:click="openCreate" class="inline-flex items-center gap-2 bg-[#0d6d5f] hover:bg-[#07352d] text-white text-xs font-bold rounded-xl px-4 py-2.5 transition shadow-2xs cursor-pointer">
+            <svg width="15" height="15" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.2" d="M12 4v16m8-8H4"/>
+            </svg>
+            <span>Tambah Distributor</span>
         </button>
         @endcan
     </div>
 
-    <div class="bg-white border border-[#e7e9e3] rounded-xl overflow-hidden">
-        <table class="w-full text-sm">
-            <thead class="bg-[#eef1ea] text-[11px] uppercase tracking-wide text-gray-500 font-mono">
+    <div class="bg-white border border-slate-200/80 rounded-2xl overflow-hidden shadow-xs">
+        <table class="w-full text-xs text-left">
+            <thead class="bg-slate-50/90 text-[11px] uppercase tracking-wider text-slate-500 font-bold border-b border-slate-200">
                 <tr>
-                    <th class="text-left px-4 py-2.5">Kode</th>
-                    <th class="text-left px-4 py-2.5">Nama Distributor</th>
-                    <th class="text-left px-4 py-2.5">Status</th>
-                    <th class="text-right px-4 py-2.5">Aksi</th>
+                    <th class="px-5 py-3.5 w-40">Kode</th>
+                    <th class="px-5 py-3.5">Nama Distributor</th>
+                    <th class="px-5 py-3.5 w-32 text-center">Status</th>
+                    <th class="px-5 py-3.5 w-36 text-right">Aksi</th>
                 </tr>
             </thead>
-            <tbody class="divide-y divide-[#e7e9e3]">
+            <tbody class="divide-y divide-slate-100 bg-white">
                 @forelse ($distributors as $distributor)
-                    <tr class="hover:bg-gray-50">
-                        <td class="px-4 py-2.5 font-mono text-xs">{{ $distributor->distributor_code }}</td>
-                        <td class="px-4 py-2.5">{{ $distributor->name }}</td>
-                        <td class="px-4 py-2.5">
+                    <tr class="hover:bg-slate-50/80 transition">
+                        <td class="px-5 py-3.5 font-mono text-slate-700 font-semibold text-xs">{{ $distributor->distributor_code }}</td>
+                        <td class="px-5 py-3.5 font-bold text-slate-900 text-xs">{{ $distributor->name }}</td>
+                        <td class="px-5 py-3.5 text-center">
                             @if ($distributor->is_active)
-                                <span class="text-xs font-mono uppercase bg-brand-soft text-brand-dark rounded-full px-2 py-0.5">Aktif</span>
+                                <span class="inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-bold bg-emerald-50 text-emerald-800 border border-emerald-200">Aktif</span>
                             @else
-                                <span class="text-xs font-mono uppercase bg-gray-100 text-gray-500 rounded-full px-2 py-0.5">Nonaktif</span>
+                                <span class="inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-medium bg-slate-100 text-slate-600 border border-slate-200">Nonaktif</span>
                             @endif
                         </td>
-                        <td class="px-4 py-2.5 text-right space-x-3">
+                        <td class="px-5 py-3.5 text-right space-x-1.5">
                             @can('update', $distributor)
-                            <button wire:click="openEdit({{ $distributor->id }})" class="text-brand hover:underline text-xs font-medium">Edit</button>
+                            <button type="button" wire:click="openEdit({{ $distributor->id }})"
+                                    class="inline-flex items-center justify-center w-8 h-8 rounded-xl text-[#0d6d5f] bg-[#e6f4f1] hover:bg-[#0d6d5f] hover:text-white border border-teal-200/60 transition shadow-2xs cursor-pointer"
+                                    title="Edit Distributor ({{ $distributor->name }})">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/>
+                                </svg>
+                            </button>
                             @endcan
                             @can('delete', $distributor)
-                            <button wire:click="delete({{ $distributor->id }})" wire:confirm="Hapus distributor {{ $distributor->name }}?" class="text-red-600 hover:underline text-xs font-medium">Hapus</button>
+                            <button type="button" wire:click="delete({{ $distributor->id }})" wire:confirm="Hapus distributor {{ $distributor->name }}?"
+                                    class="inline-flex items-center justify-center w-8 h-8 rounded-xl text-rose-600 bg-rose-50 hover:bg-rose-600 hover:text-white border border-rose-200/60 transition shadow-2xs cursor-pointer"
+                                    title="Hapus Distributor">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+                                </svg>
+                            </button>
                             @endcan
                         </td>
                     </tr>
                 @empty
-                    <tr><td colspan="4" class="px-4 py-8 text-center text-gray-400 text-sm">Belum ada distributor.</td></tr>
+                    <tr>
+                        <td colspan="4" class="px-5 py-14 text-center text-slate-400">
+                            <div class="text-3xl mb-2">🏢</div>
+                            <div class="font-bold text-slate-700 text-sm">Belum ada data distributor</div>
+                            <div class="text-xs text-slate-400 mt-0.5">Distributor mitra belum terdaftar dalam sistem.</div>
+                        </td>
+                    </tr>
                 @endforelse
             </tbody>
         </table>
     </div>
 
-    <div class="mt-4">{{ $distributors->links() }}</div>
+    <div class="mt-4 pt-2">
+        {{ $distributors->links('livewire::tailwind') }}
+    </div>
 
     @if ($showModal)
-    <div class="fixed inset-0 bg-black/30 flex items-center justify-center z-50" wire:click.self="$set('showModal', false)">
-        <div class="bg-white rounded-xl shadow-lg w-full max-w-md p-6">
-            <h3 class="text-base font-semibold mb-4">{{ $editingId ? 'Edit Distributor' : 'Tambah Distributor' }}</h3>
-            <form wire:submit="save" class="space-y-4">
+    <div class="fixed inset-0 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center z-50 p-4" wire:click.self="$set('showModal', false)">
+        <div class="bg-white rounded-3xl shadow-2xl w-full max-w-md p-6 border border-slate-200">
+            <h3 class="text-base font-bold text-slate-900 mb-4">{{ $editingId ? 'Edit Distributor' : 'Tambah Distributor' }}</h3>
+            <form wire:submit="save" class="space-y-4 text-xs">
                 <div>
-                    <label class="block text-xs font-mono uppercase tracking-wide text-gray-500 mb-1.5">Kode Distributor</label>
-                    <input type="text" wire:model="distributor_code" class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand">
-                    @error('distributor_code') <p class="text-xs text-red-600 mt-1">{{ $message }}</p> @enderror
+                    <label class="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1.5">Kode Distributor</label>
+                    <input type="text" wire:model="distributor_code" class="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-xs text-slate-800 font-mono focus:outline-none focus:ring-2 focus:ring-[#0d6d5f]/25 focus:border-[#0d6d5f]">
+                    @error('distributor_code') <p class="text-xs text-rose-600 mt-1">{{ $message }}</p> @enderror
                 </div>
                 <div>
-                    <label class="block text-xs font-mono uppercase tracking-wide text-gray-500 mb-1.5">Nama Distributor</label>
-                    <input type="text" wire:model="name" class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand">
-                    @error('name') <p class="text-xs text-red-600 mt-1">{{ $message }}</p> @enderror
+                    <label class="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1.5">Nama Distributor</label>
+                    <input type="text" wire:model="name" class="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-[#0d6d5f]/25 focus:border-[#0d6d5f]">
+                    @error('name') <p class="text-xs text-rose-600 mt-1">{{ $message }}</p> @enderror
                 </div>
-                <label class="flex items-center gap-2 text-sm">
-                    <input type="checkbox" wire:model="is_active" class="rounded border-gray-300 text-brand focus:ring-brand">
-                    Aktif
+                <label class="flex items-center gap-2 text-xs font-semibold text-slate-700 cursor-pointer pt-1">
+                    <input type="checkbox" wire:model="is_active" class="rounded text-[#0d6d5f] focus:ring-[#0d6d5f]">
+                    <span>Status Aktif Melapor</span>
                 </label>
-                <div class="flex justify-end gap-2 pt-2">
-                    <button type="button" wire:click="$set('showModal', false)" class="text-sm text-gray-600 px-4 py-2 rounded-lg hover:bg-gray-100">Batal</button>
-                    <button type="submit" class="text-sm bg-brand hover:bg-brand-dark text-white font-medium px-4 py-2 rounded-lg">Simpan</button>
+                <div class="flex justify-end gap-2 pt-3 border-t border-slate-100">
+                    <button type="button" wire:click="$set('showModal', false)" class="text-xs font-semibold text-slate-600 px-4 py-2.5 rounded-xl hover:bg-slate-100 cursor-pointer">Batal</button>
+                    <button type="submit" class="text-xs bg-[#0d6d5f] hover:bg-[#07352d] text-white font-bold px-5 py-2.5 rounded-xl shadow-2xs cursor-pointer transition">Simpan</button>
                 </div>
             </form>
         </div>

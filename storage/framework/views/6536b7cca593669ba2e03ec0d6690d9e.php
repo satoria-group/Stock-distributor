@@ -17,14 +17,15 @@
                 </div>
 
                 <h1 class="text-2xl md:text-3xl lg:text-4xl font-extrabold tracking-tight text-white leading-tight">
-                    @if ($selectedGroup === 'ALL')
+                    <?php if(\Livewire\Mechanisms\ExtendBlade\ExtendBlade::isRenderingLivewireComponent()): ?><!--[if BLOCK]><![endif]--><?php endif; ?><?php if($selectedGroup === 'ALL'): ?>
                         Riwayat Arsip Stok Harian (Nasional)
-                    @else
-                        Riwayat Stok {{ $selectedGroup === 'OTHER' ? 'Distributor Lainnya' : $selectedGroup }}
-                        @if ($distributorId)
-                            <span class="text-emerald-200 font-normal text-xl md:text-2xl">· {{ $availableBranches->firstWhere('id', $distributorId)?->name }}</span>
-                        @endif
-                    @endif
+                    <?php else: ?>
+                        Riwayat Stok <?php echo e($selectedGroup === 'OTHER' ? 'Distributor Lainnya' : $selectedGroup); ?>
+
+                        <?php if(\Livewire\Mechanisms\ExtendBlade\ExtendBlade::isRenderingLivewireComponent()): ?><!--[if BLOCK]><![endif]--><?php endif; ?><?php if($distributorId): ?>
+                            <span class="text-emerald-200 font-normal text-xl md:text-2xl">· <?php echo e($availableBranches->firstWhere('id', $distributorId)?->name); ?></span>
+                        <?php endif; ?><?php if(\Livewire\Mechanisms\ExtendBlade\ExtendBlade::isRenderingLivewireComponent()): ?><!--[if ENDBLOCK]><![endif]--><?php endif; ?>
+                    <?php endif; ?><?php if(\Livewire\Mechanisms\ExtendBlade\ExtendBlade::isRenderingLivewireComponent()): ?><!--[if ENDBLOCK]><![endif]--><?php endif; ?>
                 </h1>
 
                 <p class="text-xs md:text-sm text-emerald-100/80 mt-2 leading-relaxed max-w-2xl">
@@ -36,7 +37,7 @@
                         <svg width="14" height="14" style="width: 14px; height: 14px; min-width: 14px; flex-shrink: 0;" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path>
                         </svg>
-                        <span>Posisi Terkini: <b class="text-white">{{ $stats['latest_date'] ? \Carbon\Carbon::parse($stats['latest_date'])->translatedFormat('d F Y') : 'Belum ada data' }}</b></span>
+                        <span>Posisi Terkini: <b class="text-white"><?php echo e($stats['latest_date'] ? \Carbon\Carbon::parse($stats['latest_date'])->translatedFormat('d F Y') : 'Belum ada data'); ?></b></span>
                     </div>
                     <span class="text-emerald-300/40">•</span>
                     <span class="text-emerald-200/90 text-xs">Arsip Snapshot Terintegrasi</span>
@@ -50,7 +51,7 @@
                 </div>
                 <div class="p-1.5 rounded-2xl flex items-center gap-1 flex-wrap shadow-sm"
                      style="background: rgba(0, 0, 0, 0.35); border: 1px solid rgba(255, 255, 255, 0.18); backdrop-filter: blur(10px);">
-                    @php
+                    <?php
                         $groups = [
                             'ALL' => 'Ringkasan',
                             'GMP' => 'GMP',
@@ -60,14 +61,15 @@
                             'UDC' => 'UDC',
                             'OTHER' => 'Lainnya',
                         ];
-                    @endphp
-                    @foreach ($groups as $gKey => $gLabel)
-                        <button type="button" wire:click="$set('selectedGroup', '{{ $gKey }}')"
+                    ?>
+                    <?php if(\Livewire\Mechanisms\ExtendBlade\ExtendBlade::isRenderingLivewireComponent()): ?><!--[if BLOCK]><![endif]--><?php endif; ?><?php $__currentLoopData = $groups; $__env->addLoop($__currentLoopData); foreach($__currentLoopData as $gKey => $gLabel): $__env->incrementLoopIndices(); $loop = $__env->getLastLoop(); ?>
+                        <button type="button" wire:click="$set('selectedGroup', '<?php echo e($gKey); ?>')"
                                 class="px-3.5 py-2 rounded-xl text-xs font-bold transition duration-150 cursor-pointer"
-                                style="{{ $selectedGroup === $gKey ? 'background: #ffffff; color: #07352d; box-shadow: 0 2px 8px rgba(0,0,0,0.18); font-weight: 800;' : 'color: #d1fae5; background: transparent;' }}">
-                            {{ $gLabel }}
+                                style="<?php echo e($selectedGroup === $gKey ? 'background: #ffffff; color: #07352d; box-shadow: 0 2px 8px rgba(0,0,0,0.18); font-weight: 800;' : 'color: #d1fae5; background: transparent;'); ?>">
+                            <?php echo e($gLabel); ?>
+
                         </button>
-                    @endforeach
+                    <?php endforeach; $__env->popLoop(); $loop = $__env->getLastLoop(); ?><?php if(\Livewire\Mechanisms\ExtendBlade\ExtendBlade::isRenderingLivewireComponent()): ?><!--[if ENDBLOCK]><![endif]--><?php endif; ?>
                 </div>
             </div>
         </div>
@@ -87,7 +89,8 @@
             </div>
             <div>
                 <div class="text-3xl font-extrabold text-slate-900 tabular-nums tracking-tight mt-2">
-                    {{ number_format($stats['total_snapshots']) }}
+                    <?php echo e(number_format($stats['total_snapshots'])); ?>
+
                 </div>
                 <div class="text-[11px] text-slate-500 mt-2 pt-2 border-t border-slate-100">Arsip Tanggal × Cabang</div>
             </div>
@@ -105,7 +108,8 @@
             </div>
             <div>
                 <div class="text-3xl font-extrabold text-[#0d6d5f] tabular-nums tracking-tight mt-2">
-                    {{ number_format($stats['active_distributors']) }}
+                    <?php echo e(number_format($stats['active_distributors'])); ?>
+
                 </div>
                 <div class="text-[11px] text-slate-500 mt-2 pt-2 border-t border-slate-100">Cabang dengan data stok</div>
             </div>
@@ -123,7 +127,8 @@
             </div>
             <div>
                 <div class="text-xl font-extrabold text-slate-900 tracking-tight mt-2 truncate">
-                    {{ $stats['latest_date'] ? \Carbon\Carbon::parse($stats['latest_date'])->translatedFormat('d M Y') : '—' }}
+                    <?php echo e($stats['latest_date'] ? \Carbon\Carbon::parse($stats['latest_date'])->translatedFormat('d M Y') : '—'); ?>
+
                 </div>
                 <div class="text-[11px] text-slate-500 mt-2 pt-2 border-t border-slate-100">Posisi tanggal cut-off terbaru</div>
             </div>
@@ -141,7 +146,8 @@
             </div>
             <div>
                 <div class="text-3xl font-extrabold text-slate-900 tabular-nums tracking-tight mt-2">
-                    {{ number_format($stats['total_rows']) }}
+                    <?php echo e(number_format($stats['total_rows'])); ?>
+
                 </div>
                 <div class="text-[11px] text-slate-500 mt-2 pt-2 border-t border-slate-100">Akumulasi entri historis</div>
             </div>
@@ -155,7 +161,7 @@
             <div>
                 <h2 class="text-base font-bold text-slate-900 tracking-tight">Arsip Snapshot Stok Harian</h2>
                 <p class="text-xs text-slate-500 mt-1">
-                    Menampilkan <b class="text-slate-800">{{ $snapshots->total() }}</b> arsip snapshot tersimpan dalam database
+                    Menampilkan <b class="text-slate-800"><?php echo e($snapshots->total()); ?></b> arsip snapshot tersimpan dalam database
                 </p>
             </div>
 
@@ -179,10 +185,10 @@
                 <div class="w-56">
                     <select wire:model.live="distributorId"
                             class="w-full text-xs rounded-xl border border-slate-200 bg-slate-50/70 px-3 py-2 text-slate-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#0d6d5f]/20 focus:border-[#0d6d5f] transition">
-                        <option value="">— Semua Cabang ({{ count($availableBranches) }}) —</option>
-                        @foreach ($availableBranches as $b)
-                            <option value="{{ $b->id }}">{{ $b->name }}</option>
-                        @endforeach
+                        <option value="">— Semua Cabang (<?php echo e(count($availableBranches)); ?>) —</option>
+                        <?php if(\Livewire\Mechanisms\ExtendBlade\ExtendBlade::isRenderingLivewireComponent()): ?><!--[if BLOCK]><![endif]--><?php endif; ?><?php $__currentLoopData = $availableBranches; $__env->addLoop($__currentLoopData); foreach($__currentLoopData as $b): $__env->incrementLoopIndices(); $loop = $__env->getLastLoop(); ?>
+                            <option value="<?php echo e($b->id); ?>"><?php echo e($b->name); ?></option>
+                        <?php endforeach; $__env->popLoop(); $loop = $__env->getLastLoop(); ?><?php if(\Livewire\Mechanisms\ExtendBlade\ExtendBlade::isRenderingLivewireComponent()): ?><!--[if ENDBLOCK]><![endif]--><?php endif; ?>
                     </select>
                 </div>
 
@@ -199,12 +205,12 @@
                 </div>
 
                 <!-- Reset Filter Button -->
-                @if ($startDate || $endDate || $distributorId || $search || $selectedGroup !== 'ALL')
+                <?php if(\Livewire\Mechanisms\ExtendBlade\ExtendBlade::isRenderingLivewireComponent()): ?><!--[if BLOCK]><![endif]--><?php endif; ?><?php if($startDate || $endDate || $distributorId || $search || $selectedGroup !== 'ALL'): ?>
                     <button type="button" wire:click="resetFilters"
                             class="px-3 py-2 rounded-xl text-xs font-semibold text-slate-600 hover:text-slate-900 hover:bg-slate-100 border border-slate-200 transition cursor-pointer inline-flex items-center gap-1.5">
                         Reset Filter
                     </button>
-                @endif
+                <?php endif; ?><?php if(\Livewire\Mechanisms\ExtendBlade\ExtendBlade::isRenderingLivewireComponent()): ?><!--[if ENDBLOCK]><![endif]--><?php endif; ?>
             </div>
         </div>
 
@@ -225,8 +231,8 @@
                     </tr>
                 </thead>
                 <tbody class="divide-y divide-slate-100 bg-white">
-                    @forelse ($snapshots as $idx => $s)
-                        @php
+                    <?php if(\Livewire\Mechanisms\ExtendBlade\ExtendBlade::isRenderingLivewireComponent()): ?><!--[if BLOCK]><![endif]--><?php endif; ?><?php $__empty_1 = true; $__currentLoopData = $snapshots; $__env->addLoop($__currentLoopData); foreach($__currentLoopData as $idx => $s): $__env->incrementLoopIndices(); $loop = $__env->getLastLoop(); $__empty_1 = false; ?>
+                        <?php
                             $grp = \App\Livewire\Dashboard::getDistributorGroup($s->distributor?->distributor_code);
                             $groupBadges = [
                                 'KFTD' => 'bg-blue-50 text-blue-800 border border-blue-200',
@@ -237,46 +243,54 @@
                                 'OTHER' => 'bg-amber-50 text-amber-800 border border-amber-200',
                             ];
                             $dateKey = $s->tanggal->format('Y-m-d');
-                        @endphp
+                        ?>
                         <tr class="hover:bg-slate-50/70 transition">
                             <td class="text-center py-3.5 px-4 text-slate-400 font-medium">
-                                {{ ($snapshots->currentPage() - 1) * $snapshots->perPage() + $idx + 1 }}
+                                <?php echo e(($snapshots->currentPage() - 1) * $snapshots->perPage() + $idx + 1); ?>
+
                             </td>
                             <td class="py-3.5 px-4 font-bold text-slate-900 whitespace-nowrap">
-                                {{ $s->tanggal->translatedFormat('d M Y') }}
+                                <?php echo e($s->tanggal->translatedFormat('d M Y')); ?>
+
                             </td>
                             <td class="py-3.5 px-4 w-60 min-w-[210px] max-w-[260px]">
                                 <div class="font-semibold text-slate-900 leading-snug">
-                                    {{ $s->distributor?->name ?? 'Distributor Tidak Diketahui' }}
+                                    <?php echo e($s->distributor?->name ?? 'Distributor Tidak Diketahui'); ?>
+
                                 </div>
                                 <div class="text-[10px] font-bold text-slate-400 mt-0.5">
-                                    {{ $s->distributor?->distributor_code ?? '—' }}
+                                    <?php echo e($s->distributor?->distributor_code ?? '—'); ?>
+
                                 </div>
                             </td>
                             <td class="text-center py-3.5 px-4">
-                                <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-bold {{ $groupBadges[$grp] ?? 'bg-slate-100 text-slate-700 border border-slate-200' }}">
-                                    {{ $grp === 'OTHER' ? 'Lainnya' : $grp }}
+                                <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-bold <?php echo e($groupBadges[$grp] ?? 'bg-slate-100 text-slate-700 border border-slate-200'); ?>">
+                                    <?php echo e($grp === 'OTHER' ? 'Lainnya' : $grp); ?>
+
                                 </span>
                             </td>
                             <td class="text-center py-3.5 px-4">
                                 <span class="px-2.5 py-0.5 rounded-lg bg-slate-100 text-slate-800 font-bold text-[11px]">
-                                    {{ $s->total_sku }} SKU
+                                    <?php echo e($s->total_sku); ?> SKU
                                 </span>
                             </td>
                             <td class="text-right py-3.5 px-4 font-extrabold text-slate-900 tabular-nums text-sm whitespace-nowrap">
-                                {{ number_format((float) $s->total_quantity, 0, ',', '.') }}
+                                <?php echo e(number_format((float) $s->total_quantity, 0, ',', '.')); ?>
+
                             </td>
                             <td class="py-3.5 px-4 text-slate-600 truncate">
-                                {{ $s->uploader?->name ?? 'Sistem / Impor' }}
+                                <?php echo e($s->uploader?->name ?? 'Sistem / Impor'); ?>
+
                             </td>
                             <td class="py-3.5 px-4 text-[11px] text-slate-500 whitespace-nowrap">
-                                {{ \Carbon\Carbon::parse($s->last_updated_at)->translatedFormat('d M Y, H:i') }}
+                                <?php echo e(\Carbon\Carbon::parse($s->last_updated_at)->translatedFormat('d M Y, H:i')); ?>
+
                             </td>
                             <td class="py-3.5 px-4 text-center">
                                 <div class="inline-flex items-center gap-1.5">
                                     <!-- Tombol Detail -->
                                     <button type="button"
-                                            wire:click="viewDetail('{{ $dateKey }}', {{ $s->distributor_id }})"
+                                            wire:click="viewDetail('<?php echo e($dateKey); ?>', <?php echo e($s->distributor_id); ?>)"
                                             title="Lihat Detail Snapshot"
                                             class="p-1.5 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-[#0d6d5f] border border-emerald-200/80 transition cursor-pointer shadow-2xs hover:scale-105">
                                         <svg width="15" height="15" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -287,7 +301,7 @@
 
                                     <!-- Tombol Unduh CSV -->
                                     <button type="button"
-                                            wire:click="exportCsv('{{ $dateKey }}', {{ $s->distributor_id }})"
+                                            wire:click="exportCsv('<?php echo e($dateKey); ?>', <?php echo e($s->distributor_id); ?>)"
                                             title="Unduh CSV Snapshot"
                                             class="p-1.5 rounded-lg bg-slate-50 hover:bg-slate-100 text-slate-700 border border-slate-200 transition cursor-pointer shadow-2xs hover:scale-105">
                                         <svg width="15" height="15" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -296,19 +310,19 @@
                                     </button>
 
                                     <!-- Tombol Edit di Grid Upload -->
-                                    @can('create', \App\Models\StockEntry::class)
-                                        <a href="{{ route('stock.upload', ['tanggal' => $dateKey, 'distributor_id' => $s->distributor_id]) }}"
+                                    <?php if (app(\Illuminate\Contracts\Auth\Access\Gate::class)->check('create', \App\Models\StockEntry::class)): ?>
+                                        <a href="<?php echo e(route('stock.upload', ['tanggal' => $dateKey, 'distributor_id' => $s->distributor_id])); ?>"
                                            title="Buka & Koreksi di Form Upload"
                                            class="p-1.5 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200/80 transition cursor-pointer shadow-2xs hover:scale-105">
                                             <svg width="15" height="15" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"/>
                                             </svg>
                                         </a>
-                                    @endcan
+                                    <?php endif; ?>
                                 </div>
                             </td>
                         </tr>
-                    @empty
+                    <?php endforeach; $__env->popLoop(); $loop = $__env->getLastLoop(); if ($__empty_1): ?>
                         <tr>
                             <td colspan="9" class="py-14 text-center text-slate-400">
                                 <div class="text-3xl mb-2">📋</div>
@@ -316,20 +330,21 @@
                                 <div class="text-xs text-slate-400 mt-1">Silakan sesuaikan filter tanggal atau pilihan grup distributor</div>
                             </td>
                         </tr>
-                    @endforelse
+                    <?php endif; ?><?php if(\Livewire\Mechanisms\ExtendBlade\ExtendBlade::isRenderingLivewireComponent()): ?><!--[if ENDBLOCK]><![endif]--><?php endif; ?>
                 </tbody>
             </table>
         </div>
 
-        @if ($snapshots->hasPages())
+        <?php if(\Livewire\Mechanisms\ExtendBlade\ExtendBlade::isRenderingLivewireComponent()): ?><!--[if BLOCK]><![endif]--><?php endif; ?><?php if($snapshots->hasPages()): ?>
             <div class="p-4 border-t border-slate-100 bg-white">
-                {{ $snapshots->links('livewire::tailwind') }}
+                <?php echo e($snapshots->links('livewire::tailwind')); ?>
+
             </div>
-        @endif
+        <?php endif; ?><?php if(\Livewire\Mechanisms\ExtendBlade\ExtendBlade::isRenderingLivewireComponent()): ?><!--[if ENDBLOCK]><![endif]--><?php endif; ?>
     </div>
 
     <!-- MODAL DETAIL SNAPSHOT -->
-    @if ($showDetailModal && $selectedSnapshot)
+    <?php if(\Livewire\Mechanisms\ExtendBlade\ExtendBlade::isRenderingLivewireComponent()): ?><!--[if BLOCK]><![endif]--><?php endif; ?><?php if($showDetailModal && $selectedSnapshot): ?>
         <div class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-xs transition-opacity"
              x-data="{ itemSearch: '' }">
             <div class="bg-white rounded-3xl shadow-2xl max-w-5xl w-full max-h-[92vh] flex flex-col overflow-hidden border border-slate-200">
@@ -341,16 +356,18 @@
                                 Snapshot Detail
                             </span>
                             <span class="text-xs text-emerald-200 font-mono font-medium">
-                                {{ $selectedSnapshot['tanggal_formatted'] }}
+                                <?php echo e($selectedSnapshot['tanggal_formatted']); ?>
+
                             </span>
                         </div>
                         <h3 class="text-xl font-bold text-white mt-1.5 leading-tight">
-                            {{ $selectedSnapshot['distributor_name'] }}
+                            <?php echo e($selectedSnapshot['distributor_name']); ?>
+
                         </h3>
                         <div class="flex items-center gap-2 text-xs text-emerald-100/90 font-mono mt-1">
-                            <span>Kode: <strong class="text-white bg-white/20 px-2 py-0.5 rounded-md">{{ $selectedSnapshot['distributor_code'] }}</strong></span>
+                            <span>Kode: <strong class="text-white bg-white/20 px-2 py-0.5 rounded-md"><?php echo e($selectedSnapshot['distributor_code']); ?></strong></span>
                             <span>•</span>
-                            <span>Grup: <strong class="text-white bg-white/20 px-2 py-0.5 rounded-md">{{ $selectedSnapshot['group'] }}</strong></span>
+                            <span>Grup: <strong class="text-white bg-white/20 px-2 py-0.5 rounded-md"><?php echo e($selectedSnapshot['group']); ?></strong></span>
                         </div>
                     </div>
                     <button type="button" wire:click="closeDetailModal"
@@ -367,37 +384,41 @@
                     <div class="bg-white border border-slate-200/80 rounded-2xl p-3.5 shadow-2xs">
                         <div class="text-[11px] font-mono uppercase text-slate-500 font-medium">Total SKU</div>
                         <div class="text-lg font-bold text-slate-900 mt-1 font-mono">
-                            {{ $selectedSnapshot['total_sku'] }} Item
+                            <?php echo e($selectedSnapshot['total_sku']); ?> Item
                         </div>
                     </div>
                     <div class="bg-white border border-slate-200/80 rounded-2xl p-3.5 shadow-2xs">
                         <div class="text-[11px] font-mono uppercase text-slate-500 font-medium">Total Kuantitas</div>
                         <div class="text-lg font-bold text-[#0d6d5f] mt-1 font-mono tabular-nums">
-                            {{ number_format($selectedSnapshot['total_quantity'], 0, ',', '.') }}
+                            <?php echo e(number_format($selectedSnapshot['total_quantity'], 0, ',', '.')); ?>
+
                         </div>
                     </div>
                     <div class="bg-white border border-slate-200/80 rounded-2xl p-3.5 shadow-2xs">
                         <div class="text-[11px] font-mono uppercase text-slate-500 font-medium">Botol (Btl)</div>
                         <div class="text-lg font-bold text-teal-700 mt-1 font-mono tabular-nums">
-                            {{ number_format($selectedSnapshot['total_btl'], 0, ',', '.') }}
+                            <?php echo e(number_format($selectedSnapshot['total_btl'], 0, ',', '.')); ?>
+
                         </div>
                     </div>
                     <div class="bg-white border border-slate-200/80 rounded-2xl p-3.5 shadow-2xs">
                         <div class="text-[11px] font-mono uppercase text-slate-500 font-medium">Ampul (Amp)</div>
                         <div class="text-lg font-bold text-cyan-700 mt-1 font-mono tabular-nums">
-                            {{ number_format($selectedSnapshot['total_amp'], 0, ',', '.') }}
+                            <?php echo e(number_format($selectedSnapshot['total_amp'], 0, ',', '.')); ?>
+
                         </div>
                     </div>
                     <div class="bg-white border border-slate-200/80 rounded-2xl p-3.5 shadow-2xs">
                         <div class="text-[11px] font-mono uppercase text-slate-500 font-medium">Pcs / Box</div>
                         <div class="text-lg font-bold text-indigo-700 mt-1 font-mono tabular-nums">
-                            {{ number_format($selectedSnapshot['total_pcs'], 0, ',', '.') }}
+                            <?php echo e(number_format($selectedSnapshot['total_pcs'], 0, ',', '.')); ?>
+
                         </div>
                     </div>
                     <div class="bg-white border border-slate-200/80 rounded-2xl p-3.5 shadow-2xs">
                         <div class="text-[11px] font-mono uppercase text-slate-500 font-medium">Batch Dekat ED</div>
-                        <div class="text-lg font-bold {{ $selectedSnapshot['expiring_count'] > 0 ? 'text-rose-600' : 'text-emerald-700' }} mt-1 font-mono">
-                            {{ $selectedSnapshot['expiring_count'] }} Batch
+                        <div class="text-lg font-bold <?php echo e($selectedSnapshot['expiring_count'] > 0 ? 'text-rose-600' : 'text-emerald-700'); ?> mt-1 font-mono">
+                            <?php echo e($selectedSnapshot['expiring_count']); ?> Batch
                         </div>
                     </div>
                 </div>
@@ -424,14 +445,14 @@
                     <div class="flex items-center gap-2 text-xs">
                         <span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200 font-medium">
                             <span class="w-1.5 h-1.5 rounded-full bg-emerald-600"></span>
-                            Ter-mapping: <strong>{{ $selectedSnapshot['mapped_count'] }}</strong> Item
+                            Ter-mapping: <strong><?php echo e($selectedSnapshot['mapped_count']); ?></strong> Item
                         </span>
-                        @if ($selectedSnapshot['unmapped_count'] > 0)
+                        <?php if(\Livewire\Mechanisms\ExtendBlade\ExtendBlade::isRenderingLivewireComponent()): ?><!--[if BLOCK]><![endif]--><?php endif; ?><?php if($selectedSnapshot['unmapped_count'] > 0): ?>
                             <span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-50 text-amber-800 border border-amber-200 font-medium">
                                 <span class="w-1.5 h-1.5 rounded-full bg-amber-600"></span>
-                                Belum Mapped: <strong>{{ $selectedSnapshot['unmapped_count'] }}</strong> Item
+                                Belum Mapped: <strong><?php echo e($selectedSnapshot['unmapped_count']); ?></strong> Item
                             </span>
-                        @endif
+                        <?php endif; ?><?php if(\Livewire\Mechanisms\ExtendBlade\ExtendBlade::isRenderingLivewireComponent()): ?><!--[if ENDBLOCK]><![endif]--><?php endif; ?>
                     </div>
                 </div>
 
@@ -450,77 +471,84 @@
                             </tr>
                         </thead>
                         <tbody class="divide-y divide-slate-100 bg-white">
-                            @foreach ($selectedSnapshot['items'] as $iIdx => $item)
+                            <?php if(\Livewire\Mechanisms\ExtendBlade\ExtendBlade::isRenderingLivewireComponent()): ?><!--[if BLOCK]><![endif]--><?php endif; ?><?php $__currentLoopData = $selectedSnapshot['items']; $__env->addLoop($__currentLoopData); foreach($__currentLoopData as $iIdx => $item): $__env->incrementLoopIndices(); $loop = $__env->getLastLoop(); ?>
                                 <tr class="hover:bg-slate-50/70 transition"
                                     x-show="!itemSearch || $el.textContent.toLowerCase().includes(itemSearch.toLowerCase().trim())">
                                     <td class="text-center py-3.5 px-4 text-slate-400 font-mono">
-                                        {{ $iIdx + 1 }}
+                                        <?php echo e($iIdx + 1); ?>
+
                                     </td>
                                     <!-- Nama Produk Distributor -->
                                     <td class="py-3.5 px-4 font-bold text-slate-900">
-                                        <div>{{ $item['item_name'] }}</div>
-                                        @unless ($item['is_mapped'])
+                                        <div><?php echo e($item['item_name']); ?></div>
+                                        <?php if(\Livewire\Mechanisms\ExtendBlade\ExtendBlade::isRenderingLivewireComponent()): ?><!--[if BLOCK]><![endif]--><?php endif; ?><?php if (! ($item['is_mapped'])): ?>
                                             <span class="inline-block mt-1 px-2 py-0.5 rounded-full text-[10px] font-mono bg-amber-50 text-amber-800 border border-amber-200 font-normal">
                                                 Unmapped
                                             </span>
-                                        @endunless
+                                        <?php endif; ?><?php if(\Livewire\Mechanisms\ExtendBlade\ExtendBlade::isRenderingLivewireComponent()): ?><!--[if ENDBLOCK]><![endif]--><?php endif; ?>
                                     </td>
                                     <!-- Item Satoria Netsuite -->
                                     <td class="py-3.5 px-4">
-                                        @if ($item['is_mapped'])
+                                        <?php if(\Livewire\Mechanisms\ExtendBlade\ExtendBlade::isRenderingLivewireComponent()): ?><!--[if BLOCK]><![endif]--><?php endif; ?><?php if($item['is_mapped']): ?>
                                             <div class="font-bold text-slate-900 text-xs">
-                                                {{ $item['netsuite_name'] }}
+                                                <?php echo e($item['netsuite_name']); ?>
+
                                             </div>
                                             <div class="flex items-center gap-1.5 mt-1">
                                                 <span class="px-2 py-0.5 rounded-full bg-emerald-100/80 text-[#07352d] font-mono font-bold text-[10px] border border-emerald-300/60">
-                                                    {{ $item['netsuite_code'] }}
+                                                    <?php echo e($item['netsuite_code']); ?>
+
                                                 </span>
                                                 <span class="text-[10px] text-emerald-700 font-medium">✓ Mapped</span>
                                             </div>
-                                        @else
+                                        <?php else: ?>
                                             <span class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] bg-amber-50 text-amber-800 border border-amber-200">
                                                 Belum di-mapping ke Netsuite
                                             </span>
-                                        @endif
+                                        <?php endif; ?><?php if(\Livewire\Mechanisms\ExtendBlade\ExtendBlade::isRenderingLivewireComponent()): ?><!--[if ENDBLOCK]><![endif]--><?php endif; ?>
                                     </td>
                                     <!-- Satuan -->
                                     <td class="text-center py-3.5 px-3 font-mono text-slate-700">
                                         <span class="px-2 py-0.5 rounded-lg bg-slate-100 text-slate-700 text-[11px] font-medium">
-                                            {{ $item['satuan'] }}
+                                            <?php echo e($item['satuan']); ?>
+
                                         </span>
                                     </td>
                                     <!-- Kuantitas -->
                                     <td class="text-right py-3.5 px-4 font-extrabold font-mono text-slate-900 tabular-nums text-xs">
-                                        {{ number_format($item['quantity'], 0, ',', '.') }}
+                                        <?php echo e(number_format($item['quantity'], 0, ',', '.')); ?>
+
                                     </td>
                                     <!-- No Batch -->
                                     <td class="py-3.5 px-4 font-mono text-slate-600">
                                         <span class="px-2 py-0.5 rounded-lg bg-slate-50 border border-slate-200 text-slate-700 text-[11px]">
-                                            {{ $item['batch_no'] }}
+                                            <?php echo e($item['batch_no']); ?>
+
                                         </span>
                                     </td>
                                     <!-- Expired Date & Status ED -->
                                     <td class="text-center py-3.5 px-4 font-mono">
-                                        @if ($item['expiry_status'] === 'expired')
+                                        <?php if(\Livewire\Mechanisms\ExtendBlade\ExtendBlade::isRenderingLivewireComponent()): ?><!--[if BLOCK]><![endif]--><?php endif; ?><?php if($item['expiry_status'] === 'expired'): ?>
                                             <span class="inline-block px-2.5 py-0.5 rounded-full text-[10px] bg-red-100 text-red-800 font-bold border border-red-200">
-                                                {{ $item['expired_date'] }} (Lewat ED)
+                                                <?php echo e($item['expired_date']); ?> (Lewat ED)
                                             </span>
-                                        @elseif ($item['expiry_status'] === 'critical')
+                                        <?php elseif($item['expiry_status'] === 'critical'): ?>
                                             <span class="inline-block px-2.5 py-0.5 rounded-full text-[10px] bg-rose-50 text-rose-700 font-semibold border border-rose-200">
-                                                {{ $item['expired_date'] }} (&lt; 3 bln)
+                                                <?php echo e($item['expired_date']); ?> (&lt; 3 bln)
                                             </span>
-                                        @elseif ($item['expiry_status'] === 'warning')
+                                        <?php elseif($item['expiry_status'] === 'warning'): ?>
                                             <span class="inline-block px-2.5 py-0.5 rounded-full text-[10px] bg-amber-50 text-amber-800 font-medium border border-amber-200">
-                                                {{ $item['expired_date'] }} (&lt; 6 bln)
+                                                <?php echo e($item['expired_date']); ?> (&lt; 6 bln)
                                             </span>
-                                        @else
+                                        <?php else: ?>
                                             <span class="text-slate-600 text-[11px]">
-                                                {{ $item['expired_date'] }}
+                                                <?php echo e($item['expired_date']); ?>
+
                                             </span>
-                                        @endif
+                                        <?php endif; ?><?php if(\Livewire\Mechanisms\ExtendBlade\ExtendBlade::isRenderingLivewireComponent()): ?><!--[if ENDBLOCK]><![endif]--><?php endif; ?>
                                     </td>
                                 </tr>
-                            @endforeach
+                            <?php endforeach; $__env->popLoop(); $loop = $__env->getLastLoop(); ?><?php if(\Livewire\Mechanisms\ExtendBlade\ExtendBlade::isRenderingLivewireComponent()): ?><!--[if ENDBLOCK]><![endif]--><?php endif; ?>
                         </tbody>
                     </table>
                 </div>
@@ -529,13 +557,13 @@
                 <div class="px-6 py-4 bg-slate-50 border-t border-slate-100 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 text-xs">
                     <div class="text-slate-600 flex items-center gap-1.5">
                         <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"></path></svg>
-                        Diunggah oleh <strong class="text-slate-900">{{ $selectedSnapshot['uploader_name'] }}</strong>
-                        pada <span class="font-mono text-slate-700">{{ $selectedSnapshot['updated_at'] }}</span>
+                        Diunggah oleh <strong class="text-slate-900"><?php echo e($selectedSnapshot['uploader_name']); ?></strong>
+                        pada <span class="font-mono text-slate-700"><?php echo e($selectedSnapshot['updated_at']); ?></span>
                     </div>
                     <div class="flex items-center gap-2">
                         <!-- Unduh CSV -->
                         <button type="button"
-                                wire:click="exportCsv('{{ $selectedSnapshot['tanggal'] }}', {{ $selectedSnapshot['distributor_id'] }})"
+                                wire:click="exportCsv('<?php echo e($selectedSnapshot['tanggal']); ?>', <?php echo e($selectedSnapshot['distributor_id']); ?>)"
                                 class="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 font-semibold text-xs transition cursor-pointer shadow-2xs">
                             <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path>
@@ -544,13 +572,13 @@
                         </button>
 
                         <!-- Buka di Grid -->
-                        @can('create', \App\Models\StockEntry::class)
-                            <a href="{{ route('stock.upload', ['tanggal' => $selectedSnapshot['tanggal'], 'distributor_id' => $selectedSnapshot['distributor_id']]) }}"
+                        <?php if (app(\Illuminate\Contracts\Auth\Access\Gate::class)->check('create', \App\Models\StockEntry::class)): ?>
+                            <a href="<?php echo e(route('stock.upload', ['tanggal' => $selectedSnapshot['tanggal'], 'distributor_id' => $selectedSnapshot['distributor_id']])); ?>"
                                class="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-white bg-[#0d6d5f] hover:bg-[#07352d] font-bold text-xs shadow-2xs transition">
                                 <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path></svg>
                                 Buka di Form Upload
                             </a>
-                        @endcan
+                        <?php endif; ?>
 
                         <!-- Tutup -->
                         <button type="button" wire:click="closeDetailModal"
@@ -561,5 +589,6 @@
                 </div>
             </div>
         </div>
-    @endif
+    <?php endif; ?><?php if(\Livewire\Mechanisms\ExtendBlade\ExtendBlade::isRenderingLivewireComponent()): ?><!--[if ENDBLOCK]><![endif]--><?php endif; ?>
 </div>
+<?php /**PATH C:\Users\Najmi\Documents\satoria\Stock-distributor\resources\views/livewire/stock/history.blade.php ENDPATH**/ ?>

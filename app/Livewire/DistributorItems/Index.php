@@ -207,13 +207,48 @@ class Index extends Component
         } else {
             Gate::authorize('create', DistributorItem::class);
 
-            DistributorItem::create([
-                'distributor_id' => $data['distributor_id'],
-                'item_name' => $data['item_name'],
-                'satuan' => $data['satuan'],
-                'netsuite_item_id' => $data['netsuite_item_id'],
-                'netsuite_satuan' => $netsuiteSatuan,
-            ]);
+            $existing = DistributorItem::withTrashed()
+                ->where('distributor_id', $data['distributor_id'])
+                ->whereRaw('LOWER(TRIM(item_name)) = ?', [mb_strtolower(trim($data['item_name']))])
+                ->first();
+
+            if ($existing) {
+                if ($existing->trashed()) {
+                    $existing->restore();
+                }
+                $existing->update([
+                    'item_name' => $data['item_name'],
+                    'satuan' => $data['satuan'],
+                    'netsuite_item_id' => $data['netsuite_item_id'],
+                    'netsuite_satuan' => $netsuiteSatuan,
+                ]);
+            } else {
+                try {
+                    DistributorItem::create([
+                        'distributor_id' => $data['distributor_id'],
+                        'item_name' => $data['item_name'],
+                        'satuan' => $data['satuan'],
+                        'netsuite_item_id' => $data['netsuite_item_id'],
+                        'netsuite_satuan' => $netsuiteSatuan,
+                    ]);
+                } catch (\Illuminate\Database\UniqueConstraintViolationException) {
+                    $existing = DistributorItem::withTrashed()
+                        ->where('distributor_id', $data['distributor_id'])
+                        ->whereRaw('LOWER(TRIM(item_name)) = ?', [mb_strtolower(trim($data['item_name']))])
+                        ->first();
+                    if ($existing) {
+                        if ($existing->trashed()) {
+                            $existing->restore();
+                        }
+                        $existing->update([
+                            'item_name' => $data['item_name'],
+                            'satuan' => $data['satuan'],
+                            'netsuite_item_id' => $data['netsuite_item_id'],
+                            'netsuite_satuan' => $netsuiteSatuan,
+                        ]);
+                    }
+                }
+            }
         }
 
         $this->showModal = false;

@@ -273,23 +273,47 @@ class Upload extends Component
 
         $addedCount = 0;
         DB::transaction(function () use ($itemsToProcess, &$addedCount) {
+            $processedMasterItems = [];
+
             foreach ($itemsToProcess as $itemData) {
                 $rawName = trim($itemData['item_name']);
                 $normalized = mb_strtolower(trim(preg_replace('/\s+/', ' ', $rawName)));
 
-                $existing = DistributorItem::where('distributor_id', $this->distributorId)
-                    ->whereRaw('LOWER(TRIM(item_name)) = ?', [$normalized])
-                    ->first();
-
-                if ($existing) {
-                    $distItem = $existing;
+                if (isset($processedMasterItems[$normalized])) {
+                    $distItem = $processedMasterItems[$normalized];
                 } else {
-                    $distItem = DistributorItem::create([
-                        'distributor_id' => $this->distributorId,
-                        'item_name' => $rawName,
-                        'satuan' => $itemData['satuan'] ?: 'PCS',
-                        'netsuite_item_id' => null,
-                    ]);
+                    $existing = DistributorItem::withTrashed()
+                        ->where('distributor_id', $this->distributorId)
+                        ->whereRaw('LOWER(TRIM(item_name)) = ?', [$normalized])
+                        ->first();
+
+                    if ($existing) {
+                        if ($existing->trashed()) {
+                            $existing->restore();
+                        }
+                        if (! empty($itemData['satuan']) && empty($existing->satuan)) {
+                            $existing->update(['satuan' => $itemData['satuan']]);
+                        }
+                        $distItem = $existing;
+                    } else {
+                        try {
+                            $distItem = DistributorItem::create([
+                                'distributor_id' => $this->distributorId,
+                                'item_name' => $rawName,
+                                'satuan' => $itemData['satuan'] ?: 'PCS',
+                                'netsuite_item_id' => null,
+                            ]);
+                        } catch (\Illuminate\Database\UniqueConstraintViolationException) {
+                            $distItem = DistributorItem::withTrashed()
+                                ->where('distributor_id', $this->distributorId)
+                                ->whereRaw('LOWER(TRIM(item_name)) = ?', [$normalized])
+                                ->first();
+                            if ($distItem && $distItem->trashed()) {
+                                $distItem->restore();
+                            }
+                        }
+                    }
+                    $processedMasterItems[$normalized] = $distItem;
                 }
 
                 $alreadyInGrid = collect($this->rows)->firstWhere('distributor_item_id', $distItem->id);
@@ -343,19 +367,36 @@ class Upload extends Component
         $rawName = trim($this->requestItemName);
         $normalized = mb_strtolower(trim(preg_replace('/\s+/', ' ', $rawName)));
 
-        $existing = DistributorItem::where('distributor_id', $this->distributorId)
+        $existing = DistributorItem::withTrashed()
+            ->where('distributor_id', $this->distributorId)
             ->whereRaw('LOWER(TRIM(item_name)) = ?', [$normalized])
             ->first();
 
         if ($existing) {
+            if ($existing->trashed()) {
+                $existing->restore();
+            }
+            if (! empty($this->requestSatuan) && empty($existing->satuan)) {
+                $existing->update(['satuan' => trim($this->requestSatuan)]);
+            }
             $distItem = $existing;
         } else {
-            $distItem = DistributorItem::create([
-                'distributor_id' => $this->distributorId,
-                'item_name' => $rawName,
-                'satuan' => trim($this->requestSatuan) ?: 'PCS',
-                'netsuite_item_id' => null,
-            ]);
+            try {
+                $distItem = DistributorItem::create([
+                    'distributor_id' => $this->distributorId,
+                    'item_name' => $rawName,
+                    'satuan' => trim($this->requestSatuan) ?: 'PCS',
+                    'netsuite_item_id' => null,
+                ]);
+            } catch (\Illuminate\Database\UniqueConstraintViolationException) {
+                $distItem = DistributorItem::withTrashed()
+                    ->where('distributor_id', $this->distributorId)
+                    ->whereRaw('LOWER(TRIM(item_name)) = ?', [$normalized])
+                    ->first();
+                if ($distItem && $distItem->trashed()) {
+                    $distItem->restore();
+                }
+            }
         }
 
         $alreadyInGrid = collect($this->rows)->firstWhere('distributor_item_id', $distItem->id);
