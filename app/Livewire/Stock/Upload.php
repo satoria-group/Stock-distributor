@@ -49,7 +49,11 @@ class Upload extends Component
     public function mount(): void
     {
         Gate::authorize('viewAny', StockEntry::class);
-        $this->tanggal = now()->toDateString();
+        $this->tanggal = request()->query('tanggal', now()->toDateString());
+        if ($distId = request()->query('distributor_id')) {
+            $this->distributorId = (int) $distId;
+            $this->loadExisting();
+        }
     }
 
     public function loadExisting(): void

@@ -47,10 +47,17 @@
                 </a>
                 @endcan
 
-                @can('viewAny', \App\Models\StockEntry::class)
+                @can('create', \App\Models\StockEntry::class)
                 <a href="{{ route('stock.upload') }}"
-                   class="block px-3 py-2 rounded-lg {{ request()->routeIs('stock.*') ? 'bg-brand-soft text-brand-dark font-medium' : 'text-gray-600 hover:bg-gray-100' }}">
+                   class="block px-3 py-2 rounded-lg {{ request()->routeIs('stock.upload') ? 'bg-brand-soft text-brand-dark font-medium' : 'text-gray-600 hover:bg-gray-100' }}">
                     Upload Stock Harian
+                </a>
+                @endcan
+
+                @can('viewAny', \App\Models\StockEntry::class)
+                <a href="{{ route('stock.history') }}"
+                   class="block px-3 py-2 rounded-lg {{ request()->routeIs('stock.history') ? 'bg-brand-soft text-brand-dark font-medium' : 'text-gray-600 hover:bg-gray-100' }}">
+                    Riwayat Stok
                 </a>
                 @endcan
 

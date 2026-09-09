@@ -5,6 +5,7 @@ use App\Livewire\Dashboard;
 use App\Livewire\DistributorItems\Index as DistributorItemsIndex;
 use App\Livewire\Distributors\Index as DistributorsIndex;
 use App\Livewire\NetsuiteItems\Index as NetsuiteItemsIndex;
+use App\Livewire\Stock\History as StockHistory;
 use App\Livewire\Stock\Upload as StockUpload;
 use App\Livewire\Users\Index as UsersIndex;
 use Illuminate\Support\Facades\Route;
@@ -25,5 +26,6 @@ Route::middleware('auth')->group(function () {
     Route::get('/netsuite-items', NetsuiteItemsIndex::class)->name('netsuite-items.index');
     Route::get('/distributor-items', DistributorItemsIndex::class)->name('distributor-items.index');
     Route::get('/stock/upload', StockUpload::class)->name('stock.upload');
+    Route::get('/stock/history', StockHistory::class)->name('stock.history');
     Route::get('/users', UsersIndex::class)->name('users.index');
 });

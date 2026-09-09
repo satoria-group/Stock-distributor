@@ -48,10 +48,17 @@
                 </a>
                 <?php endif; ?>
 
-                <?php if (app(\Illuminate\Contracts\Auth\Access\Gate::class)->check('viewAny', \App\Models\StockEntry::class)): ?>
+                <?php if (app(\Illuminate\Contracts\Auth\Access\Gate::class)->check('create', \App\Models\StockEntry::class)): ?>
                 <a href="<?php echo e(route('stock.upload')); ?>"
-                   class="block px-3 py-2 rounded-lg <?php echo e(request()->routeIs('stock.*') ? 'bg-brand-soft text-brand-dark font-medium' : 'text-gray-600 hover:bg-gray-100'); ?>">
+                   class="block px-3 py-2 rounded-lg <?php echo e(request()->routeIs('stock.upload') ? 'bg-brand-soft text-brand-dark font-medium' : 'text-gray-600 hover:bg-gray-100'); ?>">
                     Upload Stock Harian
+                </a>
+                <?php endif; ?>
+
+                <?php if (app(\Illuminate\Contracts\Auth\Access\Gate::class)->check('viewAny', \App\Models\StockEntry::class)): ?>
+                <a href="<?php echo e(route('stock.history')); ?>"
+                   class="block px-3 py-2 rounded-lg <?php echo e(request()->routeIs('stock.history') ? 'bg-brand-soft text-brand-dark font-medium' : 'text-gray-600 hover:bg-gray-100'); ?>">
+                    Riwayat Stok
                 </a>
                 <?php endif; ?>
 
