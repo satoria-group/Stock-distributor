@@ -47,11 +47,16 @@ services:
     networks:
       - stock_network
     healthcheck:
+      # /up membangunkan Laravel sepenuhnya. Di stack dev, source code datang
+      # dari bind mount Windows sehingga setiap file autoload melewati batas
+      # virtiofs — satu request bisa 0,3-4 detik, dan melonjak lebih lama lagi
+      # saat mesin sibuk. Timeout dibuat longgar supaya container tidak
+      # ditandai unhealthy padahal aplikasinya sehat.
       test: ["CMD-SHELL", "wget -qO- http://localhost/up >/dev/null 2>&1 || exit 1"]
       interval: 30s
-      timeout: 5s
-      retries: 3
-      start_period: 60s
+      timeout: 20s
+      retries: 5
+      start_period: 120s
 
 networks:
   stock_network:

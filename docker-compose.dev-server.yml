@@ -1,0 +1,36 @@
+# Override untuk menjalankan stack di SERVER dengan perilaku development.
+#
+# Dipakai bersama docker-compose.prod.yml, bukan menggantikannya:
+#
+#   docker compose -f docker-compose.prod.yml -f docker-compose.dev-server.yml up -d --build
+#
+# Kenapa tetap memakai docker-compose.prod.yml sebagai dasar, bukan
+# docker-compose.yml? Karena docker-compose.yml dirancang untuk laptop
+# developer: source code masuk lewat bind mount dan image-nya tidak mem-bake
+# apa pun. Di server, `npm run build` tidak pernah dijalankan sehingga
+# public/build kosong dan setiap halaman gagal karena manifest Vite tidak ada.
+#
+# Yang DIWARISI dari prod: build target `production` (vendor + aset Vite sudah
+# ter-bake), image web yang public/-nya identik dengan app, volume storage,
+# healthcheck, dan restart policy.
+#
+# Yang DIUBAH di sini hanyalah perilaku runtime-nya.
+
+services:
+  app:
+    container_name: stock_app_dev
+    environment:
+      # Bukan "production", sehingga entrypoint melewati config:cache &
+      # view:cache. Perubahan .env langsung terbaca tanpa perlu clear cache
+      # manual — dengan konsekuensi sedikit lebih lambat.
+      APP_ENV: dev
+      # Tampilkan stack trace saat error. JANGAN dipakai di server publik.
+      APP_DEBUG: "true"
+      # Migrasi tetap manual, sama seperti prod.
+      RUN_MIGRATIONS: "false"
+
+  web:
+    container_name: stock_nginx_dev
+    # Port sengaja tidak didefinisikan ulang di sini. Compose menggabungkan
+    # daftar ports antar file, jadi menambah entri baru justru membuat port
+    # prod (80) ikut terpasang. Atur lewat WEB_PORT di .env.
