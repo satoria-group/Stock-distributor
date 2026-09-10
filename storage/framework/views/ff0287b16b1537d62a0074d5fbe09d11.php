@@ -87,4 +87,4 @@
     </div>
 </body>
 </html>
-<?php /**PATH C:\Users\Najmi\Documents\satoria\Stock-distributor\resources\views/auth/login.blade.php ENDPATH**/ ?>
+<?php /**PATH /var/www/html/resources/views/auth/login.blade.php ENDPATH**/ ?>

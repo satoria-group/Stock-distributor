@@ -1,0 +1,72 @@
+# Stack production.
+#
+# Berbeda dengan development, TIDAK ada bind mount source code sama sekali:
+# kode, vendor/, dan aset Vite semuanya sudah ter-bake di dalam image. nginx
+# memakai image `web` yang public/-nya disalin dari image `app` yang sama,
+# sehingga keduanya dijamin menyajikan revisi yang identik.
+#
+# Jalankan dengan:
+#   docker compose -f docker-compose.prod.yml up -d --build
+#
+# env_file di bawah menunjuk ke .env. Untuk deployment sungguhan, arahkan ke
+# file khusus produksi (mis. .env.production) yang berisi APP_KEY dan kredensial
+# database milik server tersebut.
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: production
+    image: stock-distributor-app:latest
+    container_name: stock_app_prod
+    restart: always
+    working_dir: /var/www/html
+    env_file:
+      - .env
+    environment:
+      # Menimpa nilai dari env_file — .env repo ini berisi APP_ENV=local dan
+      # APP_DEBUG=true yang tidak boleh ikut ke produksi.
+      APP_ENV: production
+      APP_DEBUG: "false"
+      # Set "true" hanya saat memang ingin menjalankan migrasi saat deploy.
+      RUN_MIGRATIONS: "false"
+    volumes:
+      - storage_data:/var/www/html/storage
+    networks:
+      - stock_network
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z 127.0.0.1 9000 || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: web
+    image: stock-distributor-web:latest
+    container_name: stock_nginx_prod
+    restart: always
+    ports:
+      - "80:80"
+    depends_on:
+      app:
+        condition: service_healthy
+    networks:
+      - stock_network
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost/up >/dev/null 2>&1 || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+
+volumes:
+  storage_data:
+
+networks:
+  stock_network:
+    driver: bridge

@@ -21,8 +21,8 @@
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/>
                 </svg>
             </div>
-            <h1 class="text-2xl font-extrabold text-slate-900 tracking-tight">Satoria Logistics</h1>
-            <p class="text-xs font-bold uppercase tracking-wider mt-1 text-[#0d6d5f]">Stock Hub & FEFO Intelligence</p>
+            <h1 class="text-2xl font-extrabold text-slate-900 tracking-tight">Satoria Group</h1>
+            <p class="text-xs font-bold uppercase tracking-wider mt-1 text-[#0d6d5f]">Distributor Stock Hub</p>
         </div>
 
         <!-- Login Card -->
@@ -71,14 +71,14 @@
                 </button>
             </form>
 
-            <div class="mt-6 pt-5 border-t border-slate-100">
+            <!-- <div class="mt-6 pt-5 border-t border-slate-100">
                 <div class="text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-2 text-center">Akun Demo Cepat</div>
                 <div class="bg-slate-50/80 rounded-2xl p-3 border border-slate-200/60 text-[11px] text-slate-600 space-y-1 font-mono">
                     <div><b>Admin:</b> admin@satoriagroup.co.id</div>
                     <div><b>Logistik:</b> logistik@satoriagroup.co.id</div>
                     <div class="text-slate-400 pt-0.5">Password: <span class="text-slate-700 font-bold">satoria123</span></div>
                 </div>
-            </div>
+            </div> -->
         </div>
 
         <p class="text-center text-[11px] text-slate-400 mt-6 font-medium">

@@ -4,6 +4,7 @@ namespace App\Livewire\Distributors;
 
 use App\Models\Distributor;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Validation\Rule;
 use Livewire\Attributes\Layout;
 use Livewire\Component;
 use Livewire\WithPagination;
@@ -57,7 +58,7 @@ class Index extends Component
     public function save(): void
     {
         $data = $this->validate([
-            'distributor_code' => ['required', 'string', 'max:50', 'unique:distributors,distributor_code,'.$this->editingId],
+            'distributor_code' => ['required', 'string', 'max:50', Rule::unique('distributors', 'distributor_code')->ignore($this->editingId)],
             'name' => ['required', 'string', 'max:255'],
             'is_active' => ['boolean'],
         ]);

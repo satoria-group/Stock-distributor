@@ -17,13 +17,24 @@ php artisan serve
 
 ## Login demo
 
-| Role      | Email                          | Password    |
-|-----------|---------------------------------|-------------|
-| Admin     | admin@satoriagroup.co.id       | satoria123  |
-| Sales     | sales@satoriagroup.co.id       | satoria123  |
-| Logistik  | logistik@satoriagroup.co.id    | satoria123  |
+`DemoUserSeeder` membuat tiga akun contoh:
 
-**Ganti semua password ini sebelum dipakai di production.**
+| Role      | Email                       |
+|-----------|-----------------------------|
+| Admin     | admin@satoriagroup.co.id    |
+| Sales     | sales@satoriagroup.co.id    |
+| Logistik  | logistik@satoriagroup.co.id |
+
+Passwordnya **tidak di-hardcode**. Isi `DEMO_USER_PASSWORD` di `.env` sebelum
+menjalankan `php artisan db:seed`, atau biarkan kosong — seeder akan membuat
+password acak dan menampilkannya sekali di terminal.
+
+Seeder tidak pernah mengubah password akun yang sudah ada, dan otomatis
+dilewati saat `APP_ENV=production` kecuali `SEED_DEMO_USERS=true`.
+
+> **Instalasi lama:** akun yang dibuat sebelum perubahan ini memakai password
+> bawaan `satoria123` yang pernah ter-commit di repo publik. Seeder akan
+> memperingatkan bila mendeteksinya — ganti lewat menu Manajemen User.
 
 ## Catatan kualitas data (dari file Stock Distributor.xlsx yang diupload)
 

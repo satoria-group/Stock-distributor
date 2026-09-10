@@ -249,6 +249,11 @@
                         </button>
                     </div>
 
+                    <div class="mb-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] text-amber-900 leading-relaxed">
+                        Hanya saran dengan skor <b>&ge; {{ \App\Services\ItemMatchingService::AUTO_APPROVE_MIN_SCORE }}%</b> yang dicentang otomatis dan boleh disetujui massal.
+                        Item berskor di bawah itu akan dilewati saat "Setujui Semua" — petakan manual lewat tombol Edit agar tidak salah petakan.
+                    </div>
+
                     <div class="border border-slate-200 rounded-2xl overflow-hidden text-xs">
                         <table class="w-full">
                             <thead class="bg-slate-50/90 text-slate-500 font-bold uppercase text-[10px] tracking-wider border-b border-slate-200">

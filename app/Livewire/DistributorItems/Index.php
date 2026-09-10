@@ -100,7 +100,12 @@ class Index extends Component
         $unmapped = DistributorItem::unmapped()->get();
         $suggestions = $service->getSuggestionsForCollection($unmapped);
 
-        $this->selectedBulkIds = array_keys($suggestions);
+        // Hanya centang otomatis saran berkeyakinan tinggi. Saran medium/low tetap
+        // ditampilkan untuk ditinjau, tapi harus dicentang manual oleh Admin.
+        $this->selectedBulkIds = array_keys(array_filter(
+            $suggestions,
+            fn ($s) => $s['score'] >= ItemMatchingService::AUTO_APPROVE_MIN_SCORE
+        ));
         $this->showBulkModal = true;
     }
 
@@ -127,22 +132,38 @@ class Index extends Component
         $items = DistributorItem::whereIn('id', $this->selectedBulkIds)->unmapped()->get();
 
         $approvedCount = 0;
-        DB::transaction(function () use ($items, $service, &$approvedCount) {
+        $skippedCount = 0;
+        DB::transaction(function () use ($items, $service, &$approvedCount, &$skippedCount) {
             foreach ($items as $item) {
                 $match = $service->findMatches($item->item_name);
-                if ($match['best_match']) {
-                    $item->update([
-                        'netsuite_item_id' => $match['best_match']->id,
-                        'netsuite_satuan' => $match['best_match']->default_satuan,
-                    ]);
-                    $approvedCount++;
+
+                // Jangan pernah menerapkan tebakan berkeyakinan rendah secara massal —
+                // item ini tetap "belum ter-mapping" dan harus ditinjau manual.
+                if (! $match['best_match'] || $match['score'] < ItemMatchingService::AUTO_APPROVE_MIN_SCORE) {
+                    $skippedCount++;
+
+                    continue;
                 }
+
+                Gate::authorize('update', $item);
+
+                $item->update([
+                    'netsuite_item_id' => $match['best_match']->id,
+                    'netsuite_satuan' => $match['best_match']->default_satuan,
+                ]);
+                $approvedCount++;
             }
         });
 
         $this->showBulkModal = false;
         $this->selectedBulkIds = [];
-        session()->flash('status', "Berhasil! {$approvedCount} item telah disetujui dan dipetakan secara massal ke Master Netsuite.");
+
+        $message = "Berhasil! {$approvedCount} item telah disetujui dan dipetakan secara massal ke Master Netsuite.";
+        if ($skippedCount > 0) {
+            $message .= " {$skippedCount} item dilewati karena keyakinan kecocokannya di bawah "
+                .ItemMatchingService::AUTO_APPROVE_MIN_SCORE.'% — silakan petakan manual lewat tombol Edit.';
+        }
+        session()->flash('status', $message);
     }
 
     public function openCreate(): void

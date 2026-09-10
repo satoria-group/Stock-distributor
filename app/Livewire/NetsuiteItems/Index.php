@@ -4,6 +4,7 @@ namespace App\Livewire\NetsuiteItems;
 
 use App\Models\NetsuiteItem;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Validation\Rule;
 use Livewire\Attributes\Layout;
 use Livewire\Component;
 use Livewire\WithPagination;
@@ -57,7 +58,7 @@ class Index extends Component
     public function save(): void
     {
         $data = $this->validate([
-            'netsuite_id' => ['required', 'string', 'max:100', 'unique:netsuite_items,netsuite_id,'.$this->editingId],
+            'netsuite_id' => ['required', 'string', 'max:100', Rule::unique('netsuite_items', 'netsuite_id')->ignore($this->editingId)],
             'netsuite_name' => ['required', 'string', 'max:255'],
             'default_satuan' => ['nullable', 'string', 'max:50'],
         ]);

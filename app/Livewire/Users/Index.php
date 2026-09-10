@@ -4,6 +4,7 @@ namespace App\Livewire\Users;
 
 use App\Models\User;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Validation\Rule;
 use Livewire\Attributes\Layout;
 use Livewire\Component;
 use Livewire\WithPagination;
@@ -53,7 +54,7 @@ class Index extends Component
 
         $data = $this->validate([
             'name' => ['required', 'string', 'max:255'],
-            'email' => ['required', 'email', 'unique:users,email,'.$this->editingId],
+            'email' => ['required', 'email', Rule::unique('users', 'email')->ignore($this->editingId)],
             'password' => [$this->editingId ? 'nullable' : 'required', 'string', 'min:8'],
             'role' => ['required', 'in:'.implode(',', [User::ROLE_ADMIN, User::ROLE_SALES, User::ROLE_LOGISTIK])],
         ]);

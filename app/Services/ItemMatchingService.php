@@ -8,6 +8,13 @@ use Illuminate\Support\Collection;
 
 class ItemMatchingService
 {
+    /**
+     * Skor minimum agar sebuah saran boleh diterapkan secara otomatis/massal
+     * tanpa ditinjau satu per satu. Sama dengan ambang batas 'high' pada
+     * findMatches(), yaitu band hijau di UI.
+     */
+    public const AUTO_APPROVE_MIN_SCORE = 70;
+
     /** @var Collection<int, NetsuiteItem> */
     protected Collection $netsuiteItems;
 
@@ -127,8 +134,22 @@ class ItemMatchingService
         usort($scoredMatches, fn ($a, $b) => $b['score'] <=> $a['score']);
 
         $top3 = array_slice($scoredMatches, 0, 3);
-        $best = ! empty($top3) ? $top3[0]['item'] : $this->netsuiteItems->first();
-        $bestScore = ! empty($top3) ? $top3[0]['score'] : 10;
+
+        // Tidak ada kandidat yang lolos hard constraint (gauge / tipe / volume /
+        // konsentrasi). Jangan mengarang saran: kembalikan null supaya pemanggil
+        // tahu item ini benar-benar perlu dipetakan manual.
+        if (empty($top3)) {
+            return [
+                'best_match' => null,
+                'score' => 0,
+                'match_type' => 'none',
+                'reason' => 'Tidak ada kandidat yang cocok dengan atribut item ini',
+                'top_matches' => [],
+            ];
+        }
+
+        $best = $top3[0]['item'];
+        $bestScore = $top3[0]['score'];
 
         $matchType = 'low';
         $reason = 'Kandidat terdekat berdasarkan kemiripan umum';

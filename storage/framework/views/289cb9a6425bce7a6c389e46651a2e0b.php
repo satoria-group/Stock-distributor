@@ -10,14 +10,14 @@
                    class="w-full pl-10 pr-4 py-2.5 text-xs rounded-xl border border-slate-200 bg-white text-slate-800 focus:outline-none focus:ring-2 focus:ring-[#0d6d5f]/25 focus:border-[#0d6d5f] transition shadow-2xs">
         </div>
 
-        @can('create', \App\Models\Distributor::class)
+        <?php if (app(\Illuminate\Contracts\Auth\Access\Gate::class)->check('create', \App\Models\Distributor::class)): ?>
         <button wire:click="openCreate" class="inline-flex items-center gap-2 bg-[#0d6d5f] hover:bg-[#07352d] text-white text-xs font-bold rounded-xl px-4 py-2.5 transition shadow-2xs cursor-pointer">
             <svg width="15" height="15" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.2" d="M12 4v16m8-8H4"/>
             </svg>
             <span>Tambah Distributor</span>
         </button>
-        @endcan
+        <?php endif; ?>
     </div>
 
     <div class="bg-white border border-slate-200/80 rounded-2xl overflow-hidden shadow-xs">
@@ -31,39 +31,39 @@
                 </tr>
             </thead>
             <tbody class="divide-y divide-slate-100 bg-white">
-                @forelse ($distributors as $distributor)
+                <?php if(\Livewire\Mechanisms\ExtendBlade\ExtendBlade::isRenderingLivewireComponent()): ?><!--[if BLOCK]><![endif]--><?php endif; ?><?php $__empty_1 = true; $__currentLoopData = $distributors; $__env->addLoop($__currentLoopData); foreach($__currentLoopData as $distributor): $__env->incrementLoopIndices(); $loop = $__env->getLastLoop(); $__empty_1 = false; ?>
                     <tr class="hover:bg-slate-50/80 transition">
-                        <td class="px-5 py-3.5 font-mono text-slate-700 font-semibold text-xs">{{ $distributor->distributor_code }}</td>
-                        <td class="px-5 py-3.5 font-bold text-slate-900 text-xs">{{ $distributor->name }}</td>
+                        <td class="px-5 py-3.5 font-mono text-slate-700 font-semibold text-xs"><?php echo e($distributor->distributor_code); ?></td>
+                        <td class="px-5 py-3.5 font-bold text-slate-900 text-xs"><?php echo e($distributor->name); ?></td>
                         <td class="px-5 py-3.5 text-center">
-                            @if ($distributor->is_active)
+                            <?php if(\Livewire\Mechanisms\ExtendBlade\ExtendBlade::isRenderingLivewireComponent()): ?><!--[if BLOCK]><![endif]--><?php endif; ?><?php if($distributor->is_active): ?>
                                 <span class="inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-bold bg-emerald-50 text-emerald-800 border border-emerald-200">Aktif</span>
-                            @else
+                            <?php else: ?>
                                 <span class="inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-medium bg-slate-100 text-slate-600 border border-slate-200">Nonaktif</span>
-                            @endif
+                            <?php endif; ?><?php if(\Livewire\Mechanisms\ExtendBlade\ExtendBlade::isRenderingLivewireComponent()): ?><!--[if ENDBLOCK]><![endif]--><?php endif; ?>
                         </td>
                         <td class="px-5 py-3.5 text-right space-x-1.5">
-                            @can('update', $distributor)
-                            <button type="button" wire:click="openEdit({{ $distributor->id }})"
+                            <?php if (app(\Illuminate\Contracts\Auth\Access\Gate::class)->check('update', $distributor)): ?>
+                            <button type="button" wire:click="openEdit(<?php echo e($distributor->id); ?>)"
                                     class="inline-flex items-center justify-center w-8 h-8 rounded-xl text-[#0d6d5f] bg-[#e6f4f1] hover:bg-[#0d6d5f] hover:text-white border border-teal-200/60 transition shadow-2xs cursor-pointer"
-                                    title="Edit Distributor ({{ $distributor->name }})">
+                                    title="Edit Distributor (<?php echo e($distributor->name); ?>)">
                                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/>
                                 </svg>
                             </button>
-                            @endcan
-                            @can('delete', $distributor)
-                            <button type="button" wire:click="delete({{ $distributor->id }})" wire:confirm="Hapus distributor {{ $distributor->name }}?"
+                            <?php endif; ?>
+                            <?php if (app(\Illuminate\Contracts\Auth\Access\Gate::class)->check('delete', $distributor)): ?>
+                            <button type="button" wire:click="delete(<?php echo e($distributor->id); ?>)" wire:confirm="Hapus distributor <?php echo e($distributor->name); ?>?"
                                     class="inline-flex items-center justify-center w-8 h-8 rounded-xl text-rose-600 bg-rose-50 hover:bg-rose-600 hover:text-white border border-rose-200/60 transition shadow-2xs cursor-pointer"
                                     title="Hapus Distributor">
                                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
                                 </svg>
                             </button>
-                            @endcan
+                            <?php endif; ?>
                         </td>
                     </tr>
-                @empty
+                <?php endforeach; $__env->popLoop(); $loop = $__env->getLastLoop(); if ($__empty_1): ?>
                     <tr>
                         <td colspan="4" class="px-5 py-14 text-center text-slate-400">
                             <div class="text-3xl mb-2">🏢</div>
@@ -71,29 +71,44 @@
                             <div class="text-xs text-slate-400 mt-0.5">Distributor mitra belum terdaftar dalam sistem.</div>
                         </td>
                     </tr>
-                @endforelse
+                <?php endif; ?><?php if(\Livewire\Mechanisms\ExtendBlade\ExtendBlade::isRenderingLivewireComponent()): ?><!--[if ENDBLOCK]><![endif]--><?php endif; ?>
             </tbody>
         </table>
     </div>
 
     <div class="mt-4 pt-2">
-        {{ $distributors->links('livewire::tailwind') }}
+        <?php echo e($distributors->links('livewire::tailwind')); ?>
+
     </div>
 
-    @if ($showModal)
+    <?php if(\Livewire\Mechanisms\ExtendBlade\ExtendBlade::isRenderingLivewireComponent()): ?><!--[if BLOCK]><![endif]--><?php endif; ?><?php if($showModal): ?>
     <div class="fixed inset-0 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center z-50 p-4" wire:click.self="$set('showModal', false)">
         <div class="bg-white rounded-3xl shadow-2xl w-full max-w-md p-6 border border-slate-200">
-            <h3 class="text-base font-bold text-slate-900 mb-4">{{ $editingId ? 'Edit Distributor' : 'Tambah Distributor' }}</h3>
+            <h3 class="text-base font-bold text-slate-900 mb-4"><?php echo e($editingId ? 'Edit Distributor' : 'Tambah Distributor'); ?></h3>
             <form wire:submit="save" class="space-y-4 text-xs">
                 <div>
                     <label class="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1.5">Kode Distributor</label>
                     <input type="text" wire:model="distributor_code" class="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-xs text-slate-800 font-mono focus:outline-none focus:ring-2 focus:ring-[#0d6d5f]/25 focus:border-[#0d6d5f]">
-                    @error('distributor_code') <p class="text-xs text-rose-600 mt-1">{{ $message }}</p> @enderror
+                    <?php if(\Livewire\Mechanisms\ExtendBlade\ExtendBlade::isRenderingLivewireComponent()): ?><!--[if BLOCK]><![endif]--><?php endif; ?><?php $__errorArgs = ['distributor_code'];
+$__bag = $errors->getBag($__errorArgs[1] ?? 'default');
+if ($__bag->has($__errorArgs[0])) :
+if (isset($message)) { $__messageOriginal = $message; }
+$message = $__bag->first($__errorArgs[0]); ?> <p class="text-xs text-rose-600 mt-1"><?php echo e($message); ?></p> <?php unset($message);
+if (isset($__messageOriginal)) { $message = $__messageOriginal; }
+endif;
+unset($__errorArgs, $__bag); ?><?php if(\Livewire\Mechanisms\ExtendBlade\ExtendBlade::isRenderingLivewireComponent()): ?><!--[if ENDBLOCK]><![endif]--><?php endif; ?>
                 </div>
                 <div>
                     <label class="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1.5">Nama Distributor</label>
                     <input type="text" wire:model="name" class="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-[#0d6d5f]/25 focus:border-[#0d6d5f]">
-                    @error('name') <p class="text-xs text-rose-600 mt-1">{{ $message }}</p> @enderror
+                    <?php if(\Livewire\Mechanisms\ExtendBlade\ExtendBlade::isRenderingLivewireComponent()): ?><!--[if BLOCK]><![endif]--><?php endif; ?><?php $__errorArgs = ['name'];
+$__bag = $errors->getBag($__errorArgs[1] ?? 'default');
+if ($__bag->has($__errorArgs[0])) :
+if (isset($message)) { $__messageOriginal = $message; }
+$message = $__bag->first($__errorArgs[0]); ?> <p class="text-xs text-rose-600 mt-1"><?php echo e($message); ?></p> <?php unset($message);
+if (isset($__messageOriginal)) { $message = $__messageOriginal; }
+endif;
+unset($__errorArgs, $__bag); ?><?php if(\Livewire\Mechanisms\ExtendBlade\ExtendBlade::isRenderingLivewireComponent()): ?><!--[if ENDBLOCK]><![endif]--><?php endif; ?>
                 </div>
                 <label class="flex items-center gap-2 text-xs font-semibold text-slate-700 cursor-pointer pt-1">
                     <input type="checkbox" wire:model="is_active" class="rounded text-[#0d6d5f] focus:ring-[#0d6d5f]">
@@ -106,5 +121,6 @@
             </form>
         </div>
     </div>
-    @endif
+    <?php endif; ?><?php if(\Livewire\Mechanisms\ExtendBlade\ExtendBlade::isRenderingLivewireComponent()): ?><!--[if ENDBLOCK]><![endif]--><?php endif; ?>
 </div>
+<?php /**PATH /var/www/html/resources/views/livewire/distributors/index.blade.php ENDPATH**/ ?>
