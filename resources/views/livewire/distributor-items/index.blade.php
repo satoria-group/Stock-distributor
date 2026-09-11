@@ -87,8 +87,8 @@
                 @forelse ($items as $item)
                     <tr class="hover:bg-slate-50/80 transition">
                         <td class="px-5 py-3.5 text-slate-700">
-                            <span class="font-bold text-slate-900 text-xs">{{ $item->distributor->name }}</span>
-                            <span class="block text-[10px] font-mono text-slate-400 mt-0.5">{{ $item->distributor->distributor_code }}</span>
+                            <span class="font-bold text-slate-900 text-xs">{{ $item->distributor?->name ?? '—' }}</span>
+                            <span class="block text-[10px] font-mono text-slate-400 mt-0.5">{{ $item->distributor?->distributor_code ?? '—' }}</span>
                         </td>
                         <td class="px-5 py-3.5 font-bold text-slate-900 text-xs">
                             {{ $item->item_name }}
@@ -99,9 +99,15 @@
                             </span>
                         </td>
                         <td class="px-5 py-3.5">
-                            @if ($item->isMapped())
+                            @if ($item->isMapped() && $item->netsuiteItem)
                                 <span class="font-mono text-[10px] text-slate-500">{{ $item->netsuiteItem->netsuite_id }}</span>
                                 <div class="text-xs font-bold text-slate-900 leading-tight">{{ $item->netsuiteItem->netsuite_name }}</div>
+                            @elseif ($item->isMapped() && ! $item->netsuiteItem)
+                                <span class="inline-flex items-center gap-1 text-[10px] font-semibold text-rose-600 bg-rose-50 px-2 py-0.5 rounded-md border border-rose-200">
+                                    <svg class="w-3 h-3 text-rose-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
+                                    <span>Master Dihapus (ID #{{ $item->netsuite_item_id }})</span>
+                                </span>
+                                <div class="text-[11px] text-rose-500 italic mt-0.5">Produk Netsuite telah dihapus dari master</div>
                             @else
                                 @if (isset($suggestions[$item->id]))
                                     @php
@@ -277,7 +283,7 @@
                                             </td>
                                             <td class="py-3 px-3 font-semibold text-slate-900">
                                                 {{ $distItem->item_name }}
-                                                <span class="block text-[10px] text-slate-400 font-mono font-normal mt-0.5">{{ $distItem->distributor->name }} ({{ $distItem->distributor->distributor_code }})</span>
+                                                <span class="block text-[10px] text-slate-400 font-mono font-normal mt-0.5">{{ $distItem->distributor?->name ?? '—' }} ({{ $distItem->distributor?->distributor_code ?? '—' }})</span>
                                             </td>
                                             <td class="py-3 px-3">
                                                 <span class="font-mono text-[10px] text-slate-500">{{ $res['best_match']->netsuite_id }}</span>

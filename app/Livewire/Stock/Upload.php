@@ -84,6 +84,10 @@ class Upload extends Component
 
     public bool $showSuccessModal = false;
 
+    public bool $showConflictModal = false;
+
+    public array $pendingImportData = [];
+
     public array $saveSummary = [];
 
     public function mount(): void
@@ -124,13 +128,13 @@ class Upload extends Component
         }
 
         $this->rows = $existing->map(fn (StockEntry $e) => [
-            'distributor_item_id' => $e->distributorItem->id,
-            'item_name' => $e->distributorItem->item_name,
-            'satuan' => $e->satuan,
+            'distributor_item_id' => $e->distributor_item_id,
+            'item_name' => $e->distributorItem?->item_name ?? ('Item ID #'.$e->distributor_item_id),
+            'satuan' => $e->satuan ?: ($e->distributorItem?->satuan ?? 'PCS'),
             'quantity' => (float) $e->quantity,
             'expired_date' => optional($e->expired_date)->toDateString(),
             'batch_no' => $e->batch_no,
-            'mapped' => $e->distributorItem->isMapped(),
+            'mapped' => $e->distributorItem?->isMapped() ?? false,
         ])->values()->all();
 
         $this->dispatch('rows-loaded', rows: $this->rows);
@@ -244,12 +248,8 @@ class Upload extends Component
                     ];
                 } else {
                     $skippedRowsData[$key]['quantity'] += $qty;
-                    if ($ed && empty($skippedRowsData[$key]['expired_date'])) {
-                        $skippedRowsData[$key]['expired_date'] = $ed;
-                    }
-                    if ($batch && empty($skippedRowsData[$key]['batch_no'])) {
-                        $skippedRowsData[$key]['batch_no'] = $batch;
-                    }
+                    $skippedRowsData[$key]['batch_no'] = $this->mergeBatchNumbers($skippedRowsData[$key]['batch_no'] ?? null, $batch);
+                    $skippedRowsData[$key]['expired_date'] = $this->mergeExpiredDates($skippedRowsData[$key]['expired_date'] ?? null, $ed);
                 }
 
                 continue;
@@ -257,6 +257,8 @@ class Upload extends Component
 
             if (isset($rows[$distItem->id])) {
                 $rows[$distItem->id]['quantity'] += $qty;
+                $rows[$distItem->id]['batch_no'] = $this->mergeBatchNumbers($rows[$distItem->id]['batch_no'] ?? null, $batch);
+                $rows[$distItem->id]['expired_date'] = $this->mergeExpiredDates($rows[$distItem->id]['expired_date'] ?? null, $ed);
             } else {
                 $rows[$distItem->id] = [
                     'distributor_item_id' => $distItem->id,
@@ -270,7 +272,30 @@ class Upload extends Component
             }
         }
 
-        $this->tanggal = $tanggal ?? $this->tanggal;
+        $effectiveTanggal = $tanggal ?? $this->tanggal ?? now()->toDateString();
+
+        // Cek apakah sudah ada data tersimpan di DB untuk tanggal & distributor ini
+        $existingCount = StockEntry::query()
+            ->where('tanggal', $effectiveTanggal)
+            ->where('distributor_id', $distributor->id)
+            ->count();
+
+        if ($existingCount > 0) {
+            $this->pendingImportData = [
+                'tanggal' => $effectiveTanggal,
+                'distributor_id' => $distributor->id,
+                'distributor_name' => $distributor->name,
+                'existing_count' => $existingCount,
+                'new_rows' => $rows,
+                'skipped' => array_values(array_unique($skipped)),
+                'skipped_rows_data' => array_values($skippedRowsData),
+            ];
+            $this->showConflictModal = true;
+
+            return;
+        }
+
+        $this->tanggal = $effectiveTanggal;
         $this->distributorId = $distributor->id;
         $this->rows = array_values($rows);
         $this->skippedItems = array_values(array_unique($skipped));
@@ -280,6 +305,72 @@ class Upload extends Component
         $this->dispatch('file-imported');
 
         session()->flash('status', 'Import selesai: '.count($this->rows)." baris dimuat ke grid untuk {$distributor->name} — {$this->tanggal}.");
+    }
+
+    public function confirmImport(string $mode): void
+    {
+        if (empty($this->pendingImportData)) {
+            $this->showConflictModal = false;
+
+            return;
+        }
+
+        $pending = $this->pendingImportData;
+        $this->tanggal = $pending['tanggal'];
+        $this->distributorId = $pending['distributor_id'];
+        $this->skippedItems = $pending['skipped'];
+        $this->skippedRowsData = $pending['skipped_rows_data'];
+        $this->removedItemIds = [];
+
+        if ($mode === 'merge') {
+            $existingEntries = StockEntry::query()
+                ->with('distributorItem.netsuiteItem')
+                ->where('tanggal', $this->tanggal)
+                ->where('distributor_id', $this->distributorId)
+                ->get();
+
+            $mergedRows = $pending['new_rows']; // keyed by distributor_item_id
+
+            foreach ($existingEntries as $entry) {
+                $itemId = $entry->distributor_item_id;
+                if (isset($mergedRows[$itemId])) {
+                    $mergedRows[$itemId]['quantity'] += (float) $entry->quantity;
+                    $mergedRows[$itemId]['batch_no'] = $this->mergeBatchNumbers($entry->batch_no, $mergedRows[$itemId]['batch_no'] ?? null);
+                    $mergedRows[$itemId]['expired_date'] = $this->mergeExpiredDates(
+                        optional($entry->expired_date)->toDateString(),
+                        $mergedRows[$itemId]['expired_date'] ?? null
+                    );
+                } else {
+                    $mergedRows[$itemId] = [
+                        'distributor_item_id' => $itemId,
+                        'item_name' => $entry->distributorItem?->item_name ?? ('Item ID #'.$itemId),
+                        'satuan' => $entry->satuan ?: ($entry->distributorItem?->satuan ?? 'PCS'),
+                        'quantity' => (float) $entry->quantity,
+                        'expired_date' => optional($entry->expired_date)->toDateString(),
+                        'batch_no' => $entry->batch_no,
+                        'mapped' => $entry->distributorItem?->isMapped() ?? false,
+                    ];
+                }
+            }
+
+            $this->rows = array_values($mergedRows);
+            session()->flash('status', 'Import selesai (Mode Smart FEFO Merge): '.count($this->rows)." baris stok berhasil digabungkan untuk {$pending['distributor_name']} — {$this->tanggal}.");
+        } else {
+            // Mode 'replace'
+            $this->rows = array_values($pending['new_rows']);
+            session()->flash('status', 'Import selesai (Mode Timpa/Revisi): '.count($this->rows)." baris baru dimuat ke grid untuk {$pending['distributor_name']} — {$this->tanggal}.");
+        }
+
+        $this->showConflictModal = false;
+        $this->pendingImportData = [];
+        $this->dispatch('rows-loaded', rows: $this->rows);
+        $this->dispatch('file-imported');
+    }
+
+    public function cancelConflictModal(): void
+    {
+        $this->showConflictModal = false;
+        $this->pendingImportData = [];
     }
 
     public function openRequestModal(): void
@@ -352,18 +443,31 @@ class Upload extends Component
                     $processedMasterItems[$normalized] = $distItem;
                 }
 
-                $alreadyInGrid = collect($this->rows)->firstWhere('distributor_item_id', $distItem->id);
-                if (! $alreadyInGrid) {
-                    $this->rows[] = [
-                        'distributor_item_id' => $distItem->id,
-                        'item_name' => $distItem->item_name,
-                        'satuan' => $itemData['satuan'] ?: $distItem->satuan,
-                        'quantity' => (float) ($itemData['quantity'] ?? 0),
-                        'expired_date' => $itemData['expired_date'] ?? null,
-                        'batch_no' => $itemData['batch_no'] ?? null,
-                        'mapped' => $distItem->isMapped(),
-                    ];
-                    $addedCount++;
+                if ($distItem) {
+                    $gridKey = null;
+                    foreach ($this->rows as $k => $r) {
+                        if ((int) ($r['distributor_item_id'] ?? 0) === $distItem->id) {
+                            $gridKey = $k;
+                            break;
+                        }
+                    }
+
+                    if ($gridKey !== null) {
+                        $this->rows[$gridKey]['quantity'] += (float) ($itemData['quantity'] ?? 0);
+                        $this->rows[$gridKey]['batch_no'] = $this->mergeBatchNumbers($this->rows[$gridKey]['batch_no'] ?? null, $itemData['batch_no'] ?? null);
+                        $this->rows[$gridKey]['expired_date'] = $this->mergeExpiredDates($this->rows[$gridKey]['expired_date'] ?? null, $itemData['expired_date'] ?? null);
+                    } else {
+                        $this->rows[] = [
+                            'distributor_item_id' => $distItem->id,
+                            'item_name' => $distItem->item_name,
+                            'satuan' => $itemData['satuan'] ?: $distItem->satuan,
+                            'quantity' => (float) ($itemData['quantity'] ?? 0),
+                            'expired_date' => $itemData['expired_date'] ?? null,
+                            'batch_no' => $itemData['batch_no'] ?? null,
+                            'mapped' => $distItem->isMapped(),
+                        ];
+                        $addedCount++;
+                    }
                 }
             }
         });
@@ -435,24 +539,28 @@ class Upload extends Component
             }
         }
 
-        $alreadyInGrid = collect($this->rows)->firstWhere('distributor_item_id', $distItem->id);
-        if (! $alreadyInGrid) {
-            $this->rows[] = [
-                'distributor_item_id' => $distItem->id,
-                'item_name' => $distItem->item_name,
-                'satuan' => $distItem->satuan,
-                'quantity' => 0,
-                'expired_date' => null,
-                'batch_no' => null,
-                'mapped' => $distItem->isMapped(),
-            ];
-            $this->dispatch('rows-loaded', rows: $this->rows);
+        if ($distItem) {
+            $alreadyInGrid = collect($this->rows)->firstWhere('distributor_item_id', $distItem->id);
+            if (! $alreadyInGrid) {
+                $this->rows[] = [
+                    'distributor_item_id' => $distItem->id,
+                    'item_name' => $distItem->item_name,
+                    'satuan' => $distItem->satuan,
+                    'quantity' => 0,
+                    'expired_date' => null,
+                    'batch_no' => null,
+                    'mapped' => $distItem->isMapped(),
+                ];
+                $this->dispatch('rows-loaded', rows: $this->rows);
+            }
         }
 
         $this->showSingleRequestModal = false;
         $this->reset(['requestItemName', 'requestSatuan']);
 
-        session()->flash('status', "Item '{$distItem->item_name}' berhasil diajukan ke Admin dan ditambahkan ke grid stock.");
+        if ($distItem) {
+            session()->flash('status', "Item '{$distItem->item_name}' berhasil diajukan ke Admin dan ditambahkan ke grid stock.");
+        }
     }
 
     public function addRow(): void
@@ -926,6 +1034,48 @@ class Upload extends Component
         }
 
         return null;
+    }
+
+    /**
+     * Merge two batch numbers into a clean comma-separated list without duplicates.
+     */
+    private function mergeBatchNumbers(?string $batch1, ?string $batch2): ?string
+    {
+        $b1 = trim((string) $batch1);
+        $b2 = trim((string) $batch2);
+
+        if ($b1 === '' && $b2 === '') {
+            return null;
+        }
+        if ($b1 === '') {
+            return $b2;
+        }
+        if ($b2 === '') {
+            return $b1;
+        }
+
+        $parts = preg_split('/\s*,\s*/', $b1.','.$b2, -1, PREG_SPLIT_NO_EMPTY);
+        $unique = array_unique(array_filter(array_map('trim', $parts)));
+
+        return implode(', ', $unique);
+    }
+
+    /**
+     * Merge two expired dates by selecting the earliest date (FEFO principle).
+     */
+    private function mergeExpiredDates(?string $ed1, ?string $ed2): ?string
+    {
+        $d1 = ! empty($ed1) ? trim((string) $ed1) : null;
+        $d2 = ! empty($ed2) ? trim((string) $ed2) : null;
+
+        if (! $d1) {
+            return $d2;
+        }
+        if (! $d2) {
+            return $d1;
+        }
+
+        return ($d1 <= $d2) ? $d1 : $d2;
     }
 
     public function render()

@@ -39,12 +39,12 @@ class StockEntry extends Model
 
     public function distributor(): BelongsTo
     {
-        return $this->belongsTo(Distributor::class);
+        return $this->belongsTo(Distributor::class)->withTrashed();
     }
 
     public function distributorItem(): BelongsTo
     {
-        return $this->belongsTo(DistributorItem::class);
+        return $this->belongsTo(DistributorItem::class)->withTrashed();
     }
 
     public function uploader(): BelongsTo

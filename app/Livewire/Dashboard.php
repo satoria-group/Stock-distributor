@@ -392,9 +392,16 @@ class Dashboard extends Component
             }
         }
 
-        // 6. Data Grafik: Top 10 Produk Berdasarkan Kuantitas
+        // 6. Data Grafik: Top 10 Produk Berdasarkan Kuantitas (Terkonsolidasi Master Netsuite)
         $topProductsMap = $allCurrentEntries
-            ->groupBy(fn ($e) => $e->distributorItem?->item_name ?? 'Item Tidak Dikenal')
+            ->groupBy(function ($e) {
+                $ns = $e->distributorItem?->netsuiteItem;
+                if ($ns && ! empty($ns->netsuite_name)) {
+                    return trim($ns->netsuite_name);
+                }
+
+                return trim((string) ($e->distributorItem?->item_name ?? 'Item Tidak Dikenal'));
+            })
             ->map(fn ($group) => [
                 'total' => $group->sum('quantity'),
                 'entries' => $group,
@@ -509,10 +516,16 @@ class Dashboard extends Component
             $term = mb_strtolower(trim($this->search));
             $filteredEntries = $filteredEntries->filter(function ($e) use ($term) {
                 $name = mb_strtolower($e->distributorItem?->item_name ?? '');
+                $nsName = mb_strtolower($e->distributorItem?->netsuiteItem?->netsuite_name ?? '');
+                $nsCode = mb_strtolower($e->distributorItem?->netsuiteItem?->netsuite_id ?? '');
                 $distName = mb_strtolower($e->distributor?->name ?? '');
                 $batch = mb_strtolower($e->batch_no ?? '');
 
-                return str_contains($name, $term) || str_contains($distName, $term) || str_contains($batch, $term);
+                return str_contains($name, $term)
+                    || str_contains($nsName, $term)
+                    || str_contains($nsCode, $term)
+                    || str_contains($distName, $term)
+                    || str_contains($batch, $term);
             });
         }
 

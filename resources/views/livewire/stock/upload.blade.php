@@ -429,6 +429,87 @@
     </div>
     @endif
 
+    @if ($showConflictModal)
+    <div class="fixed inset-0 bg-black/50 backdrop-blur-xs flex items-center justify-center z-50 p-4 animate-in fade-in duration-200" wire:click.self="cancelConflictModal">
+        <div class="bg-white rounded-2xl shadow-2xl w-full max-w-lg p-6 border border-slate-200 text-left">
+            <div class="flex items-start gap-3.5 mb-4">
+                <div class="w-12 h-12 rounded-xl bg-amber-100 text-amber-700 flex items-center justify-center shrink-0">
+                    <svg width="24" height="24" style="width: 24px; height: 24px; min-width: 24px; max-width: 24px;" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+                    </svg>
+                </div>
+                <div>
+                    <h3 class="text-base font-bold text-slate-900">Data Stok Tanggal Ini Sudah Ada di Database</h3>
+                    <p class="text-xs text-slate-500 mt-0.5">Sistem mendeteksi riwayat upload untuk tanggal dan distributor yang sama.</p>
+                </div>
+            </div>
+
+            <!-- Detail Box -->
+            <div class="bg-slate-50 border border-slate-200/80 rounded-xl p-4 space-y-2 text-xs mb-5">
+                <div class="flex justify-between items-center">
+                    <span class="text-slate-500">Distributor:</span>
+                    <span class="font-bold text-slate-800">{{ $pendingImportData['distributor_name'] ?? '—' }}</span>
+                </div>
+                <div class="flex justify-between items-center">
+                    <span class="text-slate-500">Tanggal Snapshot:</span>
+                    <span class="font-mono font-semibold text-slate-800">
+                        {{ isset($pendingImportData['tanggal']) ? \Illuminate\Support\Carbon::parse($pendingImportData['tanggal'])->format('d M Y') : '—' }}
+                    </span>
+                </div>
+                <div class="flex justify-between items-center pt-2 border-t border-slate-200">
+                    <span class="text-slate-500">Data Tersimpan di DB:</span>
+                    <span class="font-semibold text-amber-700 font-mono">{{ $pendingImportData['existing_count'] ?? 0 }} baris</span>
+                </div>
+                <div class="flex justify-between items-center">
+                    <span class="text-slate-500">Data di Berkas Baru:</span>
+                    <span class="font-semibold text-emerald-700 font-mono">{{ count($pendingImportData['new_rows'] ?? []) }} baris</span>
+                </div>
+            </div>
+
+            <p class="text-xs font-semibold text-slate-700 mb-3">Pilih bagaimana berkas baru ini diproses:</p>
+
+            <div class="space-y-2.5 mb-6">
+                <!-- Option Merge (FEFO) -->
+                <button type="button" wire:click="confirmImport('merge')"
+                        class="w-full text-left p-3.5 rounded-xl border-2 border-emerald-500/30 hover:border-emerald-600 bg-emerald-50/50 hover:bg-emerald-50 transition cursor-pointer group">
+                    <div class="flex items-center justify-between">
+                        <span class="text-xs font-bold text-emerald-950 flex items-center gap-1.5">
+                            <span class="w-2 h-2 rounded-full bg-emerald-500"></span>
+                            Gabungkan Data (Smart FEFO Merge) — Disarankan
+                        </span>
+                        <span class="text-[10px] font-semibold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full">Akumulasi</span>
+                    </div>
+                    <p class="text-[11px] text-emerald-800/90 mt-1 pl-3.5">
+                        Menjumlahkan kuantitas, menggabungkan nomor batch (<code class="font-mono text-[10px]">B01, B02</code>), dan memilih tanggal kedaluwarsa paling awal/kritis (prinsip FEFO). Cocok untuk upload susulan gudang/batch lain.
+                    </p>
+                </button>
+
+                <!-- Option Replace -->
+                <button type="button" wire:click="confirmImport('replace')"
+                        class="w-full text-left p-3.5 rounded-xl border border-slate-200 hover:border-slate-400 bg-white hover:bg-slate-50 transition cursor-pointer group">
+                    <div class="flex items-center justify-between">
+                        <span class="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                            <span class="w-2 h-2 rounded-full bg-slate-400"></span>
+                            Timpa / Revisi Total (Replace)
+                        </span>
+                        <span class="text-[10px] font-semibold text-slate-600 bg-slate-100 px-2 py-0.5 rounded-full">Ganti Total</span>
+                    </div>
+                    <p class="text-[11px] text-slate-500 mt-1 pl-3.5">
+                        Membuang data lama di tanggal ini dan menggantikannya sepenuhnya dengan isi berkas baru. Gunakan jika berkas sebelumnya salah input/keliru.
+                    </p>
+                </button>
+            </div>
+
+            <div class="flex justify-end">
+                <button type="button" wire:click="cancelConflictModal"
+                        class="px-4 py-2 rounded-lg border border-slate-200 text-xs font-medium text-slate-600 hover:bg-slate-100 transition cursor-pointer">
+                    Batal
+                </button>
+            </div>
+        </div>
+    </div>
+    @endif
+
     <style>
         /* Indikasi jelas sel editable pada AG Grid dengan Font Plus Jakarta Sans */
         .ag-theme-quartz {

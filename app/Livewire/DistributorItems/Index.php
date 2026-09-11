@@ -8,6 +8,7 @@ use App\Models\NetsuiteItem;
 use App\Services\ItemMatchingService;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Validation\Rule;
 use Livewire\Attributes\Layout;
 use Livewire\Component;
 use Livewire\WithPagination;
@@ -199,8 +200,20 @@ class Index extends Component
 
     public function save(): void
     {
+        $distributorId = $this->editingId
+            ? DistributorItem::findOrFail($this->editingId)->distributor_id
+            : $this->distributor_id;
+
         $rules = [
-            'item_name' => ['required', 'string', 'max:255'],
+            'item_name' => [
+                'required',
+                'string',
+                'max:255',
+                Rule::unique('distributor_items', 'item_name')
+                    ->where('distributor_id', $distributorId)
+                    ->whereNull('deleted_at')
+                    ->ignore($this->editingId),
+            ],
             'satuan' => ['nullable', 'string', 'max:50'],
             'netsuite_item_id' => ['nullable', 'exists:netsuite_items,id'],
         ];
@@ -209,7 +222,9 @@ class Index extends Component
             $rules['distributor_id'] = ['required', 'exists:distributors,id'];
         }
 
-        $data = $this->validate($rules);
+        $data = $this->validate($rules, [
+            'item_name.unique' => 'Nama item ini sudah terdaftar untuk distributor tersebut.',
+        ]);
 
         $netsuiteSatuan = $data['netsuite_item_id']
             ? NetsuiteItem::find($data['netsuite_item_id'])?->default_satuan
@@ -219,12 +234,18 @@ class Index extends Component
             $item = DistributorItem::findOrFail($this->editingId);
             Gate::authorize('update', $item);
 
-            $item->update([
-                'item_name' => $data['item_name'],
-                'satuan' => $data['satuan'],
-                'netsuite_item_id' => $data['netsuite_item_id'],
-                'netsuite_satuan' => $netsuiteSatuan,
-            ]);
+            try {
+                $item->update([
+                    'item_name' => $data['item_name'],
+                    'satuan' => $data['satuan'],
+                    'netsuite_item_id' => $data['netsuite_item_id'],
+                    'netsuite_satuan' => $netsuiteSatuan,
+                ]);
+            } catch (\Illuminate\Database\UniqueConstraintViolationException) {
+                $this->addError('item_name', 'Nama item ini sudah terdaftar untuk distributor tersebut.');
+
+                return;
+            }
         } else {
             Gate::authorize('create', DistributorItem::class);
 
