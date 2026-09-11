@@ -5,7 +5,9 @@ cd /var/www/html
 
 # storage/ biasanya dipasang sebagai named volume yang awalnya kosong, jadi
 # struktur direktorinya perlu dibangun ulang setiap container start.
-mkdir -p storage/framework/cache/data \
+mkdir -p storage/app/private/livewire-tmp \
+         storage/app/public \
+         storage/framework/cache/data \
          storage/framework/sessions \
          storage/framework/views \
          storage/logs \

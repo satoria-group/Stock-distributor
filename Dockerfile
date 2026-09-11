@@ -42,6 +42,14 @@ RUN apk add --no-cache --virtual .build-deps \
         exif \
     && apk del .build-deps .pq-dev
 
+# Konfigurasi batas upload PHP (sejalan dengan Nginx client_max_body_size 50M)
+RUN { \
+        echo 'upload_max_filesize = 50M'; \
+        echo 'post_max_size = 50M'; \
+        echo 'memory_limit = 512M'; \
+        echo 'max_execution_time = 300'; \
+    } > /usr/local/etc/php/conf.d/docker-php-uploads.ini
+
 COPY --from=composer:2.7 /usr/bin/composer /usr/bin/composer
 
 COPY docker/entrypoint.sh /usr/local/bin/entrypoint.sh

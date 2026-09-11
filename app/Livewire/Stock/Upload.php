@@ -1,14 +1,16 @@
-Detail Stock On Hand<?php
+<?php
 
 namespace App\Livewire\Stock;
 
 use App\Models\Distributor;
 use App\Models\DistributorItem;
 use App\Models\StockEntry;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 use Livewire\Attributes\Layout;
 use Livewire\Component;
+use Livewire\Features\SupportFileUploads\TemporaryUploadedFile;
 use Livewire\WithFileUploads;
 use PhpOffice\PhpSpreadsheet\IOFactory;
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
@@ -555,7 +557,7 @@ class Upload extends Component
                         'satuan' => $row['satuan'] ?: $item->satuan,
                         'expired_date' => $row['expired_date'] ?: null,
                         'batch_no' => $row['batch_no'] ?: null,
-                        'uploaded_by' => auth()->id(),
+                        'uploaded_by' => Auth::id(),
                     ]
                 );
 
@@ -883,7 +885,7 @@ class Upload extends Component
         ]);
     }
 
-    private function parseExcelDate($value): ?string
+    private function parseExcelDate(mixed $value): ?string
     {
         if ($value === null || $value === '') {
             return null;

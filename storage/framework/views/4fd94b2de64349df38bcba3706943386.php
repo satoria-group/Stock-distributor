@@ -1,4 +1,6 @@
 <div>
+    <?php echo $__env->make('partials.flash-alert', array_diff_key(get_defined_vars(), ['__data' => 1, '__path' => 1]))->render(); ?>
+
     <div class="flex flex-wrap items-center justify-between gap-4 mb-6">
         <div class="relative w-full sm:w-96">
             <div class="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400">

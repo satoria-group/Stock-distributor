@@ -165,16 +165,6 @@
             </header>
 
             <main class="p-8 flex-1">
-                @if (session('status'))
-                    <div class="mb-6 rounded-2xl border px-4 py-3.5 flex items-center gap-3 text-xs font-semibold shadow-2xs"
-                         style="background: #ecfdf5; color: #065f46; border-color: #a7f3d0;">
-                        <svg width="18" height="18" style="width: 18px; height: 18px; min-width: 18px; flex-shrink: 0; color: #0d6d5f;" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
-                        </svg>
-                        <span>{{ session('status') }}</span>
-                    </div>
-                @endif
-
                 {{ $slot }}
             </main>
         </div>

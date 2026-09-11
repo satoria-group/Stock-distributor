@@ -3,6 +3,8 @@
 namespace App\Livewire\Distributors;
 
 use App\Models\Distributor;
+use App\Models\DistributorItem;
+use App\Models\StockEntry;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Validation\Rule;
 use Livewire\Attributes\Layout;
@@ -81,6 +83,14 @@ class Index extends Component
     {
         $distributor = Distributor::findOrFail($id);
         Gate::authorize('delete', $distributor);
+
+        $itemCount = DistributorItem::where('distributor_id', $id)->count();
+        $entryCount = StockEntry::where('distributor_id', $id)->count();
+        if ($itemCount > 0 || $entryCount > 0) {
+            session()->flash('error', "Tidak bisa dihapus: distributor ini masih punya {$itemCount} item mapping dan {$entryCount} baris snapshot stok.");
+            return;
+        }
+
         $distributor->delete();
         session()->flash('status', 'Distributor dihapus.');
     }

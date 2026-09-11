@@ -1,4 +1,6 @@
 <div>
+    <?php echo $__env->make('partials.flash-alert', array_diff_key(get_defined_vars(), ['__data' => 1, '__path' => 1]))->render(); ?>
+
     <!-- Top Filter Bar (1 Baris) -->
     <div class="flex items-center justify-between gap-2.5 mb-6 flex-nowrap overflow-x-auto pb-1">
         <div class="flex items-center gap-2.5 flex-nowrap shrink-0">

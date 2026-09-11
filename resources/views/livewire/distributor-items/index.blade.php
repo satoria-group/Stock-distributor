@@ -1,4 +1,6 @@
 <div>
+    @include('partials.flash-alert')
+
     <!-- Top Filter Bar (1 Baris) -->
     <div class="flex items-center justify-between gap-2.5 mb-6 flex-nowrap overflow-x-auto pb-1">
         <div class="flex items-center gap-2.5 flex-nowrap shrink-0">

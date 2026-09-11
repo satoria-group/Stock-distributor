@@ -2,6 +2,7 @@
 
 namespace App\Livewire\NetsuiteItems;
 
+use App\Models\DistributorItem;
 use App\Models\NetsuiteItem;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Validation\Rule;
@@ -81,6 +82,13 @@ class Index extends Component
     {
         $item = NetsuiteItem::findOrFail($id);
         Gate::authorize('delete', $item);
+
+        $mappedCount = DistributorItem::where('netsuite_item_id', $id)->count();
+        if ($mappedCount > 0) {
+            session()->flash('error', "Tidak bisa dihapus: produk ini masih dipetakan ke {$mappedCount} item distributor. Lepas pemetaannya terlebih dahulu.");
+            return;
+        }
+
         $item->delete();
         session()->flash('status', 'Produk Netsuite dihapus.');
     }
