@@ -1,4 +1,4 @@
-<?php
+Detail Stock On Hand<?php
 
 namespace App\Livewire\Stock;
 
@@ -23,6 +23,25 @@ class Upload extends Component
 {
     use WithFileUploads;
 
+    /**
+     * Format tanggal teks yang diterima dari file Excel, dicoba berurutan.
+     *
+     * ISO didahulukan karena tidak ambigu; sisanya semua day-first sesuai
+     * janji sheet "Panduan Pengisian". Sengaja TIDAK memuat format month-first
+     * (m/d/Y) agar "03/04/2026" tidak pernah tertafsir sebagai 4 Maret.
+     */
+    private const DATE_FORMATS = [
+        'Y-m-d',
+        'd/m/Y',
+        'j/n/Y',
+        'd-m-Y',
+        'j-n-Y',
+        'd.m.Y',
+        'Y/m/d',
+        'd/m/y',
+        'j/n/y',
+    ];
+
     public ?string $tanggal = null;
 
     public ?int $distributorId = null;
@@ -31,6 +50,19 @@ class Upload extends Component
 
     /** @var array<int, array> current grid rows, kept in sync with AG Grid on save */
     public array $rows = [];
+
+    /**
+     * distributor_item_id yang secara eksplisit dihapus pengguna dari grid dan
+     * karenanya harus ikut dihapus dari database saat menyimpan.
+     *
+     * Sengaja memakai daftar eksplisit, bukan "hapus yang tidak ada di grid":
+     * grid sering hanya memuat sebagian data (import melewati item yang belum
+     * ter-mapping), sehingga rekonsiliasi otomatis bisa menghapus baris yang
+     * tidak pernah dilihat pengguna.
+     *
+     * @var array<int, int>
+     */
+    public array $removedItemIds = [];
 
     public $file = null;
 
@@ -80,6 +112,7 @@ class Upload extends Component
 
         $this->skippedItems = [];
         $this->skippedRowsData = [];
+        $this->removedItemIds = [];
 
         if ($existing->isEmpty()) {
             $this->rows = [];
@@ -240,6 +273,7 @@ class Upload extends Component
         $this->rows = array_values($rows);
         $this->skippedItems = array_values(array_unique($skipped));
         $this->skippedRowsData = array_values($skippedRowsData);
+        $this->removedItemIds = [];
         $this->dispatch('rows-loaded', rows: $this->rows);
         $this->dispatch('file-imported');
 
@@ -449,14 +483,38 @@ class Upload extends Component
         $this->dispatch('rows-loaded', rows: $this->rows);
     }
 
-    public function removeRow(int $distributorItemId): void
+    /**
+     * Dipanggil dari grid saat pengguna menghapus satu baris.
+     *
+     * Tidak men-dispatch 'rows-loaded': grid sudah membuang barisnya sendiri,
+     * dan mendorong $rows kembali ke grid akan menimpa editan sel yang belum
+     * disimpan pada baris-baris lain.
+     */
+    public function markRowRemoved(int $distributorItemId): void
     {
+        if (! in_array($distributorItemId, $this->removedItemIds, true)) {
+            $this->removedItemIds[] = $distributorItemId;
+        }
+
         $this->rows = collect($this->rows)
             ->reject(fn ($r) => (int) ($r['distributor_item_id'] ?? 0) === $distributorItemId)
             ->values()
             ->all();
+    }
 
-        $this->dispatch('rows-loaded', rows: $this->rows);
+    /**
+     * Daftar hapus hanya berlaku untuk satu kombinasi tanggal + distributor.
+     * Begitu salah satunya berubah, daftar lama harus dibuang supaya tidak
+     * menghapus baris milik tanggal atau distributor yang lain.
+     */
+    public function updatedTanggal(): void
+    {
+        $this->removedItemIds = [];
+    }
+
+    public function updatedDistributorId(): void
+    {
+        $this->removedItemIds = [];
     }
 
     public function saveRows(array $rows): void
@@ -471,8 +529,11 @@ class Upload extends Component
 
         $mappedCount = 0;
         $unmappedCount = 0;
+        $deletedCount = 0;
 
-        DB::transaction(function () use ($rows, &$mappedCount, &$unmappedCount) {
+        $savedItemIds = [];
+
+        DB::transaction(function () use ($rows, &$mappedCount, &$unmappedCount, &$deletedCount, &$savedItemIds) {
             foreach ($rows as $row) {
                 if (empty($row['distributor_item_id'])) {
                     continue;
@@ -498,7 +559,31 @@ class Upload extends Component
                     ]
                 );
 
+                $savedItemIds[] = $item->id;
                 $item->isMapped() ? $mappedCount++ : $unmappedCount++;
+            }
+
+            // Hapus HANYA baris yang memang diklik hapus oleh pengguna, dan
+            // dibatasi tanggal + distributor yang sedang dikerjakan.
+            //
+            // Item yang ikut dikirim grid dikecualikan: pengguna bisa saja
+            // menghapus sebuah baris lalu menambahkannya kembali sebelum
+            // menyimpan. Tanpa pengecualian ini baris tersebut akan di-upsert
+            // lalu langsung dihapus lagi pada transaksi yang sama.
+            $idsToDelete = array_values(array_diff($this->removedItemIds, $savedItemIds));
+
+            if ($idsToDelete !== []) {
+                $toDelete = StockEntry::query()
+                    ->where('tanggal', $this->tanggal)
+                    ->where('distributor_id', $this->distributorId)
+                    ->whereIn('distributor_item_id', $idsToDelete)
+                    ->get();
+
+                foreach ($toDelete as $entry) {
+                    Gate::authorize('delete', $entry);
+                    $entry->delete();
+                    $deletedCount++;
+                }
             }
         });
 
@@ -510,10 +595,15 @@ class Upload extends Component
             'total' => $mappedCount + $unmappedCount,
             'mapped' => $mappedCount,
             'unmapped' => $unmappedCount,
+            'deleted' => $deletedCount,
         ];
         $this->showSuccessModal = true;
 
-        session()->flash('status', "Tersimpan: {$mappedCount} item ter-mapping, {$unmappedCount} item belum ter-mapping (tetap tersimpan sebagai snapshot {$this->tanggal}).");
+        $status = "Tersimpan: {$mappedCount} item ter-mapping, {$unmappedCount} item belum ter-mapping (tetap tersimpan sebagai snapshot {$this->tanggal}).";
+        if ($deletedCount > 0) {
+            $status .= " {$deletedCount} baris dihapus dari snapshot.";
+        }
+        session()->flash('status', $status);
         $this->loadExisting();
     }
 
@@ -556,18 +646,19 @@ class Upload extends Component
         $sheet->getStyle('A1:G1')->applyFromArray($headerStyle);
         $sheet->getRowDimension(1)->setRowHeight(26);
 
-        // Realistic Satoria Sample Rows
+        // Baris contoh SENGAJA TIDAK ditulis ke sheet Template.
+        //
+        // Sebelumnya 5 baris contoh ber-kode 'SDLSURABAYA' ditaruh di sini. Bila
+        // pengguna lupa menghapusnya, baris itu ikut terimpor sebagai stok nyata
+        // — dan karena distributor seluruh file ditentukan dari baris data
+        // pertama, kode contoh itu bisa membajak seluruh import. Contohnya kini
+        // dipindahkan ke sheet "Panduan Pengisian" yang tidak pernah dibaca
+        // importer. Sheet Template dikirim kosong: hanya header + baris yang
+        // sudah diformat agar siap diisi.
         $today = now()->toDateString();
-        $sampleRows = [
-            [$today, 'SDLSURABAYA', 'DEXTROSE 5% 500 ml', 'BOTOL', 1200, '026C05', '2027-12-31'],
-            [$today, 'SDLSURABAYA', 'DEXTROSE 10% 500 ml', 'BOTOL', 850, '026C06', '2027-12-31'],
-            [$today, 'SDLSURABAYA', 'SODIUM CHLORIDE 0.9% 500 ml', 'BOTOL', 2400, '026D12', '2028-06-30'],
-            [$today, 'SDLSURABAYA', 'RINGER LACTATE 500 ml', 'BOTOL', 1600, '026E01', '2028-09-30'],
-            [$today, 'SDLSURABAYA', 'SATORIA MEDIKA Disposable Infusion Set Y-Port 20drops/mL @1', 'PCH', 500, 'B26U01', '2029-01-31'],
-        ];
-        $sheet->fromArray($sampleRows, null, 'A2');
 
-        $rowCount = count($sampleRows) + 1;
+        $blankRows = 50;
+        $rowCount = $blankRows + 1;
 
         $dataStyle = [
             'borders' => [
@@ -735,8 +826,9 @@ class Upload extends Component
             "1. Pastikan sheet utama data tetap bernama 'Template' (atau sheet urutan pertama).",
             "2. Jangan menyisipkan baris kosong di atas baris 1 (Header harus di baris A1:G1).",
             "3. Selalu periksa kode pada sheet 'Daftar Distributor' agar tidak terjadi penolakan akibat kode distributor salah.",
-            "4. Hapus atau timpa baris contoh yang disediakan pada sheet Template sebelum mengunggah file.",
-            "5. Jika terdapat item baru yang belum terdaftar di Satoria, sistem akan memberikan opsi pemetaan atau permintaan mapping produk baru.",
+            "4. Sheet Template sengaja dikirim KOSONG (hanya header) agar tidak ada data contoh yang ikut terunggah. Contoh pengisian ada di bawah — salin polanya, jangan salin isinya.",
+            "5. Satu file hanya boleh berisi SATU kode distributor dan SATU tanggal.",
+            "6. Jika terdapat item baru yang belum terdaftar di Satoria, sistem akan memberikan opsi pemetaan atau permintaan mapping produk baru.",
         ];
         foreach ($notes as $idx => $n) {
             $rowIdx = $noteStart + 1 + $idx;
@@ -744,7 +836,37 @@ class Upload extends Component
             $guideSheet->getStyle("A{$rowIdx}")->getFont()->setSize(9)->getColor()->setRGB('334155');
         }
 
-        foreach (['A', 'B', 'C', 'D'] as $col) {
+        // Contoh pengisian ditaruh di sheet ini, bukan di sheet Template, supaya
+        // tidak mungkin ikut terbaca importer.
+        $exampleStart = $noteStart + count($notes) + 3;
+        $guideSheet->setCellValue("A{$exampleStart}", 'CONTOH PENGISIAN (jangan disalin apa adanya — ganti dengan data distributor Anda):');
+        $guideSheet->getStyle("A{$exampleStart}")->getFont()->setBold(true)->getColor()->setRGB('0D6D5F');
+
+        $exampleHeaderRow = $exampleStart + 1;
+        $guideSheet->fromArray(['Tanggal', 'ID DISTRIBUTOR', 'Distributor Item Name', 'Satuan', 'Quantity', 'Batch No', 'ED'], null, "A{$exampleHeaderRow}");
+        $guideSheet->getStyle("A{$exampleHeaderRow}:G{$exampleHeaderRow}")->applyFromArray([
+            'font' => ['bold' => true, 'color' => ['rgb' => 'FFFFFF'], 'size' => 10],
+            'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => '64748B']],
+            'alignment' => ['horizontal' => Alignment::HORIZONTAL_CENTER, 'vertical' => Alignment::VERTICAL_CENTER],
+            'borders' => ['allBorders' => ['borderStyle' => Border::BORDER_THIN, 'color' => ['rgb' => '334155']]],
+        ]);
+
+        $exampleRows = [
+            [$today, 'SDLSURABAYA', 'DEXTROSE 5% 500 ml', 'BOTOL', 1200, '026C05', '2027-12-31'],
+            [$today, 'SDLSURABAYA', 'DEXTROSE 10% 500 ml', 'BOTOL', 850, '026C06', '2027-12-31'],
+            [$today, 'SDLSURABAYA', 'SODIUM CHLORIDE 0.9% 500 ml', 'BOTOL', 2400, '026D12', '2028-06-30'],
+            [$today, 'SDLSURABAYA', 'RINGER LACTATE 500 ml', 'BOTOL', 1600, '026E01', '2028-09-30'],
+            [$today, 'SDLSURABAYA', 'SATORIA MEDIKA Disposable Infusion Set Y-Port 20drops/mL @1', 'PCH', 500, 'B26U01', '2029-01-31'],
+        ];
+        $guideSheet->fromArray($exampleRows, null, 'A'.($exampleHeaderRow + 1));
+
+        $exampleEnd = $exampleHeaderRow + count($exampleRows);
+        $guideSheet->getStyle("A{$exampleHeaderRow}:G{$exampleEnd}")->applyFromArray([
+            'borders' => ['allBorders' => ['borderStyle' => Border::BORDER_THIN, 'color' => ['rgb' => 'CBD5E1']]],
+            'alignment' => ['vertical' => Alignment::VERTICAL_CENTER],
+        ]);
+
+        foreach (['A', 'B', 'C', 'D', 'E', 'F', 'G'] as $col) {
             $guideSheet->getColumnDimension($col)->setAutoSize(true);
         }
 
@@ -779,11 +901,29 @@ class Upload extends Component
             }
         }
 
-        try {
-            return \Carbon\Carbon::parse($value)->toDateString();
-        } catch (\Throwable) {
-            return null;
+        // Jangan memakai Carbon::parse() di sini: untuk string ambigu ia
+        // mengikuti tafsir Amerika, sehingga "03/04/2026" dibaca 4 Maret
+        // padahal sheet Panduan menjanjikan DD/MM/YYYY (3 April).
+        //
+        $value = trim((string) $value);
+
+        foreach (self::DATE_FORMATS as $format) {
+            try {
+                $parsed = \Carbon\Carbon::createFromFormat($format, $value);
+            } catch (\Throwable) {
+                continue;
+            }
+
+            // Verifikasi round-trip. createFromFormat bersifat permisif dan
+            // menggulung tanggal mustahil — 31/02/2026 menjadi 3 Maret. Kalau
+            // hasil format ulang tidak identik dengan input, tanggalnya tidak
+            // valid: tolak, jangan diam-diam "dibetulkan".
+            if ($parsed && $parsed->format($format) === $value) {
+                return $parsed->toDateString();
+            }
         }
+
+        return null;
     }
 
     public function render()

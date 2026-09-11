@@ -57,4 +57,4 @@
     </script>
 </body>
 </html>
-<?php /**PATH C:\Users\Najmi\Documents\satoria\Stock-distributor\vendor\laravel\framework\src\Illuminate\Foundation\Providers/../resources/exceptions/renderer/components/layout.blade.php ENDPATH**/ ?>
+<?php /**PATH /var/www/html/vendor/laravel/framework/src/Illuminate/Foundation/Providers/../resources/exceptions/renderer/components/layout.blade.php ENDPATH**/ ?>

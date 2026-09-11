@@ -7,6 +7,7 @@ use App\Models\DistributorItem;
 use App\Models\StockEntry;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 use Livewire\Attributes\Layout;
@@ -18,6 +19,34 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
 class Dashboard extends Component
 {
     use WithPagination;
+
+    /**
+     * Presentasi per tier kedaluwarsa. Ambang batasnya sendiri milik
+     * StockEntry::expiryStatus(); di sini hanya label, warna, dan tindakan.
+     * Label harus tetap sejalan dengan StockEntry::CRITICAL_DAYS / WARNING_DAYS.
+     */
+    private const FEFO_TIER_META = [
+        'expired' => [
+            'label' => 'Sudah Expired',
+            'badge' => 'bg-red-100 text-red-800 border-red-300',
+            'action' => 'Karantina & Siapkan Retur',
+        ],
+        'critical' => [
+            'label' => 'Kritis (< 3 Bulan)',
+            'badge' => 'bg-rose-100 text-rose-800 border-rose-300',
+            'action' => 'Prioritas Pengeluaran (FEFO) Segera',
+        ],
+        'warning' => [
+            'label' => 'Waspada (3 - 6 Bulan)',
+            'badge' => 'bg-amber-100 text-amber-800 border-amber-300',
+            'action' => 'Monitoring & Akselerasi Penjualan',
+        ],
+        'safe' => [
+            'label' => 'Aman (> 6 Bulan)',
+            'badge' => 'bg-emerald-100 text-emerald-800 border-emerald-300',
+            'action' => 'Stok Terkendali Sesuai Rencana',
+        ],
+    ];
 
     // Main Navigation Tabs: 'stock' (Posisi Stok), 'expiry' (FEFO), 'compliance' (Kepatuhan Upload)
     public string $activeTab = 'stock';
@@ -166,55 +195,137 @@ class Dashboard extends Component
         return 'OTHER';
     }
 
-    public function render()
+    /**
+     * Cabang aktif sesuai grup terpilih. Diekstrak agar render() dan export
+     * memakai definisi scope yang sama persis.
+     */
+    private function scopedBranchQuery()
     {
-        // 1. Ambil daftar cabang yang relevan dengan grup terpilih (Case-insensitive)
-        $groupDistributorQuery = Distributor::query()->where('is_active', true);
-        if ($this->selectedGroup !== 'ALL') {
-            if ($this->selectedGroup === 'GMP') {
-                $groupDistributorQuery->where('distributor_code', 'ilike', 'GMP%');
-            } elseif ($this->selectedGroup === 'OTHER') {
-                $groupDistributorQuery->where('distributor_code', 'not ilike', 'KFTD%')
-                    ->where('distributor_code', 'not ilike', 'SDL%')
-                    ->where('distributor_code', 'not ilike', 'UDC%')
-                    ->where('distributor_code', 'not ilike', 'GMP%')
-                    ->where('distributor_code', 'not ilike', 'MAM%');
-            } else {
-                $groupDistributorQuery->where('distributor_code', 'ilike', "{$this->selectedGroup}%");
-            }
-        }
-        $availableBranches = $groupDistributorQuery->orderBy('name')->get();
-        $scopedDistributorIds = $availableBranches->pluck('id')->all();
+        $query = Distributor::query()->where('is_active', true);
 
-        // 2. Ambil snapshot tanggal terbaru dari masing-masing distributor
-        $latestPerDistQuery = StockEntry::query()
+        if ($this->selectedGroup === 'ALL') {
+            return $query;
+        }
+
+        if ($this->selectedGroup === 'OTHER') {
+            foreach (['KFTD', 'SDL', 'UDC', 'GMP', 'MAM'] as $prefix) {
+                $query->where('distributor_code', 'not ilike', $prefix.'%');
+            }
+
+            return $query;
+        }
+
+        return $query->where('distributor_code', 'ilike', "{$this->selectedGroup}%");
+    }
+
+    /**
+     * @param  array<int, int>  $scopedDistributorIds
+     */
+    private function latestSnapshotPerDistributor(array $scopedDistributorIds): Collection
+    {
+        $query = StockEntry::query()
             ->select('distributor_id', DB::raw('MAX(tanggal) as max_tanggal'))
             ->groupBy('distributor_id');
 
         if ($this->selectedBranchId) {
-            $latestPerDistQuery->where('distributor_id', $this->selectedBranchId);
+            $query->where('distributor_id', $this->selectedBranchId);
         } elseif ($this->selectedGroup !== 'ALL') {
-            $latestPerDistQuery->whereIn('distributor_id', $scopedDistributorIds ?: [0]);
+            $query->whereIn('distributor_id', $scopedDistributorIds ?: [0]);
         }
 
-        $latestPerDist = $latestPerDistQuery->get();
+        return $query->get();
+    }
+
+    private function entriesForLatestSnapshots(Collection $latestPerDist): Collection
+    {
+        if ($latestPerDist->isEmpty()) {
+            return collect();
+        }
+
+        return StockEntry::query()
+            ->with(['distributor', 'distributorItem.netsuiteItem'])
+            ->where(function ($query) use ($latestPerDist) {
+                foreach ($latestPerDist as $ld) {
+                    $query->orWhere(function ($sub) use ($ld) {
+                        $sub->where('distributor_id', $ld->distributor_id)
+                            ->where('tanggal', $ld->max_tanggal);
+                    });
+                }
+            })
+            ->get();
+    }
+
+    /**
+     * Petakan entri stok menjadi baris FEFO bertier. Ambang batas sepenuhnya
+     * milik StockEntry::expiryStatus(); di sini hanya presentasi.
+     */
+    private function fefoRowsFrom(Collection $entries): Collection
+    {
+        return $entries
+            ->filter(fn ($r) => $r->expired_date !== null)
+            ->map(function ($e) {
+                $tier = $e->expiryStatus();
+                $meta = self::FEFO_TIER_META[$tier] ?? self::FEFO_TIER_META['safe'];
+
+                return (object) [
+                    'entry' => $e,
+                    'days' => $e->daysToExpiry(),
+                    'tier' => $tier,
+                    'label' => $meta['label'],
+                    'badgeClass' => $meta['badge'],
+                    'action' => $meta['action'],
+                ];
+            });
+    }
+
+    /**
+     * Filter tier + pencarian pada tab FEFO.
+     *
+     * Dipakai bersama oleh tabel dan export CSV. Sebelumnya export hanya
+     * menerapkan selectedBranchId sehingga pengguna mengunduh jauh lebih banyak
+     * data daripada yang tampil di layar; menyatukannya di sini membuat
+     * penyimpangan itu mustahil terulang.
+     */
+    private function applyFefoFilters(Collection $rows): Collection
+    {
+        if ($this->expiryRiskFilter !== 'all') {
+            $rows = $rows->where('tier', $this->expiryRiskFilter);
+        }
+
+        if (trim($this->expirySearch) !== '') {
+            $term = mb_strtolower(trim($this->expirySearch));
+            $rows = $rows->filter(function ($r) use ($term) {
+                foreach ([
+                    $r->entry->distributorItem?->item_name,
+                    $r->entry->distributorItem?->netsuiteItem?->netsuite_name,
+                    $r->entry->distributor?->name,
+                    $r->entry->distributor?->distributor_code,
+                    $r->entry->batch_no,
+                ] as $field) {
+                    if ($field !== null && str_contains(mb_strtolower($field), $term)) {
+                        return true;
+                    }
+                }
+
+                return false;
+            });
+        }
+
+        return $rows->sortBy('days')->values();
+    }
+
+    public function render()
+    {
+        // 1. Ambil daftar cabang yang relevan dengan grup terpilih (Case-insensitive)
+        $availableBranches = $this->scopedBranchQuery()->orderBy('name')->get();
+        $scopedDistributorIds = $availableBranches->pluck('id')->all();
+
+        // 2. Ambil snapshot tanggal terbaru dari masing-masing distributor
+        $latestPerDist = $this->latestSnapshotPerDistributor($scopedDistributorIds);
         $latestSnapshotDate = $latestPerDist->max('max_tanggal');
 
         // 3. Ambil baris stok terkini berdasarkan snapshot terbaru masing-masing distributor
-        $allCurrentEntries = collect();
-        if ($latestPerDist->isNotEmpty()) {
-            $allCurrentEntries = StockEntry::query()
-                ->with(['distributor', 'distributorItem.netsuiteItem'])
-                ->where(function ($query) use ($latestPerDist) {
-                    foreach ($latestPerDist as $ld) {
-                        $query->orWhere(function ($sub) use ($ld) {
-                            $sub->where('distributor_id', $ld->distributor_id)
-                                ->where('tanggal', $ld->max_tanggal);
-                        });
-                    }
-                })
-                ->get();
-        }
+        $allCurrentEntries = $this->entriesForLatestSnapshots($latestPerDist);
 
         // 4. Hitung snapshot sebelumnya untuk komparasi Delta (Δ) tanpa N+1 query
         $previousQuantities = collect();
@@ -500,39 +611,7 @@ class Dashboard extends Component
             ->values();
 
         // 10. Tab 2: Monitoring Kedaluwarsa (FEFO Watchlist)
-        $fefoAllRows = $allCurrentEntries->filter(fn ($r) => $r->expired_date !== null)->map(function ($e) {
-            $days = (int) Carbon::today()->diffInDays($e->expired_date, false);
-            if ($days < 0) {
-                $tier = 'expired';
-                $label = 'Sudah Expired';
-                $badgeClass = 'bg-red-100 text-red-800 border-red-300';
-                $action = 'Karantina & Siapkan Retur';
-            } elseif ($days <= 90) {
-                $tier = 'critical';
-                $label = 'Kritis (< 3 Bulan)';
-                $badgeClass = 'bg-rose-100 text-rose-800 border-rose-300';
-                $action = 'Prioritas Pengeluaran (FEFO) Segera';
-            } elseif ($days <= 180) {
-                $tier = 'warning';
-                $label = 'Waspada (3 - 6 Bulan)';
-                $badgeClass = 'bg-amber-100 text-amber-800 border-amber-300';
-                $action = 'Monitoring & Akselerasi Penjualan';
-            } else {
-                $tier = 'safe';
-                $label = 'Aman (> 6 Bulan)';
-                $badgeClass = 'bg-emerald-100 text-emerald-800 border-emerald-300';
-                $action = 'Stok Terkendali Sesuai Rencana';
-            }
-
-            return (object) [
-                'entry' => $e,
-                'days' => $days,
-                'tier' => $tier,
-                'label' => $label,
-                'badgeClass' => $badgeClass,
-                'action' => $action,
-            ];
-        });
+        $fefoAllRows = $this->fefoRowsFrom($allCurrentEntries);
 
         $fefoSummary = [
             'total' => $fefoAllRows->count(),
@@ -543,23 +622,7 @@ class Dashboard extends Component
             'total_qty_at_risk' => (float) $fefoAllRows->whereIn('tier', ['expired', 'critical', 'warning'])->sum(fn ($r) => (float) $r->entry->quantity),
         ];
 
-        $fefoFiltered = $fefoAllRows;
-        if ($this->expiryRiskFilter !== 'all') {
-            $fefoFiltered = $fefoFiltered->where('tier', $this->expiryRiskFilter);
-        }
-        if (trim($this->expirySearch) !== '') {
-            $term = mb_strtolower(trim($this->expirySearch));
-            $fefoFiltered = $fefoFiltered->filter(function ($r) use ($term) {
-                $name = mb_strtolower($r->entry->distributorItem?->item_name ?? '');
-                $ns = mb_strtolower($r->entry->distributorItem?->netsuiteItem?->netsuite_name ?? '');
-                $dist = mb_strtolower($r->entry->distributor?->name ?? '');
-                $code = mb_strtolower($r->entry->distributor?->distributor_code ?? '');
-                $batch = mb_strtolower($r->entry->batch_no ?? '');
-
-                return str_contains($name, $term) || str_contains($ns, $term) || str_contains($dist, $term) || str_contains($code, $term) || str_contains($batch, $term);
-            });
-        }
-        $fefoFiltered = $fefoFiltered->sortBy('days')->values();
+        $fefoFiltered = $this->applyFefoFilters($fefoAllRows);
 
         $fefoTotal = $fefoFiltered->count();
         $fefoSlice = $fefoFiltered->slice(($page - 1) * $this->perPage, $this->perPage)->values();
@@ -574,24 +637,42 @@ class Dashboard extends Component
         // 11. Tab 3: Kepatuhan Upload Cabang (Compliance Tracker)
         $targetComplianceDate = $this->complianceDate ?: ($latestSnapshotDate ?: Carbon::today()->toDateString());
 
-        $submittedDistributorIds = StockEntry::where('tanggal', $targetComplianceDate)
-            ->distinct()
-            ->pluck('distributor_id')
-            ->all();
-
-        $lastUploads = StockEntry::query()
-            ->select('distributor_id', DB::raw('MAX(tanggal) as last_date'), DB::raw('COUNT(*) as total_rows'), DB::raw('SUM(quantity) as total_qty'))
+        // Jumlah baris & kuantitas HANYA untuk tanggal kepatuhan yang dipilih.
+        //
+        // Sebelumnya keduanya adalah agregat sepanjang masa (COUNT/SUM tanpa
+        // batas tanggal) namun ditampilkan bersebelahan dengan "upload
+        // terakhir", sehingga terbaca seolah angka hari itu.
+        //
+        // Keberadaan distributor di koleksi ini sekaligus menandakan ia sudah
+        // setor pada tanggal tersebut, jadi query $submittedDistributorIds yang
+        // terpisah tidak lagi diperlukan.
+        $onTargetDate = StockEntry::query()
+            ->select('distributor_id', DB::raw('COUNT(*) as total_rows'), DB::raw('SUM(quantity) as total_qty'))
+            ->where('tanggal', $targetComplianceDate)
             ->groupBy('distributor_id')
             ->get()
             ->keyBy('distributor_id');
 
-        $complianceAllRows = $availableBranches->map(function ($b) use ($submittedDistributorIds, $lastUploads, $targetComplianceDate) {
-            $hasSubmitted = in_array($b->id, $submittedDistributorIds);
-            $last = $lastUploads->get($b->id);
-            $lastDate = $last?->last_date;
+        // "Upload terakhir" memang bersifat sepanjang masa — itulah maknanya.
+        $lastUploadDates = StockEntry::query()
+            ->select('distributor_id', DB::raw('MAX(tanggal) as last_date'))
+            ->groupBy('distributor_id')
+            ->get()
+            ->keyBy('distributor_id');
+
+        $complianceAllRows = $availableBranches->map(function ($b) use ($onTargetDate, $lastUploadDates, $targetComplianceDate) {
+            $today = $onTargetDate->get($b->id);
+            $hasSubmitted = $today !== null;
+            $lastDate = $lastUploadDates->get($b->id)?->last_date;
+
             $daysOverdue = null;
             if (! $hasSubmitted && $lastDate) {
-                $daysOverdue = (int) Carbon::parse($lastDate)->diffInDays(Carbon::parse($targetComplianceDate));
+                // diffInDays bertanda: positif hanya bila upload terakhir
+                // memang SEBELUM tanggal target. Tanpa argumen false, memilih
+                // tanggal kepatuhan yang lebih awal dari upload terakhir
+                // menghasilkan "terlambat N hari" yang tidak masuk akal.
+                $diff = (int) Carbon::parse($lastDate)->diffInDays(Carbon::parse($targetComplianceDate), false);
+                $daysOverdue = $diff > 0 ? $diff : null;
             }
 
             return (object) [
@@ -599,8 +680,8 @@ class Dashboard extends Component
                 'hasSubmitted' => $hasSubmitted,
                 'lastDate' => $lastDate,
                 'daysOverdue' => $daysOverdue,
-                'totalRows' => $last?->total_rows ?? 0,
-                'totalQty' => (float) ($last?->total_qty ?? 0),
+                'totalRows' => (int) ($today?->total_rows ?? 0),
+                'totalQty' => (float) ($today?->total_qty ?? 0),
             ];
         });
 
@@ -686,52 +767,27 @@ class Dashboard extends Component
     {
         Gate::authorize('dashboard.view');
 
-        $latestPerDistQuery = StockEntry::query()
-            ->select('distributor_id', DB::raw('MAX(tanggal) as max_tanggal'))
-            ->groupBy('distributor_id');
+        // Memakai pipeline yang SAMA dengan tabel FEFO di render(), sehingga isi
+        // CSV persis mencerminkan apa yang dilihat pengguna: scope grup/cabang,
+        // filter tier, dan kata pencarian.
+        $scopedDistributorIds = $this->scopedBranchQuery()->pluck('id')->all();
+        $latestPerDist = $this->latestSnapshotPerDistributor($scopedDistributorIds);
 
-        if ($this->selectedBranchId) {
-            $latestPerDistQuery->where('distributor_id', $this->selectedBranchId);
+        $mapped = $this->applyFefoFilters(
+            $this->fefoRowsFrom($this->entriesForLatestSnapshots($latestPerDist))
+        );
+
+        // Cakupan filter ikut di nama file agar penerima tahu ini data tersaring.
+        $scopeLabel = $this->selectedBranchId
+            ? ($this->scopedBranchQuery()->find($this->selectedBranchId)?->distributor_code ?? 'cabang')
+            : $this->selectedGroup;
+        $scopeLabel = preg_replace('/[^A-Za-z0-9_-]/', '_', (string) $scopeLabel);
+
+        if ($this->expiryRiskFilter !== 'all') {
+            $scopeLabel .= '_'.$this->expiryRiskFilter;
         }
 
-        $latestPerDist = $latestPerDistQuery->get();
-
-        $entries = collect();
-        if ($latestPerDist->isNotEmpty()) {
-            $entries = StockEntry::query()
-                ->with(['distributor', 'distributorItem.netsuiteItem'])
-                ->where(function ($query) use ($latestPerDist) {
-                    foreach ($latestPerDist as $ld) {
-                        $query->orWhere(function ($sub) use ($ld) {
-                            $sub->where('distributor_id', $ld->distributor_id)
-                                ->where('tanggal', $ld->max_tanggal);
-                        });
-                    }
-                })
-                ->whereNotNull('expired_date')
-                ->get();
-        }
-
-        $mapped = $entries->map(function ($e) {
-            $days = (int) Carbon::today()->diffInDays($e->expired_date, false);
-            if ($days < 0) {
-                $status = 'Sudah Expired';
-            } elseif ($days <= 90) {
-                $status = 'Kritis (< 3 Bulan)';
-            } elseif ($days <= 180) {
-                $status = 'Waspada (3 - 6 Bulan)';
-            } else {
-                $status = 'Aman (> 6 Bulan)';
-            }
-
-            return [
-                'entry' => $e,
-                'days' => $days,
-                'status' => $status,
-            ];
-        })->sortBy('days')->values();
-
-        $filename = 'laporan_near_ed_' . Carbon::today()->format('Y-m-d') . '.csv';
+        $filename = 'laporan_near_ed_'.$scopeLabel.'_'.Carbon::today()->format('Y-m-d').'.csv';
 
         return response()->streamDownload(function () use ($mapped) {
             $handle = fopen('php://output', 'w');
@@ -752,7 +808,7 @@ class Dashboard extends Component
             ]);
 
             foreach ($mapped as $r) {
-                $e = $r['entry'];
+                $e = $r->entry;
                 $ns = $e->distributorItem?->netsuiteItem;
                 fputcsv($handle, [
                     self::getDistributorGroup($e->distributor?->distributor_code),
@@ -763,8 +819,8 @@ class Dashboard extends Component
                     $ns?->netsuite_name ?? 'Belum Mapping',
                     $e->batch_no ?? '—',
                     $e->expired_date ? $e->expired_date->format('Y-m-d') : '—',
-                    $r['days'],
-                    $r['status'],
+                    $r->days,
+                    $r->label,
                     $e->quantity,
                     $e->satuan,
                 ]);

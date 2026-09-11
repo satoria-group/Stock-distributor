@@ -61,6 +61,22 @@ class StockEntry extends Model
         return (int) Carbon::today()->diffInDays($this->expired_date, false);
     }
 
+    /**
+     * Ambang kedaluwarsa — SATU-SATUNYA sumber kebenaran.
+     *
+     * Sebelumnya ada dua definisi yang berbeda: metode ini memakai 30/90 hari
+     * sementara tab FEFO dan export CSV memakai 90/180, sehingga angka di kartu
+     * KPI tidak pernah cocok dengan tabel di bawahnya. 90/180 dipilih sebagai
+     * kanonik karena label di UI memang berbunyi "< 3 Bulan" dan "3-6 Bulan",
+     * dan horizon tersebut lebih bermakna untuk distribusi farmasi.
+     */
+    public const CRITICAL_DAYS = 90;
+
+    public const WARNING_DAYS = 180;
+
+    /**
+     * @return 'unknown'|'expired'|'critical'|'warning'|'safe'
+     */
     public function expiryStatus(): string
     {
         $days = $this->daysToExpiry();
@@ -71,13 +87,13 @@ class StockEntry extends Model
         if ($days < 0) {
             return 'expired';
         }
-        if ($days <= 30) {
+        if ($days <= self::CRITICAL_DAYS) {
             return 'critical';
         }
-        if ($days <= 90) {
+        if ($days <= self::WARNING_DAYS) {
             return 'warning';
         }
 
-        return 'ok';
+        return 'safe';
     }
 }

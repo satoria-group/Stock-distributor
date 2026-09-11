@@ -398,6 +398,11 @@
                         ⚠ {{ $saveSummary['unmapped'] ?? 0 }} Belum ter-mapping
                     </span>
                     @endif
+                    @if (($saveSummary['deleted'] ?? 0) > 0)
+                    <span class="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-mono bg-rose-100 text-rose-800">
+                        🗑 {{ $saveSummary['deleted'] }} Baris dihapus
+                    </span>
+                    @endif
                 </div>
             </div>
 
@@ -705,9 +710,12 @@
                 }
                 updateGridSummary();
 
-                const currentRows = [];
-                gridApi.forEachNode(node => currentRows.push(node.data));
-                $wire.set('rows', currentRows);
+                // Catat penghapusan di server. saveRows() memakai daftar ini
+                // untuk benar-benar menghapus StockEntry-nya; tanpa itu baris
+                // hanya hilang dari grid lalu muncul lagi setelah disimpan.
+                // markRowRemoved juga membuang baris dari $rows sehingga
+                // dropdown "tambah item" kembali memunculkannya.
+                $wire.call('markRowRemoved', Number(distributorItemId));
             }
         };
 
@@ -742,16 +750,17 @@
             handleRowsLoaded(event);
         });
 
-        if (window.Livewire) {
-            window.Livewire.hook('morph.updated', ({ component }) => {
-                if (component?.id === '{{ $this->getId() }}') {
-                    const currentRows = $wire.get('rows');
-                    if (currentRows && currentRows.length > 0) {
-                        applyRowData(currentRows);
-                    }
-                }
-            });
-        }
+        // CATATAN: jangan menambahkan hook 'morph.updated' yang mendorong
+        // $wire.get('rows') ke dalam grid.
+        //
+        // Editan sel tidak pernah dikirim ke server (onCellValueChanged hanya
+        // memperbarui ringkasan), sehingga $rows di server selalu tertinggal.
+        // Mendorongnya kembali ke grid pada setiap morph akan menimpa editan
+        // yang belum disimpan — cukup dengan berpindah tab Import/Manual.
+        //
+        // Hook semacam itu juga tidak diperlukan: container grid sudah dibungkus
+        // wire:ignore sehingga Livewire tidak pernah menyentuh DOM-nya, dan
+        // seluruh jalur sah server->grid sudah memakai event 'rows-loaded'.
 
         window.saveGridStock = function () {
             if (!gridApi) return;

@@ -416,6 +416,11 @@ unset($__errorArgs, $__bag); ?><?php if(\Livewire\Mechanisms\ExtendBlade\ExtendB
                         ⚠ <?php echo e($saveSummary['unmapped'] ?? 0); ?> Belum ter-mapping
                     </span>
                     <?php endif; ?><?php if(\Livewire\Mechanisms\ExtendBlade\ExtendBlade::isRenderingLivewireComponent()): ?><!--[if ENDBLOCK]><![endif]--><?php endif; ?>
+                    <?php if(\Livewire\Mechanisms\ExtendBlade\ExtendBlade::isRenderingLivewireComponent()): ?><!--[if BLOCK]><![endif]--><?php endif; ?><?php if(($saveSummary['deleted'] ?? 0) > 0): ?>
+                    <span class="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-mono bg-rose-100 text-rose-800">
+                        🗑 <?php echo e($saveSummary['deleted']); ?> Baris dihapus
+                    </span>
+                    <?php endif; ?><?php if(\Livewire\Mechanisms\ExtendBlade\ExtendBlade::isRenderingLivewireComponent()): ?><!--[if ENDBLOCK]><![endif]--><?php endif; ?>
                 </div>
             </div>
 
@@ -726,9 +731,12 @@ unset($__errorArgs, $__bag); ?><?php if(\Livewire\Mechanisms\ExtendBlade\ExtendB
                 }
                 updateGridSummary();
 
-                const currentRows = [];
-                gridApi.forEachNode(node => currentRows.push(node.data));
-                $wire.set('rows', currentRows);
+                // Catat penghapusan di server. saveRows() memakai daftar ini
+                // untuk benar-benar menghapus StockEntry-nya; tanpa itu baris
+                // hanya hilang dari grid lalu muncul lagi setelah disimpan.
+                // markRowRemoved juga membuang baris dari $rows sehingga
+                // dropdown "tambah item" kembali memunculkannya.
+                $wire.call('markRowRemoved', Number(distributorItemId));
             }
         };
 
@@ -763,16 +771,17 @@ unset($__errorArgs, $__bag); ?><?php if(\Livewire\Mechanisms\ExtendBlade\ExtendB
             handleRowsLoaded(event);
         });
 
-        if (window.Livewire) {
-            window.Livewire.hook('morph.updated', ({ component }) => {
-                if (component?.id === '<?php echo e($this->getId()); ?>') {
-                    const currentRows = $wire.get('rows');
-                    if (currentRows && currentRows.length > 0) {
-                        applyRowData(currentRows);
-                    }
-                }
-            });
-        }
+        // CATATAN: jangan menambahkan hook 'morph.updated' yang mendorong
+        // $wire.get('rows') ke dalam grid.
+        //
+        // Editan sel tidak pernah dikirim ke server (onCellValueChanged hanya
+        // memperbarui ringkasan), sehingga $rows di server selalu tertinggal.
+        // Mendorongnya kembali ke grid pada setiap morph akan menimpa editan
+        // yang belum disimpan — cukup dengan berpindah tab Import/Manual.
+        //
+        // Hook semacam itu juga tidak diperlukan: container grid sudah dibungkus
+        // wire:ignore sehingga Livewire tidak pernah menyentuh DOM-nya, dan
+        // seluruh jalur sah server->grid sudah memakai event 'rows-loaded'.
 
         window.saveGridStock = function () {
             if (!gridApi) return;

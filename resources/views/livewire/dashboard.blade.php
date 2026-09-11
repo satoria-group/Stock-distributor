@@ -15,7 +15,7 @@
                         <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
                         <span class="relative inline-flex rounded-full h-2 w-2 bg-emerald-400"></span>
                     </span>
-                    <span class="tracking-wide">Satoria Logistics Intelligence Hub</span>
+                    <span class="tracking-wide">Satoria Distributor Stock Hub</span>
                 </div>
 
                 <!-- Main Hero Title -->
@@ -538,13 +538,20 @@
                             <td class="text-center py-3.5 px-4 text-slate-400 font-mono">
                                 {{ ($stockTable->currentPage() - 1) * $perPage + $idx + 1 }}
                             </td>
-                            <td class="py-3.5 px-4 font-bold text-slate-900 text-xs">
-                                {{ $r->entry->distributorItem?->item_name ?? '—' }}
-                                @unless ($r->entry->distributorItem?->isMapped())
-                                    <span class="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-mono uppercase bg-amber-50 text-amber-800 border border-amber-200 font-semibold ml-1.5">
-                                        Belum Mapping
+                            <td class="py-3.5 px-4 text-xs">
+                                <div class="font-bold text-slate-900">
+                                    {{ $r->entry->distributorItem?->item_name ?? '—' }}
+                                    @unless ($r->entry->distributorItem?->isMapped())
+                                        <span class="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-mono uppercase bg-amber-50 text-amber-800 border border-amber-200 font-semibold ml-1.5">
+                                            Belum Mapping
+                                        </span>
+                                    @endunless
+                                </div>
+                                @if ($r->entry->tanggal)
+                                    <span class="block text-[10px] font-mono text-slate-400 mt-0.5">
+                                        Snapshot: {{ $r->entry->tanggal->translatedFormat('d M Y') }}
                                     </span>
-                                @endunless
+                                @endif
                             </td>
                             <td class="py-3.5 px-4 text-center font-mono text-slate-600">
                                 <span class="px-2 py-0.5 rounded-lg bg-slate-100 text-slate-700 font-semibold text-[11px]">

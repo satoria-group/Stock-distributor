@@ -97,9 +97,12 @@ class Index extends Component
     public function render()
     {
         $items = NetsuiteItem::query()
-            ->when($this->search, fn ($q) => $q
-                ->where('netsuite_name', 'ilike', "%{$this->search}%")
-                ->orWhere('netsuite_id', 'ilike', "%{$this->search}%"))
+            // Grup OR dibungkus closure agar tetap terkurung bila nanti ada
+            // filter lain di query ini.
+            ->when($this->search, fn ($q) => $q->where(function ($sub) {
+                $sub->where('netsuite_name', 'ilike', "%{$this->search}%")
+                    ->orWhere('netsuite_id', 'ilike', "%{$this->search}%");
+            }))
             ->orderBy('netsuite_name')
             ->paginate(15);
 

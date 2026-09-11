@@ -61,6 +61,15 @@ ENV APP_ENV=local
 
 RUN apk add --no-cache git nodejs npm
 
+# node_modules dipasang di dalam image supaya binari native-nya milik Linux.
+# docker-compose.yml memasang volume anonim di /var/www/html/node_modules yang
+# diinisialisasi dari isi image ini — itulah yang melindungi container dari
+# node_modules milik host Windows (@esbuild/win32-x64, @rollup/...-msvc) yang
+# tidak bisa dieksekusi di Alpine. Tanpa baris ini volume tersebut kosong dan
+# npm di dalam container tidak bisa dipakai.
+COPY package.json package-lock.json ./
+RUN npm ci
+
 # =============================================================================
 # builder — menyiapkan vendor/ dan aset Vite untuk production.
 #

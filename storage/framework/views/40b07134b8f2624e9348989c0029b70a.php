@@ -15,7 +15,7 @@
                         <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
                         <span class="relative inline-flex rounded-full h-2 w-2 bg-emerald-400"></span>
                     </span>
-                    <span class="tracking-wide">Satoria Logistics Intelligence Hub</span>
+                    <span class="tracking-wide">Satoria Distributor Stock Hub</span>
                 </div>
 
                 <!-- Main Hero Title -->
@@ -550,12 +550,20 @@
                                 <?php echo e(($stockTable->currentPage() - 1) * $perPage + $idx + 1); ?>
 
                             </td>
-                            <td class="py-3.5 px-4 font-bold text-slate-900 text-xs">
-                                <?php echo e($r->entry->distributorItem?->item_name ?? '—'); ?>
+                            <td class="py-3.5 px-4 text-xs">
+                                <div class="font-bold text-slate-900">
+                                    <?php echo e($r->entry->distributorItem?->item_name ?? '—'); ?>
 
-                                <?php if(\Livewire\Mechanisms\ExtendBlade\ExtendBlade::isRenderingLivewireComponent()): ?><!--[if BLOCK]><![endif]--><?php endif; ?><?php if (! ($r->entry->distributorItem?->isMapped())): ?>
-                                    <span class="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-mono uppercase bg-amber-50 text-amber-800 border border-amber-200 font-semibold ml-1.5">
-                                        Belum Mapping
+                                    <?php if(\Livewire\Mechanisms\ExtendBlade\ExtendBlade::isRenderingLivewireComponent()): ?><!--[if BLOCK]><![endif]--><?php endif; ?><?php if (! ($r->entry->distributorItem?->isMapped())): ?>
+                                        <span class="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-mono uppercase bg-amber-50 text-amber-800 border border-amber-200 font-semibold ml-1.5">
+                                            Belum Mapping
+                                        </span>
+                                    <?php endif; ?><?php if(\Livewire\Mechanisms\ExtendBlade\ExtendBlade::isRenderingLivewireComponent()): ?><!--[if ENDBLOCK]><![endif]--><?php endif; ?>
+                                </div>
+                                <?php if(\Livewire\Mechanisms\ExtendBlade\ExtendBlade::isRenderingLivewireComponent()): ?><!--[if BLOCK]><![endif]--><?php endif; ?><?php if($r->entry->tanggal): ?>
+                                    <span class="block text-[10px] font-mono text-slate-400 mt-0.5">
+                                        Snapshot: <?php echo e($r->entry->tanggal->translatedFormat('d M Y')); ?>
+
                                     </span>
                                 <?php endif; ?><?php if(\Livewire\Mechanisms\ExtendBlade\ExtendBlade::isRenderingLivewireComponent()): ?><!--[if ENDBLOCK]><![endif]--><?php endif; ?>
                             </td>

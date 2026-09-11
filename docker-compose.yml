@@ -21,8 +21,10 @@ services:
       APP_ENV: local
     volumes:
       - .:/var/www/html
-      # node_modules dibiarkan jadi volume anonim supaya isi host (Windows)
-      # tidak menimpa binary native hasil install di container.
+      # Volume anonim ini diinisialisasi dari node_modules yang sudah dipasang
+      # di stage `development` image, sehingga isi host (binari Windows) tidak
+      # menimpanya. Setelah mengubah package.json, jalankan dengan
+      # `--renew-anon-volumes` agar volume lama tidak dipakai ulang.
       - /var/www/html/node_modules
     networks:
       - stock_network

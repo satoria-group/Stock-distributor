@@ -249,18 +249,89 @@ class History extends Component
         $scopedDistributorIds = $availableBranches->pluck('id')->all();
 
         // 2. Query log riwayat snapshot (agregasi per tanggal + distributor_id)
-        $query = StockEntry::query()
-            ->select(
-                'tanggal',
-                'distributor_id',
-                DB::raw('COUNT(*) as total_sku'),
-                DB::raw('SUM(quantity) as total_quantity'),
-                DB::raw('MAX(uploaded_by) as uploaded_by'),
-                DB::raw('MAX(created_at) as created_at'),
-                DB::raw('MAX(updated_at) as last_updated_at')
-            )
-            ->groupBy('tanggal', 'distributor_id');
+        $snapshots = $this->applySnapshotFilters(
+            StockEntry::query()
+                ->select(
+                    'tanggal',
+                    'distributor_id',
+                    DB::raw('COUNT(*) as total_sku'),
+                    DB::raw('SUM(quantity) as total_quantity'),
+                    // Penyunting TERAKHIR snapshot ini.
+                    //
+                    // Sebelumnya MAX(uploaded_by), yang keliru: itu mengambil
+                    // ID user terbesar, bukan orang yang benar-benar terakhir
+                    // mengubah. Semantiknya kini sama dengan viewDetail(), yang
+                    // memakai entri dengan updated_at terbaru. id dipakai
+                    // sebagai pemecah seri karena satu kali simpan menulis
+                    // banyak baris pada detik yang sama.
+                    DB::raw('(SELECT se2.uploaded_by FROM stock_entries se2
+                              WHERE se2.tanggal = stock_entries.tanggal
+                                AND se2.distributor_id = stock_entries.distributor_id
+                              ORDER BY se2.updated_at DESC, se2.id DESC
+                              LIMIT 1) as uploaded_by'),
+                    DB::raw('MAX(created_at) as created_at'),
+                    DB::raw('MAX(updated_at) as last_updated_at')
+                )
+                ->groupBy('tanggal', 'distributor_id'),
+            $scopedDistributorIds
+        )
+            ->with(['distributor', 'uploader'])
+            ->orderBy('tanggal', 'desc')
+            ->orderBy('distributor_id', 'asc')
+            ->paginate($this->perPage);
 
+        // 3. Statistik memakai filter YANG SAMA dengan tabel.
+        //
+        // Sebelumnya keempat angka ini diambil dari query global tanpa filter,
+        // sehingga kartu di atas tabel tidak pernah cocok dengan isi tabelnya.
+        // Query grouped dibungkus sebagai derived table supaya keempat agregat
+        // didapat dalam satu query, bukan empat.
+        $statsBase = $this->applySnapshotFilters(
+            StockEntry::query()
+                ->select('tanggal', 'distributor_id', DB::raw('COUNT(*) as total_sku'))
+                ->groupBy('tanggal', 'distributor_id'),
+            $scopedDistributorIds
+        );
+
+        $agg = DB::query()
+            ->fromSub($statsBase, 't')
+            ->selectRaw('COUNT(*) as snapshot_count')
+            ->selectRaw('COUNT(DISTINCT distributor_id) as distributor_count')
+            ->selectRaw('MAX(tanggal) as latest_tanggal')
+            ->selectRaw('COALESCE(SUM(total_sku), 0) as row_count')
+            ->first();
+
+        return view('livewire.stock.history', [
+            'snapshots' => $snapshots,
+            'availableBranches' => $availableBranches,
+            'selectedGroup' => $this->selectedGroup,
+            'startDate' => $this->startDate,
+            'endDate' => $this->endDate,
+            'distributorId' => $this->distributorId,
+            'search' => $this->search,
+            'showDetailModal' => $this->showDetailModal,
+            'selectedSnapshot' => $this->selectedSnapshot,
+            'stats' => [
+                'total_snapshots' => (int) ($agg->snapshot_count ?? 0),
+                'active_distributors' => (int) ($agg->distributor_count ?? 0),
+                'latest_date' => $agg->latest_tanggal ?? null,
+                'total_rows' => (int) ($agg->row_count ?? 0),
+            ],
+        ]);
+    }
+
+    /**
+     * Filter yang WAJIB identik antara tabel snapshot dan kartu statistik.
+     *
+     * Diekstrak menjadi satu metode supaya keduanya tidak bisa menyimpang —
+     * penyebab asli bug statistik yang mengabaikan filter.
+     *
+     * @param  \Illuminate\Database\Eloquent\Builder  $query
+     * @param  array<int, int>  $scopedDistributorIds
+     * @return \Illuminate\Database\Eloquent\Builder
+     */
+    private function applySnapshotFilters($query, array $scopedDistributorIds)
+    {
         if ($this->distributorId) {
             $query->where('distributor_id', $this->distributorId);
         } elseif ($this->selectedGroup !== 'ALL') {
@@ -276,42 +347,18 @@ class History extends Component
         }
 
         if ($this->search) {
-            $term = '%' . trim($this->search) . '%';
+            $term = '%'.trim($this->search).'%';
+
+            // Aman tanpa closure pembungkus: Laravel menjalankan callback
+            // whereHas lewat callScope(), yang otomatis mengelompokkan where
+            // baru dalam tanda kurung sehingga korelasi tidak terlepas.
+            // (Berbeda dengan when(), yang TIDAK mengelompokkan.)
             $query->whereHas('distributor', function ($q) use ($term) {
                 $q->where('name', 'ilike', $term)
                     ->orWhere('distributor_code', 'ilike', $term);
             });
         }
 
-        $query->with(['distributor', 'uploader'])
-            ->orderBy('tanggal', 'desc')
-            ->orderBy('distributor_id', 'asc');
-
-        $snapshots = $query->paginate($this->perPage);
-
-        // 3. Statistik keseluruhan (subquery distinct count)
-        $totalSnapshotsCount = DB::table(DB::raw('(SELECT DISTINCT tanggal, distributor_id FROM stock_entries) as snapshots'))->count();
-
-        $totalActiveDistributors = StockEntry::distinct()->count('distributor_id');
-        $latestSnapshotDate = StockEntry::max('tanggal');
-        $totalCumulativeRows = StockEntry::count();
-
-        return view('livewire.stock.history', [
-            'snapshots' => $snapshots,
-            'availableBranches' => $availableBranches,
-            'selectedGroup' => $this->selectedGroup,
-            'startDate' => $this->startDate,
-            'endDate' => $this->endDate,
-            'distributorId' => $this->distributorId,
-            'search' => $this->search,
-            'showDetailModal' => $this->showDetailModal,
-            'selectedSnapshot' => $this->selectedSnapshot,
-            'stats' => [
-                'total_snapshots' => $totalSnapshotsCount,
-                'active_distributors' => $totalActiveDistributors,
-                'latest_date' => $latestSnapshotDate,
-                'total_rows' => $totalCumulativeRows,
-            ],
-        ]);
+        return $query;
     }
 }
