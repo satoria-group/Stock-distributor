@@ -79,6 +79,18 @@
                     </a>
                     @endcan
 
+                    <!-- Inbox Email Distributor -->
+                    @if (auth()->user()?->hasRole(\App\Models\User::ROLE_ADMIN) || auth()->user()?->hasRole(\App\Models\User::ROLE_LOGISTIK) || auth()->user()?->can('stock.upload') || auth()->user()?->can('stock.view'))
+                    <a href="{{ route('emails.index') }}"
+                       class="flex items-center gap-3 px-3.5 py-2.5 rounded-xl transition duration-150 {{ request()->routeIs('emails.*') ? 'font-bold shadow-2xs' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50 font-medium' }}"
+                       style="{{ request()->routeIs('emails.*') ? 'background: #eaf4f2; color: #07352d;' : '' }}">
+                        <svg width="18" height="18" style="width: 18px; height: 18px; min-width: 18px; flex-shrink: 0;" class="{{ request()->routeIs('emails.*') ? 'text-[#0d6d5f]' : 'text-slate-400' }}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/>
+                        </svg>
+                        <span>Inbox Email Distributor</span>
+                    </a>
+                    @endif
+
                     <!-- Upload Stock -->
                     @can('create', \App\Models\StockEntry::class)
                     <a href="{{ route('stock.upload') }}"
