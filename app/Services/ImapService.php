@@ -333,6 +333,93 @@ class ImapService
     }
 
     /**
+     * Download an Excel attachment by email UID and optional attachment ID.
+     * If attachment ID is omitted, it automatically finds the first Excel attachment (.xlsx/.xls/.csv).
+     *
+     * @return array{filename: string, mime_type: string, content: string, size: int}|null
+     */
+    public function getExcelAttachment(string|int $uid, ?string $attachmentId = null): ?array
+    {
+        if (! $this->isConfigured()) {
+            return null;
+        }
+
+        try {
+            $client = $this->getClient();
+            $folder = $client->getFolder(config('imap.mailbox', 'INBOX'));
+            if (! $folder) {
+                return null;
+            }
+
+            $message = $folder->query()->leaveUnread()->getMessageByUid($uid);
+            if (! $message || ! $message->hasAttachments()) {
+                return null;
+            }
+
+            $targetAttachment = null;
+            $attachments = $message->getAttachments();
+
+            if ($attachmentId !== null && $attachmentId !== '') {
+                foreach ($attachments as $idx => $att) {
+                    $id = (string) ($att->getPartNumber() ?: $idx);
+                    if ($id === (string) $attachmentId || $att->getName() === $attachmentId) {
+                        $targetAttachment = $att;
+                        break;
+                    }
+                }
+            }
+
+            // If not found by ID or no ID provided, look for the first Excel attachment (.xlsx / .xls / .csv)
+            if (! $targetAttachment) {
+                foreach ($attachments as $att) {
+                    $name = $att->getName() ?: '';
+                    $ext = strtolower(pathinfo($name, PATHINFO_EXTENSION));
+                    if (in_array($ext, ['xlsx', 'xls', 'csv'], true)) {
+                        $targetAttachment = $att;
+                        break;
+                    }
+                }
+            }
+
+            // Fallback to the very first attachment if no specific Excel extension was matched
+            if (! $targetAttachment) {
+                foreach ($attachments as $att) {
+                    $targetAttachment = $att;
+                    break;
+                }
+            }
+
+            if (! $targetAttachment) {
+                return null;
+            }
+
+            $size = (int) $targetAttachment->getSize();
+            $maxMb = config('imap.max_attachment_mb', 25);
+            if ($size > ($maxMb * 1024 * 1024)) {
+                throw new \RuntimeException("Ukuran berkas ({$this->formatBytes($size)}) melebihi batas maksimal yang diizinkan ({$maxMb} MB).");
+            }
+
+            $content = $targetAttachment->getContent();
+            $name = $targetAttachment->getName() ?: 'attachment.xlsx';
+
+            return [
+                'filename' => $name,
+                'mime_type' => $targetAttachment->getMimeType() ?: 'application/octet-stream',
+                'content' => $content,
+                'size' => strlen($content),
+            ];
+        } catch (\Throwable $e) {
+            Log::warning('mail.excel_attachment.fetch_failed', [
+                'uid' => $uid,
+                'attachment_id' => $attachmentId,
+                'error' => $e->getMessage(),
+            ]);
+
+            return null;
+        }
+    }
+
+    /**
      * Mark an email as read (Seen) on the mail server.
      */
     public function markAsRead(string|int $uid): bool

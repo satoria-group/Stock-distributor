@@ -96,6 +96,50 @@ class Upload extends Component
         if ($distId = request()->query('distributor_id')) {
             $this->distributorId = (int) $distId;
             $this->loadExisting();
+        } elseif ($emailUid = request()->query('from_email_uid')) {
+            $attachmentId = request()->query('attachment_id');
+            $this->loadFromEmail($emailUid, $attachmentId);
+        }
+    }
+
+    public function loadFromEmail(string|int $emailUid, ?string $attachmentId = null): void
+    {
+        Gate::authorize('create', StockEntry::class);
+
+        $imapService = app(\App\Services\ImapService::class);
+        if (! $imapService->isConfigured()) {
+            session()->flash('error', 'Koneksi mail server IMAP belum dikonfigurasi pada .env.');
+
+            return;
+        }
+
+        $att = $imapService->getExcelAttachment($emailUid, $attachmentId);
+        if (! $att || empty($att['content'])) {
+            session()->flash('error', "Tidak ditemukan lampiran berkas Excel pada email (UID #{$emailUid}).");
+
+            return;
+        }
+
+        $filename = $att['filename'] ?? 'attachment.xlsx';
+        $ext = strtolower(pathinfo($filename, PATHINFO_EXTENSION));
+        $cleanExt = in_array($ext, ['xlsx', 'xls'], true) ? $ext : 'xlsx';
+        $tempClean = tempnam(sys_get_temp_dir(), 'satoria_email_att_').'.'.$cleanExt;
+
+        file_put_contents($tempClean, $att['content']);
+
+        try {
+            $success = $this->processSpreadsheetPath($tempClean, "Lampiran Email ({$filename})");
+            if ($success) {
+                // Tandai email sebagai terbaca setelah berhasil diproses
+                $imapService->markAsRead($emailUid);
+
+                if (! $this->showConflictModal) {
+                    $distName = $this->distributorId ? (Distributor::find($this->distributorId)?->name ?? 'Distributor') : 'Distributor';
+                    session()->flash('status', "Lampiran berkas '{$filename}' dari email berhasil dimuat ke grid: ".count($this->rows)." baris untuk {$distName}.");
+                }
+            }
+        } finally {
+            @unlink($tempClean);
         }
     }
 
@@ -167,18 +211,28 @@ class Upload extends Component
         copy($this->file->getRealPath(), $tempClean);
 
         try {
-            $spreadsheet = IOFactory::load($tempClean);
-        } catch (\Throwable $e) {
-            $this->addError('file', 'Gagal membaca file spreadsheet: '.$e->getMessage());
-
-            return;
+            $success = $this->processSpreadsheetPath($tempClean, 'File Excel');
+            if ($success && ! $this->showConflictModal) {
+                $distName = $this->distributorId ? (Distributor::find($this->distributorId)?->name ?? 'Distributor') : 'Distributor';
+                session()->flash('status', 'Import selesai: '.count($this->rows)." baris dimuat ke grid untuk {$distName} — {$this->tanggal}.");
+            }
         } finally {
             @unlink($tempClean);
+        }
+    }
+
+    protected function processSpreadsheetPath(string $filePath, string $sourceDescription = 'File Excel'): bool
+    {
+        try {
+            $spreadsheet = IOFactory::load($filePath);
+        } catch (\Throwable $e) {
+            $this->addError('file', "Gagal membaca {$sourceDescription}: ".$e->getMessage());
+
+            return false;
         }
 
         $sheet = $spreadsheet->getSheetByName('Template') ?? $spreadsheet->getActiveSheet();
         $data = $sheet->toArray(null, true, false, false);
-
 
         $header = array_map(fn ($h) => trim((string) $h), $data[0] ?? []);
         $col = array_flip($header);
@@ -188,7 +242,7 @@ class Upload extends Component
             if (! isset($col[$rc])) {
                 $this->addError('file', "Kolom '{$rc}' tidak ditemukan di sheet Template.");
 
-                return;
+                return false;
             }
         }
 
@@ -212,16 +266,16 @@ class Upload extends Component
         }
 
         if (! $firstDataRow) {
-            $this->addError('file', 'File tidak berisi baris data.');
+            $this->addError('file', "Berkas ({$sourceDescription}) tidak berisi baris data.");
 
-            return;
+            return false;
         }
 
         $distributorCode = trim((string) $firstDataRow[$col['ID DISTRIBUTOR']]);
         if (strtoupper($distributorCode) === 'XXXX') {
             $this->addError('file', "Kode distributor masih berupa format contoh ('xxxx'). Silakan ganti dengan kode distributor sebenarnya (lihat sheet 'Daftar Distributor').");
 
-            return;
+            return false;
         }
 
         $distributor = Distributor::where('distributor_code', $distributorCode)->first();
@@ -229,14 +283,14 @@ class Upload extends Component
         if (! $distributor) {
             $this->addError('file', "Distributor dengan kode '{$distributorCode}' belum ada di Master Distributor. Minta Admin menambahkan dulu.");
 
-            return;
+            return false;
         }
 
         $rawTanggal = $firstDataRow[$col['Tanggal']];
         if (in_array(trim(strtoupper((string) $rawTanggal)), ['DD/MM/YYYY', 'YYYY-MM-DD', 'DD-MM-YYYY'], true)) {
             $this->addError('file', "Tanggal snapshot masih berupa format contoh ('DD/MM/YYYY'). Silakan isi dengan tanggal yang valid (contoh: ".now()->format('d/m/Y').").");
 
-            return;
+            return false;
         }
 
         $tanggal = $this->parseExcelDate($rawTanggal);
@@ -322,7 +376,7 @@ class Upload extends Component
             ];
             $this->showConflictModal = true;
 
-            return;
+            return true;
         }
 
         $this->tanggal = $effectiveTanggal;
@@ -334,7 +388,7 @@ class Upload extends Component
         $this->dispatch('rows-loaded', rows: $this->rows);
         $this->dispatch('file-imported');
 
-        session()->flash('status', 'Import selesai: '.count($this->rows)." baris dimuat ke grid untuk {$distributor->name} — {$this->tanggal}.");
+        return true;
     }
 
     public function confirmImport(string $mode): void

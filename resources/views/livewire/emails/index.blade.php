@@ -225,12 +225,31 @@
                                 {{ $email['date_display'] }}
                             </td>
 
-                            <!-- Tombol Baca -->
+                            <!-- Tombol Aksi -->
                             <td class="py-3.5 px-4 text-center">
-                                <button type="button" wire:click.stop="selectEmail('{{ $email['uid'] }}')"
-                                        class="px-2.5 py-1 rounded-lg bg-slate-100 group-hover:bg-[#0d6d5f] group-hover:text-white text-slate-700 text-[11px] font-semibold transition-all duration-150 shadow-2xs cursor-pointer">
-                                    Buka
-                                </button>
+                                <div class="flex items-center justify-center gap-1.5">
+                                    @if (! empty($email['is_daily_stock']) && $email['has_attachments'])
+                                        <a href="{{ route('stock.upload', ['from_email_uid' => $email['uid']]) }}"
+                                           wire:click.stop
+                                           class="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-white text-[11px] font-bold transition-all duration-150 shadow-2xs cursor-pointer hover:brightness-110"
+                                           style="background: #0d6d5f;"
+                                           title="Langsung proses lampiran Excel dari email ini ke Upload Stock">
+                                            <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/>
+                                            </svg>
+                                            <span>Upload</span>
+                                        </a>
+                                    @else
+                                        <button type="button" disabled
+                                                class="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-slate-100 text-slate-400 border border-slate-200/80 text-[11px] font-medium cursor-not-allowed opacity-60"
+                                                title="{{ empty($email['is_daily_stock']) ? 'Hanya tersedia untuk email bertanda Satoria Daily Stock' : 'Email ini tidak memiliki berkas lampiran' }}">
+                                            <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/>
+                                            </svg>
+                                            <span>Upload</span>
+                                        </button>
+                                    @endif
+                                </div>
                             </td>
                         </tr>
                     @empty
@@ -354,13 +373,12 @@
                                 </svg>
                                 <span>Lampiran Berkas ({{ count($selectedEmail['attachments']) }} berkas ditemukan):</span>
                             </span>
-                            <span class="text-[11px] text-emerald-700 font-medium">Klik tombol Unduh untuk menyimpan berkas Excel</span>
                         </div>
 
-                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                        <div class="space-y-2.5 w-full">
                             @foreach ($selectedEmail['attachments'] as $att)
-                                <div class="flex items-center justify-between p-3 rounded-xl border {{ $att['is_excel'] ? 'border-emerald-300 bg-white' : 'border-slate-200 bg-white' }} shadow-2xs">
-                                    <div class="flex items-center gap-2.5 truncate">
+                                <div class="flex items-center justify-between p-3 rounded-xl border {{ $att['is_excel'] ? 'border-emerald-300 bg-white' : 'border-slate-200 bg-white' }} shadow-2xs w-full">
+                                    <div class="flex items-center gap-3 min-w-0 flex-1 mr-3">
                                         <div class="w-8 h-8 rounded-lg {{ $att['is_excel'] ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-700' }} flex items-center justify-center shrink-0 font-bold text-[10px] font-mono">
                                             @if ($att['is_excel'])
                                                 XLS
@@ -368,7 +386,7 @@
                                                 FILE
                                             @endif
                                         </div>
-                                        <div class="truncate">
+                                        <div class="min-w-0 flex-1">
                                             <div class="text-xs font-bold text-slate-900 truncate" title="{{ $att['name'] }}">
                                                 {{ $att['name'] }}
                                             </div>
@@ -379,9 +397,20 @@
                                     </div>
 
                                     <div class="flex items-center gap-2 shrink-0 ml-2">
+                                        @if ($att['is_excel'])
+                                            <a href="{{ route('stock.upload', ['from_email_uid' => $selectedEmail['uid'], 'attachment_id' => $att['id']]) }}"
+                                               class="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-white font-bold text-xs shadow-2xs transition cursor-pointer hover:brightness-110"
+                                               style="background: #0d6d5f;"
+                                               title="Proses berkas ini langsung ke Grid Upload Stock">
+                                                <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/>
+                                                </svg>
+                                                <span>Upload ke Grid</span>
+                                            </a>
+                                        @endif
                                         <a href="{{ route('emails.attachments.download', ['uid' => $selectedEmail['uid'], 'attachmentId' => $att['id']]) }}"
                                            target="_blank"
-                                           class="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg {{ $att['is_excel'] ? 'bg-[#0d6d5f] hover:bg-[#07352d] text-white' : 'bg-slate-100 hover:bg-slate-200 text-slate-800' }} font-bold text-xs shadow-2xs transition cursor-pointer">
+                                           class="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold text-xs shadow-2xs transition cursor-pointer">
                                             <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/>
                                             </svg>
@@ -422,9 +451,14 @@
                             Tutup
                         </button>
                         @if (! empty($selectedEmail['attachments']))
-                            <a href="{{ route('stock.upload') }}"
-                               class="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-white font-bold transition shadow-xs cursor-pointer"
-                               style="background: #0d6d5f;">
+                            @php
+                                $firstExcelAtt = collect($selectedEmail['attachments'])->firstWhere('is_excel', true);
+                                $targetAttId = $firstExcelAtt ? $firstExcelAtt['id'] : ($selectedEmail['attachments'][0]['id'] ?? null);
+                            @endphp
+                            <a href="{{ route('stock.upload', ['from_email_uid' => $selectedEmail['uid'], 'attachment_id' => $targetAttId]) }}"
+                               class="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-white font-bold transition shadow-xs cursor-pointer hover:brightness-110"
+                               style="background: #0d6d5f;"
+                               title="Langsung proses lampiran Excel ke halaman Upload Stock">
                                 <span>Lanjut ke Upload Stock</span>
                                 <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3"/>
