@@ -26,23 +26,22 @@ class Upload extends Component
     use WithFileUploads;
 
     /**
-     * Format tanggal teks yang diterima dari file Excel, dicoba berurutan.
-     *
-     * ISO didahulukan karena tidak ambigu; sisanya semua day-first sesuai
-     * janji sheet "Panduan Pengisian". Sengaja TIDAK memuat format month-first
-     * (m/d/Y) agar "03/04/2026" tidak pernah tertafsir sebagai 4 Maret.
+     * Format tanggal teks yang diterima dari file Excel.
+     * Diseragamkan menggunakan format Day-First {DD/MM/YYYY} (d/m/Y).
      */
     private const DATE_FORMATS = [
-        'Y-m-d',
         'd/m/Y',
-        'j/n/Y',
         'd-m-Y',
+        'j/n/Y',
         'j-n-Y',
-        'd.m.Y',
+        'Y-m-d',
         'Y/m/d',
-        'd/m/y',
-        'j/n/y',
+        'm/d/Y',
+        'n/j/Y',
+        'm-d-Y',
+        'n-j-Y',
     ];
+
 
     public ?string $tanggal = null;
 
@@ -132,7 +131,7 @@ class Upload extends Component
             'item_name' => $e->distributorItem?->item_name ?? ('Item ID #'.$e->distributor_item_id),
             'satuan' => $e->satuan ?: ($e->distributorItem?->satuan ?? 'PCS'),
             'quantity' => (float) $e->quantity,
-            'expired_date' => optional($e->expired_date)->toDateString(),
+            'expired_date' => optional($e->expired_date)->format('d/m/Y'),
             'batch_no' => $e->batch_no,
             'mapped' => $e->distributorItem?->isMapped() ?? false,
         ])->values()->all();
@@ -162,16 +161,24 @@ class Upload extends Component
             'file.mimes' => 'Format file harus berupa berkas Excel (.xlsx atau .xls).',
         ]);
 
+        $ext = strtolower($this->file->getClientOriginalExtension());
+        $cleanExt = in_array($ext, ['xlsx', 'xls'], true) ? $ext : 'xlsx';
+        $tempClean = tempnam(sys_get_temp_dir(), 'satoria_stock_').'.'.$cleanExt;
+        copy($this->file->getRealPath(), $tempClean);
+
         try {
-            $spreadsheet = IOFactory::load($this->file->getRealPath());
+            $spreadsheet = IOFactory::load($tempClean);
         } catch (\Throwable $e) {
             $this->addError('file', 'Gagal membaca file spreadsheet: '.$e->getMessage());
 
             return;
+        } finally {
+            @unlink($tempClean);
         }
 
         $sheet = $spreadsheet->getSheetByName('Template') ?? $spreadsheet->getActiveSheet();
-        $data = $sheet->toArray();
+        $data = $sheet->toArray(null, true, false, false);
+
 
         $header = array_map(fn ($h) => trim((string) $h), $data[0] ?? []);
         $col = array_flip($header);
@@ -188,9 +195,19 @@ class Upload extends Component
         $bodyRows = array_slice($data, 1);
         $firstDataRow = null;
         foreach ($bodyRows as $r) {
-            if (! empty($r[$col['ID DISTRIBUTOR']] ?? null)) {
+            $codeVal = trim((string) ($r[$col['ID DISTRIBUTOR']] ?? ''));
+            if ($codeVal !== '' && strtoupper($codeVal) !== 'XXXX') {
                 $firstDataRow = $r;
                 break;
+            }
+        }
+
+        if (! $firstDataRow) {
+            foreach ($bodyRows as $r) {
+                if (! empty($r[$col['ID DISTRIBUTOR']] ?? null)) {
+                    $firstDataRow = $r;
+                    break;
+                }
             }
         }
 
@@ -201,6 +218,12 @@ class Upload extends Component
         }
 
         $distributorCode = trim((string) $firstDataRow[$col['ID DISTRIBUTOR']]);
+        if (strtoupper($distributorCode) === 'XXXX') {
+            $this->addError('file', "Kode distributor masih berupa format contoh ('xxxx'). Silakan ganti dengan kode distributor sebenarnya (lihat sheet 'Daftar Distributor').");
+
+            return;
+        }
+
         $distributor = Distributor::where('distributor_code', $distributorCode)->first();
 
         if (! $distributor) {
@@ -210,6 +233,12 @@ class Upload extends Component
         }
 
         $rawTanggal = $firstDataRow[$col['Tanggal']];
+        if (in_array(trim(strtoupper((string) $rawTanggal)), ['DD/MM/YYYY', 'YYYY-MM-DD', 'DD-MM-YYYY'], true)) {
+            $this->addError('file', "Tanggal snapshot masih berupa format contoh ('DD/MM/YYYY'). Silakan isi dengan tanggal yang valid (contoh: ".now()->format('d/m/Y').").");
+
+            return;
+        }
+
         $tanggal = $this->parseExcelDate($rawTanggal);
 
         $knownItems = DistributorItem::where('distributor_id', $distributor->id)
@@ -222,7 +251,7 @@ class Upload extends Component
 
         foreach ($bodyRows as $r) {
             $itemName = trim((string) ($r[$col['Distributor Item Name']] ?? ''));
-            if ($itemName === '') {
+            if ($itemName === '' || strtoupper($itemName) === 'XXXXX XXXX') {
                 continue;
             }
 
@@ -233,6 +262,7 @@ class Upload extends Component
             $qty = (float) $rawQty;
             $satuan = isset($col['Satuan']) ? trim((string) ($r[$col['Satuan']] ?? '')) : null;
             $ed = isset($col['ED']) ? $this->parseExcelDate($r[$col['ED']] ?? null) : null;
+            $edFormatted = $ed ? \Carbon\Carbon::parse($ed)->format('d/m/Y') : null;
             $batch = isset($col['Batch No']) ? trim((string) ($r[$col['Batch No']] ?? '')) : null;
 
             if (! $distItem) {
@@ -243,13 +273,13 @@ class Upload extends Component
                         'item_name' => $itemName,
                         'satuan' => $satuan ?: 'PCS',
                         'quantity' => $qty,
-                        'expired_date' => $ed,
+                        'expired_date' => $edFormatted,
                         'batch_no' => $batch ?: null,
                     ];
                 } else {
                     $skippedRowsData[$key]['quantity'] += $qty;
                     $skippedRowsData[$key]['batch_no'] = $this->mergeBatchNumbers($skippedRowsData[$key]['batch_no'] ?? null, $batch);
-                    $skippedRowsData[$key]['expired_date'] = $this->mergeExpiredDates($skippedRowsData[$key]['expired_date'] ?? null, $ed);
+                    $skippedRowsData[$key]['expired_date'] = $this->mergeExpiredDates($skippedRowsData[$key]['expired_date'] ?? null, $edFormatted);
                 }
 
                 continue;
@@ -258,14 +288,14 @@ class Upload extends Component
             if (isset($rows[$distItem->id])) {
                 $rows[$distItem->id]['quantity'] += $qty;
                 $rows[$distItem->id]['batch_no'] = $this->mergeBatchNumbers($rows[$distItem->id]['batch_no'] ?? null, $batch);
-                $rows[$distItem->id]['expired_date'] = $this->mergeExpiredDates($rows[$distItem->id]['expired_date'] ?? null, $ed);
+                $rows[$distItem->id]['expired_date'] = $this->mergeExpiredDates($rows[$distItem->id]['expired_date'] ?? null, $edFormatted);
             } else {
                 $rows[$distItem->id] = [
                     'distributor_item_id' => $distItem->id,
                     'item_name' => $distItem->item_name,
                     'satuan' => $satuan ?: $distItem->satuan,
                     'quantity' => $qty,
-                    'expired_date' => $ed,
+                    'expired_date' => $edFormatted,
                     'batch_no' => $batch ?: null,
                     'mapped' => $distItem->isMapped(),
                 ];
@@ -337,7 +367,7 @@ class Upload extends Component
                     $mergedRows[$itemId]['quantity'] += (float) $entry->quantity;
                     $mergedRows[$itemId]['batch_no'] = $this->mergeBatchNumbers($entry->batch_no, $mergedRows[$itemId]['batch_no'] ?? null);
                     $mergedRows[$itemId]['expired_date'] = $this->mergeExpiredDates(
-                        optional($entry->expired_date)->toDateString(),
+                        optional($entry->expired_date)->format('d/m/Y'),
                         $mergedRows[$itemId]['expired_date'] ?? null
                     );
                 } else {
@@ -346,7 +376,7 @@ class Upload extends Component
                         'item_name' => $entry->distributorItem?->item_name ?? ('Item ID #'.$itemId),
                         'satuan' => $entry->satuan ?: ($entry->distributorItem?->satuan ?? 'PCS'),
                         'quantity' => (float) $entry->quantity,
-                        'expired_date' => optional($entry->expired_date)->toDateString(),
+                        'expired_date' => optional($entry->expired_date)->format('d/m/Y'),
                         'batch_no' => $entry->batch_no,
                         'mapped' => $entry->distributorItem?->isMapped() ?? false,
                     ];
@@ -620,7 +650,11 @@ class Upload extends Component
     public function updatedTanggal(): void
     {
         $this->removedItemIds = [];
+        if ($this->tanggal && preg_match('/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/', trim($this->tanggal), $m)) {
+            $this->tanggal = sprintf('%04d-%02d-%02d', $m[3], $m[2], $m[1]);
+        }
     }
+
 
     public function updatedDistributorId(): void
     {
@@ -663,7 +697,7 @@ class Upload extends Component
                         'distributor_id' => $this->distributorId,
                         'quantity' => (float) ($row['quantity'] ?? 0),
                         'satuan' => $row['satuan'] ?: $item->satuan,
-                        'expired_date' => $row['expired_date'] ?: null,
+                        'expired_date' => ! empty($row['expired_date']) ? ($this->parseExcelDate($row['expired_date']) ?: $row['expired_date']) : null,
                         'batch_no' => $row['batch_no'] ?: null,
                         'uploaded_by' => Auth::id(),
                     ]
@@ -728,83 +762,87 @@ class Upload extends Component
         // ----------------------------------------------------
         $sheet = $spreadsheet->getActiveSheet();
         $sheet->setTitle('Template');
+        $sheet->setShowGridLines(true);
 
-        $headers = ['Tanggal', 'ID DISTRIBUTOR', 'Distributor Item Name', 'Satuan', 'Quantity', 'Batch No', 'ED'];
+        // Header urutan kolom persis sesuai gambar referensi:
+        // Tanggal | ID DISTRIBUTOR | Distributor Item Name | Quantity | Satuan | ED | Batch No
+        $headers = ['Tanggal', 'ID DISTRIBUTOR', 'Distributor Item Name', 'Quantity', 'Satuan', 'ED', 'Batch No'];
         $sheet->fromArray($headers, null, 'A1');
 
         $headerStyle = [
             'font' => [
-                'bold' => true,
-                'color' => ['rgb' => 'FFFFFF'],
+                'name' => 'Calibri',
                 'size' => 11,
-            ],
-            'fill' => [
-                'fillType' => Fill::FILL_SOLID,
-                'startColor' => ['rgb' => '0D6D5F'], // Satoria Teal Brand
+                'bold' => false,
+                'color' => ['rgb' => '000000'],
             ],
             'alignment' => [
-                'horizontal' => Alignment::HORIZONTAL_CENTER,
                 'vertical' => Alignment::VERTICAL_CENTER,
             ],
             'borders' => [
-                'allBorders' => [
+                'bottom' => [
                     'borderStyle' => Border::BORDER_THIN,
-                    'color' => ['rgb' => '07352D'],
+                    'color' => ['rgb' => 'D4D4D4'],
                 ],
             ],
         ];
         $sheet->getStyle('A1:G1')->applyFromArray($headerStyle);
-        $sheet->getRowDimension(1)->setRowHeight(26);
+        $sheet->getRowDimension(1)->setRowHeight(24);
 
-        // Baris contoh SENGAJA TIDAK ditulis ke sheet Template.
-        //
-        // Sebelumnya 5 baris contoh ber-kode 'SDLSURABAYA' ditaruh di sini. Bila
-        // pengguna lupa menghapusnya, baris itu ikut terimpor sebagai stok nyata
-        // — dan karena distributor seluruh file ditentukan dari baris data
-        // pertama, kode contoh itu bisa membajak seluruh import. Contohnya kini
-        // dipindahkan ke sheet "Panduan Pengisian" yang tidak pernah dibaca
-        // importer. Sheet Template dikirim kosong: hanya header + baris yang
-        // sudah diformat agar siap diisi.
-        $today = now()->toDateString();
+        // Alignment per kolom header
+        $sheet->getStyle('A1')->getAlignment()->setHorizontal(Alignment::HORIZONTAL_LEFT);
+        $sheet->getStyle('B1')->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER);
+        $sheet->getStyle('C1')->getAlignment()->setHorizontal(Alignment::HORIZONTAL_LEFT);
+        $sheet->getStyle('D1')->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER);
+        $sheet->getStyle('E1')->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER);
+        $sheet->getStyle('F1')->getAlignment()->setHorizontal(Alignment::HORIZONTAL_LEFT);
+        $sheet->getStyle('G1')->getAlignment()->setHorizontal(Alignment::HORIZONTAL_RIGHT);
 
-        $blankRows = 50;
-        $rowCount = $blankRows + 1;
+        // Baris contoh / placeholder persis sesuai gambar referensi dengan format seragam DD/MM/YYYY:
+        // Baris 2: DD/MM/YYYY | xxxx | xxxxx xxxx | xxx | [blank] | DD/MM/YYYY | xxx
+        // Baris 3: [blank]     | [blank] | xxxxx xxxx | xxx | [blank] | DD/MM/YYYY | xxx
+        $sampleData = [
+            ['DD/MM/YYYY', 'xxxx', 'xxxxx xxxx', 'xxx', '', 'DD/MM/YYYY', 'xxx'],
+            ['',           '',     'xxxxx xxxx', 'xxx', '', 'DD/MM/YYYY', 'xxx'],
+        ];
+        $sheet->fromArray($sampleData, null, 'A2');
 
-        $dataStyle = [
-            'borders' => [
-                'allBorders' => [
-                    'borderStyle' => Border::BORDER_THIN,
-                    'color' => ['rgb' => 'CBD5E1'],
-                ],
+        $sheet->getRowDimension(2)->setRowHeight(20);
+        $sheet->getRowDimension(3)->setRowHeight(20);
+
+        $sheet->getStyle('A2:G3')->getFont()->setName('Calibri')->setSize(11)->getColor()->setRGB('000000');
+        $sheet->getStyle('A2:G3')->getAlignment()->setVertical(Alignment::VERTICAL_CENTER);
+
+        $sheet->getStyle('A2:A3')->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER);
+        $sheet->getStyle('B2:B3')->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER);
+        $sheet->getStyle('C2:C3')->getAlignment()->setHorizontal(Alignment::HORIZONTAL_LEFT);
+        $sheet->getStyle('D2:D3')->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER);
+        $sheet->getStyle('E2:E3')->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER);
+        $sheet->getStyle('F2:F3')->getAlignment()->setHorizontal(Alignment::HORIZONTAL_LEFT);
+        $sheet->getStyle('G2:G3')->getAlignment()->setHorizontal(Alignment::HORIZONTAL_RIGHT);
+
+        // Area kolom A dan B dibuat bersih putih (tanpa gridline horizontal) seperti pada tampilan gambar contoh
+        $sheet->getStyle('A2:B50')->applyFromArray([
+            'fill' => [
+                'fillType' => Fill::FILL_SOLID,
+                'startColor' => ['rgb' => 'FFFFFF'],
             ],
             'alignment' => [
                 'vertical' => Alignment::VERTICAL_CENTER,
             ],
-        ];
-        $sheet->getStyle("A2:G{$rowCount}")->applyFromArray($dataStyle);
+        ]);
+        // Garis batas vertikal antara Kolom A & B, serta B & C
+        $sheet->getStyle('A2:A50')->getBorders()->getRight()->setBorderStyle(Border::BORDER_THIN)->getColor()->setRGB('E2E2E2');
+        $sheet->getStyle('B2:B50')->getBorders()->getRight()->setBorderStyle(Border::BORDER_THIN)->getColor()->setRGB('E2E2E2');
 
-        for ($r = 2; $r <= $rowCount; $r++) {
-            $sheet->getRowDimension($r)->setRowHeight(20);
-            if ($r % 2 === 1) {
-                $sheet->getStyle("A{$r}:G{$r}")->getFill()
-                    ->setFillType(Fill::FILL_SOLID)
-                    ->getStartColor()->setRGB('F8FAFC');
-            }
-        }
-
-        $sheet->getStyle("A2:B{$rowCount}")->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER);
-        $sheet->getStyle("C2:C{$rowCount}")->getAlignment()->setHorizontal(Alignment::HORIZONTAL_LEFT);
-        $sheet->getStyle("D2:D{$rowCount}")->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER);
-        $sheet->getStyle("E2:E{$rowCount}")->getAlignment()->setHorizontal(Alignment::HORIZONTAL_RIGHT);
-        $sheet->getStyle("E2:E{$rowCount}")->getNumberFormat()->setFormatCode('#,##0');
-        $sheet->getStyle("F2:F{$rowCount}")->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER);
-        $sheet->getStyle("G2:G{$rowCount}")->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER);
-
-        foreach (range('A', 'G') as $col) {
-            $sheet->getColumnDimension($col)->setAutoSize(true);
-        }
-        $sheet->freezePane('A2');
-        $sheet->setAutoFilter("A1:G{$rowCount}");
+        // Lebar kolom yang proporsional sesuai tampilan gambar
+        $sheet->getColumnDimension('A')->setWidth(18);
+        $sheet->getColumnDimension('B')->setWidth(22);
+        $sheet->getColumnDimension('C')->setWidth(34);
+        $sheet->getColumnDimension('D')->setWidth(12);
+        $sheet->getColumnDimension('E')->setWidth(10);
+        $sheet->getColumnDimension('F')->setWidth(18);
+        $sheet->getColumnDimension('G')->setWidth(14);
 
         // ----------------------------------------------------
         // SHEET 2: Daftar Distributor (Master Code Reference)
@@ -904,13 +942,13 @@ class Upload extends Component
         $guideSheet->getRowDimension(4)->setRowHeight(24);
 
         $colGuideData = [
-            ['Tanggal', 'WAJIB', '2026-08-31', 'Tanggal posisi snapshot stok (format disarankan YYYY-MM-DD atau DD/MM/YYYY). Semua baris dalam 1 file harus tanggal yang sama.'],
-            ['ID DISTRIBUTOR', 'WAJIB', 'SDLSURABAYA', 'Kode resmi distributor Satoria. Harus persis sesuai dengan sheet "Daftar Distributor".'],
+            ['Tanggal', 'WAJIB', '31/08/2026', 'Tanggal posisi snapshot stok (format DD/MM/YYYY, contoh: 31/08/2026). Ditulis pada baris pertama data atau seluruh baris.'],
+            ['ID DISTRIBUTOR', 'WAJIB', 'SDLSURABAYA', 'Kode resmi distributor Satoria. Harus persis sesuai dengan sheet "Daftar Distributor". Ditulis pada baris pertama data.'],
             ['Distributor Item Name', 'WAJIB', 'DEXTROSE 5% 500 ml', 'Nama item produk sesuai yang terdaftar di sistem distributor.'],
-            ['Satuan', 'OPSIONAL', 'BOTOL / PCH / BOX', 'Satuan kemasan. Jika kosong, sistem akan menggunakan satuan default dari Master Produk.'],
             ['Quantity', 'WAJIB', '1200', 'Jumlah stok akhir fisik/sistem distributor (hanya angka numerik).'],
+            ['Satuan', 'OPSIONAL', 'BOTOL / PCH / BOX', 'Satuan kemasan. Jika kosong, sistem akan menggunakan satuan default dari Master Produk.'],
+            ['ED', 'DISARANKAN', '31/12/2027', 'Tanggal kedaluwarsa (Expired Date) produk (format DD/MM/YYYY, contoh: 31/12/2027).'],
             ['Batch No', 'DISARANKAN', '026C05', 'Nomor batch produksi fisik obat/alkes untuk ketertelusuran produk di gudang.'],
-            ['ED', 'DISARANKAN', '2027-12-31', 'Tanggal kedaluwarsa (Expired Date) produk (format YYYY-MM-DD atau DD/MM/YYYY).'],
         ];
         $guideSheet->fromArray($colGuideData, null, 'A5');
         $guideEnd = 4 + count($colGuideData);
@@ -935,9 +973,9 @@ class Upload extends Component
         $notes = [
             "1. Pastikan sheet utama data tetap bernama 'Template' (atau sheet urutan pertama).",
             "2. Jangan menyisipkan baris kosong di atas baris 1 (Header harus di baris A1:G1).",
-            "3. Selalu periksa kode pada sheet 'Daftar Distributor' agar tidak terjadi penolakan akibat kode distributor salah.",
-            "4. Sheet Template sengaja dikirim KOSONG (hanya header) agar tidak ada data contoh yang ikut terunggah. Contoh pengisian ada di bawah — salin polanya, jangan salin isinya.",
-            "5. Satu file hanya boleh berisi SATU kode distributor dan SATU tanggal.",
+            "3. Baris 2 & 3 pada sheet Template adalah format contoh (placeholder) yang dapat langsung diganti dengan data Anda.",
+            "4. Selalu periksa kode pada sheet 'Daftar Distributor' agar tidak terjadi penolakan akibat kode distributor salah.",
+            "5. Satu file hanya boleh berisi SATU kode distributor dan SATU tanggal (format DD/MM/YYYY).",
             "6. Jika terdapat item baru yang belum terdaftar di Satoria, sistem akan memberikan opsi pemetaan atau permintaan mapping produk baru.",
         ];
         foreach ($notes as $idx => $n) {
@@ -946,14 +984,12 @@ class Upload extends Component
             $guideSheet->getStyle("A{$rowIdx}")->getFont()->setSize(9)->getColor()->setRGB('334155');
         }
 
-        // Contoh pengisian ditaruh di sheet ini, bukan di sheet Template, supaya
-        // tidak mungkin ikut terbaca importer.
         $exampleStart = $noteStart + count($notes) + 3;
         $guideSheet->setCellValue("A{$exampleStart}", 'CONTOH PENGISIAN (jangan disalin apa adanya — ganti dengan data distributor Anda):');
         $guideSheet->getStyle("A{$exampleStart}")->getFont()->setBold(true)->getColor()->setRGB('0D6D5F');
 
         $exampleHeaderRow = $exampleStart + 1;
-        $guideSheet->fromArray(['Tanggal', 'ID DISTRIBUTOR', 'Distributor Item Name', 'Satuan', 'Quantity', 'Batch No', 'ED'], null, "A{$exampleHeaderRow}");
+        $guideSheet->fromArray(['Tanggal', 'ID DISTRIBUTOR', 'Distributor Item Name', 'Quantity', 'Satuan', 'ED', 'Batch No'], null, "A{$exampleHeaderRow}");
         $guideSheet->getStyle("A{$exampleHeaderRow}:G{$exampleHeaderRow}")->applyFromArray([
             'font' => ['bold' => true, 'color' => ['rgb' => 'FFFFFF'], 'size' => 10],
             'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => '64748B']],
@@ -961,12 +997,14 @@ class Upload extends Component
             'borders' => ['allBorders' => ['borderStyle' => Border::BORDER_THIN, 'color' => ['rgb' => '334155']]],
         ]);
 
+        $todayFormatted = now()->format('d/m/Y');
+
         $exampleRows = [
-            [$today, 'SDLSURABAYA', 'DEXTROSE 5% 500 ml', 'BOTOL', 1200, '026C05', '2027-12-31'],
-            [$today, 'SDLSURABAYA', 'DEXTROSE 10% 500 ml', 'BOTOL', 850, '026C06', '2027-12-31'],
-            [$today, 'SDLSURABAYA', 'SODIUM CHLORIDE 0.9% 500 ml', 'BOTOL', 2400, '026D12', '2028-06-30'],
-            [$today, 'SDLSURABAYA', 'RINGER LACTATE 500 ml', 'BOTOL', 1600, '026E01', '2028-09-30'],
-            [$today, 'SDLSURABAYA', 'SATORIA MEDIKA Disposable Infusion Set Y-Port 20drops/mL @1', 'PCH', 500, 'B26U01', '2029-01-31'],
+            [$todayFormatted, 'SDLSURABAYA', 'DEXTROSE 5% 500 ml', 1200, 'BOTOL', '31/12/2027', '026C05'],
+            [$todayFormatted, 'SDLSURABAYA', 'DEXTROSE 10% 500 ml', 850, 'BOTOL', '31/12/2027', '026C06'],
+            [$todayFormatted, 'SDLSURABAYA', 'SODIUM CHLORIDE 0.9% 500 ml', 2400, 'BOTOL', '30/06/2028', '026D12'],
+            [$todayFormatted, 'SDLSURABAYA', 'RINGER LACTATE 500 ml', 1600, 'BOTOL', '30/09/2028', '026E01'],
+            [$todayFormatted, 'SDLSURABAYA', 'SATORIA MEDIKA Disposable Infusion Set Y-Port 20drops/mL @1', 500, 'PCH', '31/01/2029', 'B26U01'],
         ];
         $guideSheet->fromArray($exampleRows, null, 'A'.($exampleHeaderRow + 1));
 
@@ -1069,13 +1107,18 @@ class Upload extends Component
         $d2 = ! empty($ed2) ? trim((string) $ed2) : null;
 
         if (! $d1) {
-            return $d2;
+            return $d2 ? ($this->parseExcelDate($d2) ? \Carbon\Carbon::parse($this->parseExcelDate($d2))->format('d/m/Y') : $d2) : null;
         }
         if (! $d2) {
-            return $d1;
+            return $d1 ? ($this->parseExcelDate($d1) ? \Carbon\Carbon::parse($this->parseExcelDate($d1))->format('d/m/Y') : $d1) : null;
         }
 
-        return ($d1 <= $d2) ? $d1 : $d2;
+        $iso1 = $this->parseExcelDate($d1) ?? $d1;
+        $iso2 = $this->parseExcelDate($d2) ?? $d2;
+
+        $earliest = ($iso1 <= $iso2) ? $iso1 : $iso2;
+
+        return \Carbon\Carbon::parse($earliest)->format('d/m/Y');
     }
 
     public function render()

@@ -35,6 +35,20 @@ class History extends Component
 
     public ?array $selectedSnapshot = null;
 
+    public bool $showDeleteModal = false;
+
+    public ?string $deleteTanggal = null;
+
+    public ?int $deleteDistributorId = null;
+
+    public ?string $deleteDistributorName = null;
+
+    public ?string $deleteDistributorCode = null;
+
+    public ?int $deleteTotalSku = null;
+
+    public ?float $deleteTotalQuantity = null;
+
     public function mount(): void
     {
         Gate::authorize('viewAny', StockEntry::class);
@@ -53,13 +67,29 @@ class History extends Component
 
     public function updatedStartDate(): void
     {
+        $this->startDate = $this->normalizeDateInput($this->startDate);
         $this->resetPage();
     }
 
     public function updatedEndDate(): void
     {
+        $this->endDate = $this->normalizeDateInput($this->endDate);
         $this->resetPage();
     }
+
+    private function normalizeDateInput(string $val): string
+    {
+        $val = trim($val);
+        if ($val === '') {
+            return '';
+        }
+        if (preg_match('/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/', $val, $m)) {
+            return sprintf('%04d-%02d-%02d', $m[3], $m[2], $m[1]);
+        }
+
+        return $val;
+    }
+
 
     public function updatedSearch(): void
     {
@@ -134,7 +164,7 @@ class History extends Component
                 'satuan' => $e->satuan,
                 'quantity' => (float) $e->quantity,
                 'batch_no' => $e->batch_no ?? '—',
-                'expired_date' => $e->expired_date ? $e->expired_date->format('d/m/Y') : '—',
+                'expired_date' => $e->expired_date ? $e->expired_date->translatedFormat('d M Y') : '—',
                 'expiry_status' => $e->expiryStatus(),
                 'is_mapped' => $e->distributorItem?->isMapped() ?? false,
             ];
@@ -144,7 +174,7 @@ class History extends Component
 
         $this->selectedSnapshot = [
             'tanggal' => $tanggal,
-            'tanggal_formatted' => Carbon::parse($tanggal)->isoFormat('dddd, D MMMM Y'),
+            'tanggal_formatted' => Carbon::parse($tanggal)->translatedFormat('d M Y'),
             'distributor_id' => $distributor->id,
             'distributor_name' => $distributor->name,
             'distributor_code' => $distributor->distributor_code,
@@ -158,7 +188,7 @@ class History extends Component
             'unmapped_count' => $unmappedCount,
             'expiring_count' => $expiringCount,
             'uploader_name' => $latestEntry?->uploader?->name ?? 'Sistem / Impor',
-            'updated_at' => $latestEntry?->updated_at?->format('d M Y H:i') ?? '—',
+            'updated_at' => $latestEntry?->updated_at?->translatedFormat('d M Y, H:i') ?? '—',
             'items' => $items,
         ];
 
@@ -169,6 +199,73 @@ class History extends Component
     {
         $this->showDetailModal = false;
         $this->selectedSnapshot = null;
+    }
+
+    public function confirmDeleteSnapshot(string $tanggal, int $distributorId): void
+    {
+        Gate::authorize('delete', StockEntry::class);
+
+        $distributor = Distributor::find($distributorId);
+        if (! $distributor) {
+            return;
+        }
+
+        $entries = StockEntry::query()
+            ->where('tanggal', $tanggal)
+            ->where('distributor_id', $distributorId);
+
+        $count = (clone $entries)->count();
+        if ($count === 0) {
+            return;
+        }
+
+        $sumQty = (float) (clone $entries)->sum('quantity');
+
+        $this->deleteTanggal = $tanggal;
+        $this->deleteDistributorId = $distributorId;
+        $this->deleteDistributorName = $distributor->name;
+        $this->deleteDistributorCode = $distributor->distributor_code;
+        $this->deleteTotalSku = $count;
+        $this->deleteTotalQuantity = $sumQty;
+        $this->showDeleteModal = true;
+    }
+
+    public function cancelDeleteSnapshot(): void
+    {
+        $this->showDeleteModal = false;
+        $this->deleteTanggal = null;
+        $this->deleteDistributorId = null;
+        $this->deleteDistributorName = null;
+        $this->deleteDistributorCode = null;
+        $this->deleteTotalSku = null;
+        $this->deleteTotalQuantity = null;
+    }
+
+    public function deleteSnapshot(): void
+    {
+        Gate::authorize('delete', StockEntry::class);
+
+        if (! $this->deleteTanggal || ! $this->deleteDistributorId) {
+            $this->cancelDeleteSnapshot();
+
+            return;
+        }
+
+        $distributorName = $this->deleteDistributorName ?? 'Distributor';
+        $distributorCode = $this->deleteDistributorCode ?? '';
+        $tanggalFormatted = Carbon::parse($this->deleteTanggal)->translatedFormat('d M Y');
+
+        $deletedCount = StockEntry::query()
+            ->where('tanggal', $this->deleteTanggal)
+            ->where('distributor_id', $this->deleteDistributorId)
+            ->delete();
+
+        $this->cancelDeleteSnapshot();
+        $this->showDetailModal = false;
+        $this->selectedSnapshot = null;
+
+        $targetLabel = $distributorCode ? "{$distributorName} ({$distributorCode})" : $distributorName;
+        session()->flash('status', "Snapshot stok {$targetLabel} tanggal {$tanggalFormatted} berhasil dihapus ({$deletedCount} baris entri).");
     }
 
     public function exportCsv(string $tanggal, int $distributorId): StreamedResponse

@@ -99,7 +99,7 @@
     @endif
 
     <!-- Toolbar: Filter & Pencarian -->
-    <div class="bg-white rounded-2xl border border-slate-200/80 p-4 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-3">
+    <div class="bg-white rounded-2xl border border-slate-200/80 p-4 shadow-xs flex flex-col lg:flex-row lg:items-center justify-between gap-3">
         <div class="flex-1 relative">
             <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
                 <svg width="15" height="15" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -111,13 +111,27 @@
                    class="w-full text-xs rounded-xl border border-slate-200 bg-slate-50/70 pl-9 pr-4 py-2.5 text-slate-800 placeholder-slate-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#0d6d5f]/20 focus:border-[#0d6d5f] transition">
         </div>
 
-        <div class="flex items-center gap-4 shrink-0">
-            <label class="inline-flex items-center gap-2 cursor-pointer text-xs font-medium text-slate-700 select-none">
-                <input type="checkbox" wire:model.live="onlyWithAttachments" class="rounded border-slate-300 text-[#0d6d5f] focus:ring-[#0d6d5f]">
-                <span>Hanya yang memiliki lampiran berkas</span>
+        <div class="flex flex-wrap items-center gap-3 shrink-0">
+            <!-- Filter Khusus Satoria Daily Stock -->
+            <label class="inline-flex items-center gap-2 cursor-pointer text-xs font-semibold px-3 py-2 rounded-xl border transition-all duration-150 select-none {{ $onlyDailyStock ? 'bg-emerald-50 text-emerald-900 border-emerald-300 ring-2 ring-emerald-500/20 shadow-xs' : 'bg-slate-50 hover:bg-slate-100 text-slate-700 border-slate-200' }}"
+                   title="Hanya tampilkan email dengan subjek 'Satoria Daily Stock'">
+                <input type="checkbox" wire:model.live="onlyDailyStock" class="rounded border-slate-300 text-[#0d6d5f] focus:ring-[#0d6d5f]">
+                <span class="flex items-center gap-1.5">
+                    <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24" class="{{ $onlyDailyStock ? 'text-emerald-700' : 'text-slate-400' }}">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                    </svg>
+                    <span>Khusus "Satoria Daily Stock"</span>
+                </span>
             </label>
 
-            <div class="flex items-center gap-1.5 text-xs text-slate-500 border-l border-slate-200 pl-4">
+            <!-- Filter Berkas Lampiran -->
+            <label class="inline-flex items-center gap-2 cursor-pointer text-xs font-medium text-slate-700 select-none px-2 py-1 hover:text-slate-900 transition">
+                <input type="checkbox" wire:model.live="onlyWithAttachments" class="rounded border-slate-300 text-[#0d6d5f] focus:ring-[#0d6d5f]">
+                <span>Hanya yang ada lampiran</span>
+            </label>
+
+            <!-- Per Halaman -->
+            <div class="flex items-center gap-1.5 text-xs text-slate-500 border-l border-slate-200 pl-3">
                 <span>Per Halaman:</span>
                 <select wire:model.live="perPage" class="rounded-lg border-slate-200 text-xs py-1 px-2 font-mono">
                     <option value="10">10</option>
@@ -146,16 +160,19 @@
                 <tbody class="divide-y divide-slate-100">
                     @forelse ($emails as $email)
                         <tr wire:click="selectEmail('{{ $email['uid'] }}')"
-                            class="hover:bg-slate-50/80 transition cursor-pointer {{ $selectedUid === $email['uid'] ? 'bg-emerald-50/60' : '' }}">
+                            class="group transition-colors duration-150 ease-in-out cursor-pointer {{ $selectedUid === $email['uid'] ? 'bg-emerald-50/70' : 'hover:bg-slate-50/90' }}">
                             <!-- Status -->
-                            <td class="py-3 px-4 text-center">
+                            <td class="relative py-3.5 px-4 text-center">
+                                <!-- Garis Indikator Hijau Saat Hover / Dipilih -->
+                                <div class="absolute inset-y-0 left-0 w-1 rounded-r-xs transition-all duration-150 {{ $selectedUid === $email['uid'] ? 'bg-[#0d6d5f]' : 'bg-transparent group-hover:bg-[#0d6d5f]' }}"></div>
+
                                 @if (! $email['is_read'])
-                                    <span class="inline-flex items-center justify-center gap-1 px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 text-[10px] font-bold border border-blue-200/80" title="Email Belum Dibaca">
+                                    <span class="inline-flex items-center justify-center gap-1 px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 text-[10px] font-bold border border-blue-200/80 group-hover:bg-blue-100 transition" title="Email Belum Dibaca">
                                         <span class="w-1.5 h-1.5 rounded-full bg-blue-500"></span>
                                         <span>Baru</span>
                                     </span>
                                 @else
-                                    <span class="inline-flex items-center justify-center gap-1 px-2 py-0.5 rounded-full bg-slate-100 text-slate-500 text-[10px] font-medium" title="Email Sudah Dibaca">
+                                    <span class="inline-flex items-center justify-center gap-1 px-2 py-0.5 rounded-full bg-slate-100 text-slate-500 text-[10px] font-medium group-hover:bg-slate-200/80 transition" title="Email Sudah Dibaca">
                                         <span class="w-1.5 h-1.5 rounded-full bg-slate-400"></span>
                                         <span>Dibaca</span>
                                     </span>
@@ -163,28 +180,36 @@
                             </td>
 
                             <!-- Pengirim -->
-                            <td class="py-3 px-4">
-                                <div class="font-bold text-slate-900 truncate max-w-[220px]" title="{{ $email['from_name'] }}">
+                            <td class="py-3.5 px-4">
+                                <div class="font-bold text-slate-900 truncate max-w-[220px] group-hover:text-slate-950 transition" title="{{ $email['from_name'] }}">
                                     {{ $email['from_name'] ?: ($email['from_email'] ?: 'Pengirim Tidak Dikenal') }}
                                 </div>
                                 @if (!empty($email['from_email']) && $email['from_email'] !== $email['from_name'])
-                                    <div class="font-mono text-[11px] text-slate-400 truncate max-w-[220px]">
+                                    <div class="font-mono text-[11px] text-slate-400 truncate max-w-[220px] group-hover:text-slate-600 transition">
                                         {{ $email['from_email'] }}
                                     </div>
                                 @endif
                             </td>
 
                             <!-- Subjek -->
-                            <td class="py-3 px-4">
-                                <div class="font-semibold text-slate-900 line-clamp-1">
-                                    {{ $email['subject'] }}
+                            <td class="py-3.5 px-4">
+                                <div class="flex items-center gap-2">
+                                    <div class="font-semibold text-slate-900 line-clamp-1 group-hover:text-[#0d6d5f] transition-colors">
+                                        {{ $email['subject'] }}
+                                    </div>
+                                    @if (!empty($email['is_daily_stock']))
+                                        <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-emerald-100 text-emerald-800 text-[10px] font-bold border border-emerald-200 shrink-0 shadow-2xs" title="Sesuai pola Satoria Daily Stock">
+                                            <span class="w-1.5 h-1.5 rounded-full bg-emerald-600 animate-pulse"></span>
+                                            <span>Daily Stock</span>
+                                        </span>
+                                    @endif
                                 </div>
                             </td>
 
                             <!-- Lampiran -->
-                            <td class="py-3 px-4">
+                            <td class="py-3.5 px-4">
                                 @if ($email['has_attachments'])
-                                    <span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-lg bg-emerald-50 text-emerald-800 font-medium text-[11px] border border-emerald-200/80">
+                                    <span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-lg bg-emerald-50 text-emerald-800 font-medium text-[11px] border border-emerald-200/80 group-hover:bg-emerald-100/70 group-hover:border-emerald-300 transition">
                                         <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13"/>
                                         </svg>
@@ -196,14 +221,14 @@
                             </td>
 
                             <!-- Tanggal -->
-                            <td class="py-3 px-4 text-right font-mono text-slate-600 text-[11px]">
+                            <td class="py-3.5 px-4 text-right font-mono text-slate-600 text-[11px] group-hover:text-slate-900 transition">
                                 {{ $email['date_display'] }}
                             </td>
 
                             <!-- Tombol Baca -->
-                            <td class="py-3 px-4 text-center">
+                            <td class="py-3.5 px-4 text-center">
                                 <button type="button" wire:click.stop="selectEmail('{{ $email['uid'] }}')"
-                                        class="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-[#0d6d5f] hover:text-white text-slate-700 text-[11px] font-semibold transition cursor-pointer">
+                                        class="px-2.5 py-1 rounded-lg bg-slate-100 group-hover:bg-[#0d6d5f] group-hover:text-white text-slate-700 text-[11px] font-semibold transition-all duration-150 shadow-2xs cursor-pointer">
                                     Buka
                                 </button>
                             </td>
@@ -217,6 +242,8 @@
                                     <p class="text-[11px] text-slate-400 max-w-sm">
                                         @if (! $isConfigured)
                                             Konfigurasikan akun email pada <code>.env</code> untuk menghubungkan ke mailbox perusahaan.
+                                        @elseif ($onlyDailyStock)
+                                            Tidak ada email dengan pola subjek <b>"Satoria Daily Stock"</b>. Nonaktifkan filter di atas untuk melihat seluruh email.
                                         @else
                                             Kotak masuk saat ini kosong atau kata kunci pencarian tidak cocok dengan pesan apapun.
                                         @endif
@@ -259,7 +286,15 @@
                 <!-- Modal Header -->
                 <div class="px-6 py-4 border-b border-slate-200 flex items-start justify-between gap-4 bg-slate-50/80 shrink-0">
                     <div>
-                        <span class="text-[10px] font-bold uppercase tracking-wider text-slate-400">Detail Pesan Masuk</span>
+                        <div class="flex items-center gap-2">
+                            <span class="text-[10px] font-bold uppercase tracking-wider text-slate-400">Detail Pesan Masuk</span>
+                            @if (!empty($selectedEmail['is_daily_stock']))
+                                <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-emerald-100 text-emerald-800 text-[10px] font-bold border border-emerald-200 shadow-2xs">
+                                    <span class="w-1.5 h-1.5 rounded-full bg-emerald-600 animate-pulse"></span>
+                                    <span>Satoria Daily Stock</span>
+                                </span>
+                            @endif
+                        </div>
                         <h2 class="text-base font-extrabold text-slate-900 mt-0.5 leading-snug">
                             {{ $selectedEmail['subject'] }}
                         </h2>

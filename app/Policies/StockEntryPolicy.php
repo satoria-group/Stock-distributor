@@ -27,7 +27,12 @@ class StockEntryPolicy
         return $user->can('stock.upload');
     }
 
-    public function delete(User $user, StockEntry $entry): bool
+    public function delete(User $user, ?StockEntry $entry = null): bool
+    {
+        return $user->can('stock.upload');
+    }
+
+    public function deleteAny(User $user): bool
     {
         return $user->can('stock.upload');
     }

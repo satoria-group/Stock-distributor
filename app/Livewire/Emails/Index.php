@@ -18,6 +18,8 @@ class Index extends Component
 
     public bool $onlyWithAttachments = false;
 
+    public bool $onlyDailyStock = false;
+
     public ?string $selectedUid = null;
 
     public ?array $selectedEmail = null;
@@ -112,12 +114,27 @@ class Index extends Component
         $this->page = 1;
     }
 
+    public function updatedOnlyDailyStock(): void
+    {
+        $this->page = 1;
+    }
+
     public function render(ImapService $imapService)
     {
         $isConfigured = $imapService->isConfigured();
         $inboxResult = $imapService->getInbox($this->page, $this->perPage);
 
         $emails = collect($inboxResult['data'] ?? []);
+
+        // Filter subject pattern "Satoria Daily Stock"
+        if ($this->onlyDailyStock) {
+            $emails = $emails->where('is_daily_stock', true);
+        }
+
+        // Filter emails with attachments
+        if ($this->onlyWithAttachments) {
+            $emails = $emails->where('has_attachments', true);
+        }
 
         // Client-side quick filter on current page
         if ($this->search !== '') {
@@ -129,10 +146,6 @@ class Index extends Component
             });
         }
 
-        if ($this->onlyWithAttachments) {
-            $emails = $emails->where('has_attachments', true);
-        }
-
         return view('livewire.emails.index', [
             'isConfigured' => $isConfigured,
             'emails' => $emails->values(),
@@ -141,6 +154,7 @@ class Index extends Component
             'lastPage' => $inboxResult['last_page'] ?? 1,
             'hasError' => ! empty($inboxResult['error']),
             'errorMessage' => $inboxResult['message'] ?? null,
+            'stockKeywords' => config('imap.stock_subject_keywords', ['Satoria Daily Stock']),
         ])->layout('layouts.app', ['title' => 'Inbox Email Distributor']);
     }
 }

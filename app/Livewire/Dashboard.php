@@ -66,9 +66,17 @@ class Dashboard extends Component
     public string $sortDir = 'asc';
 
     // Tab 2: Monitoring Kedaluwarsa (FEFO)
+    public ?int $fefoBranchId = null;
+
+    public string $fefoSatuanFilter = '';
+
     public string $expiryRiskFilter = 'all'; // 'all', 'critical', 'warning', 'safe', 'expired'
 
     public string $expirySearch = '';
+
+    public string $fefoSortBy = 'days';
+
+    public string $fefoSortDir = 'asc';
 
     // Tab 3: Kepatuhan Upload Cabang
     public string $complianceDate = '';
@@ -99,6 +107,16 @@ class Dashboard extends Component
         $this->resetPage();
     }
 
+    public function updatedFefoBranchId(): void
+    {
+        $this->resetPage();
+    }
+
+    public function updatedFefoSatuanFilter(): void
+    {
+        $this->resetPage();
+    }
+
     public function updatedExpiryRiskFilter(): void
     {
         $this->resetPage();
@@ -109,10 +127,24 @@ class Dashboard extends Component
         $this->resetPage();
     }
 
-    public function updatedComplianceDate(): void
+    public function updatedFefoSortBy(): void
     {
         $this->resetPage();
     }
+
+    public function updatedFefoSortDir(): void
+    {
+        $this->resetPage();
+    }
+
+    public function updatedComplianceDate(): void
+    {
+        if ($this->complianceDate && preg_match('/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/', trim($this->complianceDate), $m)) {
+            $this->complianceDate = sprintf('%04d-%02d-%02d', $m[3], $m[2], $m[1]);
+        }
+        $this->resetPage();
+    }
+
 
     public function updatedComplianceStatus(): void
     {
@@ -135,6 +167,17 @@ class Dashboard extends Component
         $this->resetPage();
     }
 
+    public function setFefoSort(string $column): void
+    {
+        if ($this->fefoSortBy === $column) {
+            $this->fefoSortDir = $this->fefoSortDir === 'asc' ? 'desc' : 'asc';
+        } else {
+            $this->fefoSortBy = $column;
+            $this->fefoSortDir = 'asc';
+        }
+        $this->resetPage();
+    }
+
     public function resetFilters(): void
     {
         $this->selectedBranchId = null;
@@ -142,16 +185,24 @@ class Dashboard extends Component
         $this->search = '';
         $this->sortBy = 'item_name';
         $this->sortDir = 'asc';
+        $this->resetPage();
+    }
+
+    public function resetFefoFilters(): void
+    {
+        $this->fefoBranchId = null;
+        $this->fefoSatuanFilter = '';
         $this->expiryRiskFilter = 'all';
         $this->expirySearch = '';
-        $this->complianceStatus = 'all';
-        $this->complianceSearch = '';
+        $this->fefoSortBy = 'days';
+        $this->fefoSortDir = 'asc';
         $this->resetPage();
     }
 
     public function updatedSelectedGroup(): void
     {
         $this->selectedBranchId = null;
+        $this->fefoBranchId = null;
         $this->resetPage();
     }
 
@@ -227,9 +278,7 @@ class Dashboard extends Component
             ->select('distributor_id', DB::raw('MAX(tanggal) as max_tanggal'))
             ->groupBy('distributor_id');
 
-        if ($this->selectedBranchId) {
-            $query->where('distributor_id', $this->selectedBranchId);
-        } elseif ($this->selectedGroup !== 'ALL') {
+        if ($this->selectedGroup !== 'ALL') {
             $query->whereIn('distributor_id', $scopedDistributorIds ?: [0]);
         }
 
@@ -311,7 +360,48 @@ class Dashboard extends Component
             });
         }
 
-        return $rows->sortBy('days')->values();
+        $isDesc = $this->fefoSortDir === 'desc';
+
+        return $rows->sort(function ($a, $b) use ($isDesc) {
+            switch ($this->fefoSortBy) {
+                case 'item_name':
+                    $valA = strtolower((string) ($a->entry->distributorItem?->item_name ?? ''));
+                    $valB = strtolower((string) ($b->entry->distributorItem?->item_name ?? ''));
+                    break;
+                case 'distributor':
+                    $valA = strtolower((string) ($a->entry->distributor?->name ?? ''));
+                    $valB = strtolower((string) ($b->entry->distributor?->name ?? ''));
+                    break;
+                case 'batch_no':
+                    $valA = strtolower((string) ($a->entry->batch_no ?? ''));
+                    $valB = strtolower((string) ($b->entry->batch_no ?? ''));
+                    break;
+                case 'expired_date':
+                    $valA = $a->entry->expired_date ? $a->entry->expired_date->timestamp : ($isDesc ? 0 : PHP_INT_MAX);
+                    $valB = $b->entry->expired_date ? $b->entry->expired_date->timestamp : ($isDesc ? 0 : PHP_INT_MAX);
+                    break;
+                case 'quantity':
+                    $valA = (float) $a->entry->quantity;
+                    $valB = (float) $b->entry->quantity;
+                    break;
+                case 'tier':
+                    $tierOrder = ['expired' => 1, 'critical' => 2, 'warning' => 3, 'safe' => 4];
+                    $valA = $tierOrder[$a->tier] ?? 99;
+                    $valB = $tierOrder[$b->tier] ?? 99;
+                    break;
+                case 'days':
+                default:
+                    $valA = (int) $a->days;
+                    $valB = (int) $b->days;
+                    break;
+            }
+
+            if ($valA == $valB) {
+                return $a->days <=> $b->days;
+            }
+
+            return ($valA < $valB xor $isDesc) ? -1 : 1;
+        })->values();
     }
 
     public function render()
@@ -414,7 +504,7 @@ class Dashboard extends Component
             'datasets' => [],
         ];
 
-        $isNationalSummary = ($this->selectedGroup === 'ALL' && ! $this->selectedBranchId);
+        $isNationalSummary = ($this->selectedGroup === 'ALL');
 
         if ($isNationalSummary) {
             // Stacked Bar Chart per Distributor Group (Looker Studio Style)
@@ -445,15 +535,13 @@ class Dashboard extends Component
                 ];
             }
         } else {
-            // Single Horizontal Bar untuk distributor / cabang tertentu
+            // Single Horizontal Bar untuk distributor grup tertentu
             $dataPoints = [];
             foreach ($topProductsMap as $productName => $pData) {
                 $dataPoints[] = (float) $pData['total'];
             }
 
-            $labelName = $this->selectedBranchId
-                ? ($availableBranches->firstWhere('id', $this->selectedBranchId)?->name ?? 'Cabang')
-                : ($this->selectedGroup === 'OTHER' ? 'Distributor Lainnya' : $this->selectedGroup);
+            $labelName = ($this->selectedGroup === 'OTHER' ? 'Distributor Lainnya' : $this->selectedGroup);
 
             $chartTopProducts['datasets'][] = [
                 'label' => 'Total Qty (' . $labelName . ')',
@@ -489,7 +577,7 @@ class Dashboard extends Component
                 }
             }
         } else {
-            // Jika memilih 1 distributor grup / cabang, tampilkan komposisi per sediaan yang ada stoknya (> 0)
+            // Jika memilih 1 distributor grup, tampilkan komposisi per sediaan yang ada stoknya (> 0)
             $sediaanData = [
                 'Botol (Btl)' => (float) $kpi['total_btl'],
                 'Ampul (Amp)' => (float) $kpi['total_amp'],
@@ -509,8 +597,12 @@ class Dashboard extends Component
             }
         }
 
-        // 8. Filter Tabel Detail Stock
+        // 8. Filter Tabel Detail Stock (Tab 1: Posisi Stok On-Hand)
         $filteredEntries = $allCurrentEntries;
+
+        if ($this->selectedBranchId) {
+            $filteredEntries = $filteredEntries->filter(fn ($e) => (int) $e->distributor_id === (int) $this->selectedBranchId);
+        }
 
         if ($this->search) {
             $term = mb_strtolower(trim($this->search));
@@ -625,6 +717,28 @@ class Dashboard extends Component
 
         // 10. Tab 2: Monitoring Kedaluwarsa (FEFO Watchlist)
         $fefoAllRows = $this->fefoRowsFrom($allCurrentEntries);
+
+        // Filter Cabang & Satuan milik Tab FEFO sendiri (tidak terpengaruh Tab 1)
+        if ($this->fefoBranchId) {
+            $fefoAllRows = $fefoAllRows->filter(fn ($r) => (int) $r->entry->distributor_id === (int) $this->fefoBranchId);
+        }
+
+        if ($this->fefoSatuanFilter) {
+            $fefoAllRows = $fefoAllRows->filter(function ($r) {
+                $sat = strtoupper(trim((string) $r->entry->satuan));
+                if ($this->fefoSatuanFilter === 'BTL') {
+                    return str_contains($sat, 'BTL') || str_contains($sat, 'BOTOL');
+                }
+                if ($this->fefoSatuanFilter === 'AMP') {
+                    return str_contains($sat, 'AMP');
+                }
+                if ($this->fefoSatuanFilter === 'PCS') {
+                    return ! str_contains($sat, 'BTL') && ! str_contains($sat, 'BOTOL') && ! str_contains($sat, 'AMP');
+                }
+
+                return true;
+            });
+        }
 
         $fefoSummary = [
             'total' => $fefoAllRows->count(),
@@ -764,8 +878,12 @@ class Dashboard extends Component
             'sortBy' => $this->sortBy,
             'sortDir' => $this->sortDir,
             'perPage' => $this->perPage,
+            'fefoBranchId' => $this->fefoBranchId,
+            'fefoSatuanFilter' => $this->fefoSatuanFilter,
             'expiryRiskFilter' => $this->expiryRiskFilter,
             'expirySearch' => $this->expirySearch,
+            'fefoSortBy' => $this->fefoSortBy,
+            'fefoSortDir' => $this->fefoSortDir,
             'complianceDate' => $this->complianceDate,
             'complianceStatus' => $this->complianceStatus,
             'complianceSearch' => $this->complianceSearch,
@@ -786,15 +904,40 @@ class Dashboard extends Component
         $scopedDistributorIds = $this->scopedBranchQuery()->pluck('id')->all();
         $latestPerDist = $this->latestSnapshotPerDistributor($scopedDistributorIds);
 
-        $mapped = $this->applyFefoFilters(
-            $this->fefoRowsFrom($this->entriesForLatestSnapshots($latestPerDist))
-        );
+        $fefoRows = $this->fefoRowsFrom($this->entriesForLatestSnapshots($latestPerDist));
+
+        if ($this->fefoBranchId) {
+            $fefoRows = $fefoRows->filter(fn ($r) => (int) $r->entry->distributor_id === (int) $this->fefoBranchId);
+        }
+
+        if ($this->fefoSatuanFilter) {
+            $fefoRows = $fefoRows->filter(function ($r) {
+                $sat = strtoupper(trim((string) $r->entry->satuan));
+                if ($this->fefoSatuanFilter === 'BTL') {
+                    return str_contains($sat, 'BTL') || str_contains($sat, 'BOTOL');
+                }
+                if ($this->fefoSatuanFilter === 'AMP') {
+                    return str_contains($sat, 'AMP');
+                }
+                if ($this->fefoSatuanFilter === 'PCS') {
+                    return ! str_contains($sat, 'BTL') && ! str_contains($sat, 'BOTOL') && ! str_contains($sat, 'AMP');
+                }
+
+                return true;
+            });
+        }
+
+        $mapped = $this->applyFefoFilters($fefoRows);
 
         // Cakupan filter ikut di nama file agar penerima tahu ini data tersaring.
-        $scopeLabel = $this->selectedBranchId
-            ? ($this->scopedBranchQuery()->find($this->selectedBranchId)?->distributor_code ?? 'cabang')
+        $scopeLabel = $this->fefoBranchId
+            ? ($this->scopedBranchQuery()->find($this->fefoBranchId)?->distributor_code ?? 'cabang')
             : $this->selectedGroup;
         $scopeLabel = preg_replace('/[^A-Za-z0-9_-]/', '_', (string) $scopeLabel);
+
+        if ($this->fefoSatuanFilter) {
+            $scopeLabel .= '_'.$this->fefoSatuanFilter;
+        }
 
         if ($this->expiryRiskFilter !== 'all') {
             $scopeLabel .= '_'.$this->expiryRiskFilter;

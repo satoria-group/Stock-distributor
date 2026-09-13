@@ -36,7 +36,7 @@
                         <svg width="14" height="14" style="width: 14px; height: 14px; min-width: 14px; flex-shrink: 0;" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path>
                         </svg>
-                        <span>Posisi Terkini: <b class="text-white">{{ $stats['latest_date'] ? \Carbon\Carbon::parse($stats['latest_date'])->translatedFormat('d F Y') : 'Belum ada data' }}</b></span>
+                        <span>Posisi Terkini: <b class="text-white">{{ $stats['latest_date'] ? \Carbon\Carbon::parse($stats['latest_date'])->translatedFormat('d M Y') : 'Belum ada data' }}</b></span>
                     </div>
                     <span class="text-emerald-300/40">•</span>
                     <span class="text-emerald-200/90 text-xs">Arsip Snapshot Terintegrasi</span>
@@ -72,6 +72,8 @@
             </div>
         </div>
     </div>
+
+    @include('partials.flash-alert')
 
     <!-- 4 Kartu Metrik Ringkasan -->
     <div class="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-7">
@@ -163,17 +165,20 @@
             <div class="flex flex-wrap items-center gap-2.5">
                 <!-- Date Dari -->
                 <div class="w-36">
-                    <input type="date" wire:model.live="startDate"
-                           class="w-full text-xs rounded-xl border border-slate-200 bg-slate-50/70 px-3 py-2 text-slate-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#0d6d5f]/20 focus:border-[#0d6d5f] transition"
-                           title="Tanggal Mulai">
+                    <x-date-picker wire:model.live="startDate"
+                                   class="w-full text-xs rounded-xl border border-slate-200 bg-slate-50/70 px-3 py-2 text-slate-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#0d6d5f]/20 focus:border-[#0d6d5f] transition"
+                                   placeholder="DD/MM/YYYY"
+                                   title="Tanggal Mulai" />
                 </div>
 
                 <!-- Date Sampai -->
                 <div class="w-36">
-                    <input type="date" wire:model.live="endDate"
-                           class="w-full text-xs rounded-xl border border-slate-200 bg-slate-50/70 px-3 py-2 text-slate-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#0d6d5f]/20 focus:border-[#0d6d5f] transition"
-                           title="Tanggal Akhir">
+                    <x-date-picker wire:model.live="endDate"
+                                   class="w-full text-xs rounded-xl border border-slate-200 bg-slate-50/70 px-3 py-2 text-slate-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#0d6d5f]/20 focus:border-[#0d6d5f] transition"
+                                   placeholder="DD/MM/YYYY"
+                                   title="Tanggal Akhir" />
                 </div>
+
 
                 <!-- Filter Cabang -->
                 <div class="w-56">
@@ -304,6 +309,19 @@
                                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"/>
                                             </svg>
                                         </a>
+                                    @endcan
+
+                                    <!-- Tombol Hapus Snapshot -->
+                                    @can('delete', \App\Models\StockEntry::class)
+                                        <button type="button"
+                                                wire:click="confirmDeleteSnapshot('{{ $dateKey }}', {{ $s->distributor_id }})"
+                                                wire:loading.attr="disabled"
+                                                title="Hapus Snapshot Ini"
+                                                class="p-1.5 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200/80 transition cursor-pointer shadow-2xs hover:scale-105">
+                                            <svg width="15" height="15" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+                                            </svg>
+                                        </button>
                                     @endcan
                                 </div>
                             </td>
@@ -552,6 +570,18 @@
                             </a>
                         @endcan
 
+                        <!-- Hapus Snapshot di Detail -->
+                        @can('delete', \App\Models\StockEntry::class)
+                            <button type="button"
+                                    wire:click="confirmDeleteSnapshot('{{ $selectedSnapshot['tanggal'] }}', {{ $selectedSnapshot['distributor_id'] }})"
+                                    class="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200 font-semibold text-xs transition cursor-pointer">
+                                <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+                                </svg>
+                                Hapus
+                            </button>
+                        @endcan
+
                         <!-- Tutup -->
                         <button type="button" wire:click="closeDetailModal"
                                 class="px-4 py-2 rounded-xl border border-slate-200 bg-white text-slate-600 hover:bg-slate-100 text-xs font-semibold transition cursor-pointer">
@@ -562,4 +592,108 @@
             </div>
         </div>
     @endif
+
+    <!-- MODAL KONFIRMASI HAPUS SNAPSHOT -->
+    @if ($showDeleteModal)
+        <div class="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs transition-opacity"
+             x-data
+             @keydown.escape.window="$wire.cancelDeleteSnapshot()">
+            <div class="bg-white rounded-3xl shadow-2xl max-w-md w-full overflow-hidden border border-slate-200 animate-in fade-in zoom-in-95 duration-150">
+                <!-- Header Modal: Rose/Red Solid Accent -->
+                <div class="px-6 py-5 bg-gradient-to-r from-rose-600 to-red-600 text-white flex items-center justify-between">
+                    <div class="flex items-center gap-3">
+                        <div class="w-10 h-10 rounded-2xl bg-white/15 border border-white/20 flex items-center justify-center shrink-0">
+                            <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+                            </svg>
+                        </div>
+                        <div>
+                            <h3 class="text-base font-bold text-white leading-tight">Hapus Snapshot Stok?</h3>
+                            <p class="text-xs text-rose-100/90 mt-0.5">Konfirmasi penghapusan permanen data</p>
+                        </div>
+                    </div>
+                    <button type="button" wire:click="cancelDeleteSnapshot"
+                            class="p-2 rounded-xl bg-white/10 hover:bg-white/20 text-white transition cursor-pointer">
+                        <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M6 18L18 6M6 6l12 12"></path>
+                        </svg>
+                    </button>
+                </div>
+
+                <!-- Body Modal -->
+                <div class="p-6 space-y-4">
+                    <p class="text-xs text-slate-600 leading-relaxed">
+                        Anda akan menghapus seluruh entri stok distributor pada tanggal cut-off berikut:
+                    </p>
+
+                    <!-- Card Ringkasan Snapshot yang akan Dihapus -->
+                    <div class="p-4 rounded-2xl bg-slate-50 border border-slate-200/80 space-y-2.5 text-xs">
+                        <div class="flex items-center justify-between">
+                            <span class="text-slate-500 font-medium">Distributor:</span>
+                            <span class="font-bold text-slate-900 text-right">{{ $deleteDistributorName }}</span>
+                        </div>
+                        @if ($deleteDistributorCode)
+                            <div class="flex items-center justify-between">
+                                <span class="text-slate-500 font-medium">Kode Cabang:</span>
+                                <span class="font-mono font-semibold text-slate-800">{{ $deleteDistributorCode }}</span>
+                            </div>
+                        @endif
+                        <div class="flex items-center justify-between">
+                            <span class="text-slate-500 font-medium">Tanggal Snapshot:</span>
+                            <span class="font-bold text-slate-900">
+                                {{ $deleteTanggal ? \Carbon\Carbon::parse($deleteTanggal)->translatedFormat('d M Y') : '—' }}
+                            </span>
+                        </div>
+                        <div class="flex items-center justify-between border-t border-slate-200/60 pt-2">
+                            <span class="text-slate-500 font-medium">Total SKU:</span>
+                            <span class="font-bold text-slate-900">{{ number_format($deleteTotalSku ?? 0) }} Item</span>
+                        </div>
+                        <div class="flex items-center justify-between">
+                            <span class="text-slate-500 font-medium">Total Kuantitas:</span>
+                            <span class="font-extrabold text-rose-600 tabular-nums">
+                                {{ number_format($deleteTotalQuantity ?? 0, 0, ',', '.') }}
+                            </span>
+                        </div>
+                    </div>
+
+                    <!-- Warning Alert -->
+                    <div class="flex items-start gap-2.5 p-3 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-xs">
+                        <svg width="18" height="18" style="width: 18px; height: 18px; min-width: 18px; flex-shrink: 0;" class="text-amber-600 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+                        </svg>
+                        <span class="leading-relaxed">
+                            Data yang dihapus <strong>tidak dapat dikembalikan</strong>. Metrik riwayat dan dashboard akan langsung diperbarui.
+                        </span>
+                    </div>
+                </div>
+
+                <!-- Footer Modal -->
+                <div class="px-6 py-4 bg-slate-50 border-t border-slate-100 flex items-center justify-end gap-2.5">
+                    <button type="button" wire:click="cancelDeleteSnapshot"
+                            wire:loading.attr="disabled"
+                            class="px-4 py-2 rounded-xl border border-slate-200 bg-white text-slate-600 hover:bg-slate-100 text-xs font-semibold transition cursor-pointer">
+                        Batal
+                    </button>
+                    <button type="button" wire:click="deleteSnapshot"
+                            wire:loading.attr="disabled"
+                            class="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-white bg-rose-600 hover:bg-rose-700 font-bold text-xs shadow-xs transition cursor-pointer disabled:opacity-50">
+                        <span wire:loading.remove wire:target="deleteSnapshot" class="inline-flex items-center gap-1.5">
+                            <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+                            </svg>
+                            Ya, Hapus Snapshot
+                        </span>
+                        <span wire:loading wire:target="deleteSnapshot" class="inline-flex items-center gap-1.5">
+                            <svg class="animate-spin h-3.5 w-3.5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                            </svg>
+                            Menghapus...
+                        </span>
+                    </button>
+                </div>
+            </div>
+        </div>
+    @endif
 </div>
+

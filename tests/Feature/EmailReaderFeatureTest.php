@@ -48,4 +48,31 @@ class EmailReaderFeatureTest extends TestCase
         $response->assertStatus(200);
         $response->assertSee('Koneksi Mail Server IMAP Belum Dikonfigurasi');
     }
+
+    public function test_matches_satoria_daily_stock_pattern_and_custom_keywords(): void
+    {
+        $service = app(\App\Services\ImapService::class);
+
+        $this->assertTrue($service->isDailyStockSubject('Satoria Daily Stock'));
+        $this->assertTrue($service->isDailyStockSubject('Laporan Satoria Daily Stock - PT Sehat'));
+        $this->assertTrue($service->isDailyStockSubject('[DISTRIBUTOR A] satoria daily stock 12/09/2026'));
+        $this->assertFalse($service->isDailyStockSubject('Welcome to GitLab!'));
+        $this->assertFalse($service->isDailyStockSubject('Invoice #10293'));
+    }
+
+    public function test_can_toggle_only_daily_stock_filter_in_livewire(): void
+    {
+        $user = User::where('email', 'admin@satoriagroup.co.id')->first() ?? User::first();
+        if (! $user) {
+            $user = User::factory()->create();
+            $user->syncRoles([User::ROLE_ADMIN]);
+        }
+
+        Livewire::actingAs($user)
+            ->test(\App\Livewire\Emails\Index::class)
+            ->assertSet('onlyDailyStock', false)
+            ->set('onlyDailyStock', true)
+            ->assertSet('onlyDailyStock', true);
+    }
 }
+

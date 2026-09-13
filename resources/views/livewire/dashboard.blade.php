@@ -42,7 +42,7 @@
                         <svg width="14" height="14" style="width: 14px; height: 14px; min-width: 14px; flex-shrink: 0;" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path>
                         </svg>
-                        <span>Update Terakhir: <b class="text-white">{{ $latestDate ? \Illuminate\Support\Carbon::parse($latestDate)->translatedFormat('d F Y') : 'Belum ada data' }}</b></span>
+                        <span>Update Terakhir: <b class="text-white">{{ $latestDate ? \Illuminate\Support\Carbon::parse($latestDate)->translatedFormat('d M Y') : 'Belum ada data' }}</b></span>
                     </div>
                     <span class="text-emerald-400/50">•</span>
                     <span class="text-emerald-200 text-xs font-medium">Snapshot Stok Terintegrasi</span>
@@ -253,12 +253,12 @@
         </div>
     </div>
 
-    <!-- Modern Segmented Control Navigation Tabs -->
-    <div class="inline-flex p-1.5 rounded-2xl border border-slate-200 gap-1.5 shadow-2xs mb-6 overflow-x-auto max-w-full"
+    <!-- Modern Segmented Control Navigation Tabs (Full Width) -->
+    <div class="w-full p-1.5 rounded-2xl border border-slate-200 shadow-2xs mb-6 grid grid-cols-1 md:grid-cols-3 gap-1.5"
          style="background: #edf2f1;">
         <!-- Tab 1: Stok On-Hand -->
         <button type="button" wire:click="switchTab('stock')"
-                class="inline-flex items-center gap-2.5 px-5 py-2.5 rounded-xl text-xs md:text-sm font-bold transition cursor-pointer"
+                class="inline-flex items-center justify-center gap-2.5 px-4 py-2.5 rounded-xl text-xs md:text-sm font-bold transition cursor-pointer w-full text-center"
                 style="{{ $activeTab === 'stock' ? 'background: #ffffff; color: #07352d; box-shadow: 0 2px 6px rgba(0,0,0,0.08);' : 'color: #475569; background: transparent;' }}">
             <svg width="17" height="17" style="width: 17px; height: 17px; min-width: 17px; flex-shrink: 0;" class="{{ $activeTab === 'stock' ? 'text-[#0d6d5f]' : 'text-slate-400' }}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 10h16M4 14h16M4 18h16"></path>
@@ -272,7 +272,7 @@
 
         <!-- Tab 2: Monitoring Kedaluwarsa (FEFO) -->
         <button type="button" wire:click="switchTab('expiry')"
-                class="inline-flex items-center gap-2.5 px-5 py-2.5 rounded-xl text-xs md:text-sm font-bold transition cursor-pointer"
+                class="inline-flex items-center justify-center gap-2.5 px-4 py-2.5 rounded-xl text-xs md:text-sm font-bold transition cursor-pointer w-full text-center"
                 style="{{ $activeTab === 'expiry' ? 'background: #ffffff; color: #be123c; box-shadow: 0 2px 6px rgba(0,0,0,0.08);' : 'color: #475569; background: transparent;' }}">
             <svg width="17" height="17" style="width: 17px; height: 17px; min-width: 17px; flex-shrink: 0;" class="{{ $activeTab === 'expiry' ? 'text-rose-600' : 'text-slate-400' }}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path>
@@ -292,7 +292,7 @@
 
         <!-- Tab 3: Kepatuhan Upload Cabang -->
         <button type="button" wire:click="switchTab('compliance')"
-                class="inline-flex items-center gap-2.5 px-5 py-2.5 rounded-xl text-xs md:text-sm font-bold transition cursor-pointer"
+                class="inline-flex items-center justify-center gap-2.5 px-4 py-2.5 rounded-xl text-xs md:text-sm font-bold transition cursor-pointer w-full text-center"
                 style="{{ $activeTab === 'compliance' ? 'background: #ffffff; color: #0d6d5f; box-shadow: 0 2px 6px rgba(0,0,0,0.08);' : 'color: #475569; background: transparent;' }}">
             <svg width="17" height="17" style="width: 17px; height: 17px; min-width: 17px; flex-shrink: 0;" class="{{ $activeTab === 'compliance' ? 'text-[#0d6d5f]' : 'text-slate-400' }}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
@@ -587,7 +587,7 @@
                                 @endphp
                                 @if ($r->entry->expired_date)
                                     <span class="font-bold {{ $expStatus === 'critical' ? 'text-rose-600' : ($expStatus === 'warning' ? 'text-amber-700' : 'text-slate-700') }}">
-                                        {{ $r->entry->expired_date->format('Y-m-d') }}
+                                        {{ $r->entry->expired_date->translatedFormat('d M Y') }}
                                     </span>
                                     @if ($days !== null)
                                         <span class="text-[10px] text-slate-400 block mt-0.5">
@@ -719,7 +719,23 @@
                 <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                     <div>
                         <h3 class="text-base font-bold text-slate-900 tracking-tight">Daftar Batch Terurut Kedaluwarsa (FEFO Order)</h3>
-                        <p class="text-xs text-slate-500 mt-1">Urutan teratas adalah batch yang paling mendekati tanggal kedaluwarsa</p>
+                        <div class="flex items-center gap-2 mt-1">
+                            <p class="text-xs text-slate-500">Urutan teratas adalah batch yang paling mendekati tanggal kedaluwarsa</p>
+                            @if ($fefoSortBy !== 'days' || $fefoSortDir !== 'asc')
+                                <span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-lg text-[11px] font-mono bg-emerald-50 text-emerald-800 border border-emerald-200">
+                                    <span>Sortir: <b>{{ match($fefoSortBy) {
+                                        'item_name' => 'Nama Produk',
+                                        'distributor' => 'Distributor',
+                                        'batch_no' => 'No. Batch',
+                                        'expired_date' => 'Expired Date',
+                                        'quantity' => 'Kuantitas',
+                                        'tier' => 'Status & Rekomendasi',
+                                        default => 'Sisa Waktu',
+                                    } }}</b> ({{ $fefoSortDir === 'asc' ? ($fefoSortBy === 'days' || $fefoSortBy === 'quantity' || $fefoSortBy === 'expired_date' ? 'Terkecil / Terdekat' : 'A→Z') : ($fefoSortBy === 'days' || $fefoSortBy === 'quantity' || $fefoSortBy === 'expired_date' ? 'Terbesar / Terjauh' : 'Z→A') }})</span>
+                                    <button type="button" wire:click="$set('fefoSortBy', 'days'); $set('fefoSortDir', 'asc');" class="text-emerald-600 hover:text-emerald-900 ml-0.5 font-bold cursor-pointer" title="Kembalikan sortir default (FEFO)">×</button>
+                                </span>
+                            @endif
+                        </div>
                     </div>
                     <div class="shrink-0">
                         <button type="button" wire:click="exportNearEdCsv"
@@ -734,10 +750,10 @@
                     </div>
                 </div>
 
-                <!-- Baris 2: Filter Risiko (Segmented Control) & Kolom Pencarian -->
-                <div class="flex flex-col md:flex-row md:items-center justify-between gap-3 pt-1">
+                <!-- Baris 2: Filter Risiko, Filter Cabang, Filter Satuan, Search & Reset -->
+                <div class="flex flex-col xl:flex-row xl:items-center justify-between gap-3 pt-1">
                     <!-- Sub-Filter Buttons as Segmented Control -->
-                    <div class="inline-flex p-1 bg-slate-100 rounded-xl border border-slate-200 gap-1 text-xs overflow-x-auto">
+                    <div class="inline-flex p-1 bg-slate-100 rounded-xl border border-slate-200 gap-1 text-xs overflow-x-auto shrink-0">
                         <button type="button" wire:click="$set('expiryRiskFilter', 'all')"
                                 class="px-3 py-1.5 rounded-lg cursor-pointer transition font-bold {{ $expiryRiskFilter === 'all' ? 'bg-white text-slate-900 shadow-2xs' : 'text-slate-600 hover:text-slate-900' }}">
                             Semua ({{ $fefoSummary['total'] }})
@@ -756,16 +772,53 @@
                         </button>
                     </div>
 
-                    <!-- Search Input -->
-                    <div class="relative w-full md:w-80">
-                        <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
-                            <svg width="15" height="15" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
-                            </svg>
+                    <!-- Filter Controls FEFO: Cabang, Satuan, Search & Reset -->
+                    <div class="flex flex-wrap items-center gap-2.5">
+                        <!-- Filter Cabang FEFO -->
+                        <div class="w-48 sm:w-56">
+                            <select wire:model.live="fefoBranchId"
+                                    class="w-full text-xs rounded-xl border border-slate-200 bg-slate-50/70 px-3 py-2 text-slate-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#0d6d5f]/20 focus:border-[#0d6d5f] transition">
+                                <option value="">— Semua Cabang ({{ count($availableBranches) }}) —</option>
+                                @foreach ($availableBranches as $b)
+                                    <option value="{{ $b->id }}">{{ $b->name }}</option>
+                                @endforeach
+                            </select>
                         </div>
-                        <input type="text" wire:model.live.debounce.300ms="expirySearch"
-                               placeholder="Cari produk, batch, cabang..."
-                               class="w-full text-xs rounded-xl border border-slate-200 bg-slate-50/70 pl-9 pr-3 py-2 text-slate-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#0d6d5f]/20 focus:border-[#0d6d5f] transition">
+
+                        <!-- Filter Satuan FEFO -->
+                        <div class="w-32 sm:w-36">
+                            <select wire:model.live="fefoSatuanFilter"
+                                    class="w-full text-xs rounded-xl border border-slate-200 bg-slate-50/70 px-3 py-2 text-slate-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#0d6d5f]/20 focus:border-[#0d6d5f] transition">
+                                <option value="">Semua Satuan</option>
+                                <option value="BTL">Botol (Btl)</option>
+                                <option value="AMP">Ampul (Amp)</option>
+                                <option value="PCS">Pcs / Box (Alkes)</option>
+                            </select>
+                        </div>
+
+                        <!-- Search Input FEFO -->
+                        <div class="relative w-44 sm:w-60">
+                            <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
+                                <svg width="14" height="14" style="width: 14px; height: 14px; min-width: 14px; flex-shrink: 0;" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
+                                </svg>
+                            </div>
+                            <input type="text" wire:model.live.debounce.300ms="expirySearch"
+                                   placeholder="Cari produk / batch..."
+                                   class="w-full text-xs rounded-xl border border-slate-200 bg-slate-50/70 pl-9 pr-3 py-2 text-slate-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#0d6d5f]/20 focus:border-[#0d6d5f] transition">
+                        </div>
+
+                        <!-- Reset Filter Button FEFO -->
+                        @if ($expiryRiskFilter !== 'all' || $expirySearch || $fefoBranchId || $fefoSatuanFilter || $fefoSortBy !== 'days' || $fefoSortDir !== 'asc')
+                            <button type="button" wire:click="resetFefoFilters"
+                                    class="px-3 py-2 rounded-xl text-xs font-semibold text-slate-600 hover:text-slate-900 hover:bg-slate-100 border border-slate-200 transition cursor-pointer inline-flex items-center gap-1.5 shrink-0"
+                                    title="Reset semua filter dan sortir FEFO ke kondisi awal">
+                                <svg width="13" height="13" style="width: 13px; height: 13px; min-width: 13px; flex-shrink: 0;" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
+                                </svg>
+                                <span>Reset</span>
+                            </button>
+                        @endif
                     </div>
                 </div>
             </div>
@@ -776,13 +829,174 @@
                     <thead style="background: #f8faf9;" class="text-[11px] font-bold uppercase tracking-wider text-slate-500 border-b border-slate-200">
                         <tr>
                             <th class="py-3.5 px-4 w-12 text-center">#</th>
-                            <th class="py-3.5 px-4">Produk Satoria & Distributor</th>
-                            <th class="py-3.5 px-4 min-w-[190px] max-w-[240px]">Distributor / Cabang</th>
-                            <th class="py-3.5 px-4 w-28">No. Batch</th>
-                            <th class="py-3.5 px-4 w-32 text-center">Expired Date</th>
-                            <th class="py-3.5 px-4 w-36 text-center">Sisa Waktu</th>
-                            <th class="py-3.5 px-4 w-28 text-right">Kuantitas</th>
-                            <th class="py-3.5 px-4 w-52">Status & Rekomendasi</th>
+
+                            <!-- Produk Satoria & Distributor (Sortable) -->
+                            <th wire:click="setFefoSort('item_name')"
+                                class="text-left py-3.5 px-4 cursor-pointer select-none hover:bg-slate-100 transition group"
+                                title="Klik untuk mengurutkan berdasarkan Nama Produk">
+                                <div class="inline-flex items-center gap-1.5">
+                                    <span class="{{ $fefoSortBy === 'item_name' ? 'font-bold' : '' }}" style="{{ $fefoSortBy === 'item_name' ? 'color: #0d6d5f;' : '' }}">Produk Satoria & Distributor</span>
+                                    @if ($fefoSortBy === 'item_name')
+                                        @if ($fefoSortDir === 'asc')
+                                            <svg width="13" height="13" style="width: 13px; height: 13px; min-width: 13px; flex-shrink: 0; color: #0d6d5f;" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 15l7-7 7 7"></path>
+                                            </svg>
+                                        @else
+                                            <svg width="13" height="13" style="width: 13px; height: 13px; min-width: 13px; flex-shrink: 0; color: #0d6d5f;" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M19 9l-7 7-7-7"></path>
+                                            </svg>
+                                        @endif
+                                    @else
+                                        <svg width="13" height="13" style="width: 13px; height: 13px; min-width: 13px; flex-shrink: 0;" class="text-slate-300 group-hover:text-slate-500 transition" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4"></path>
+                                        </svg>
+                                    @endif
+                                </div>
+                            </th>
+
+                            <!-- Distributor / Cabang (Sortable) -->
+                            <th wire:click="setFefoSort('distributor')"
+                                class="text-left py-3.5 px-4 min-w-[190px] max-w-[240px] cursor-pointer select-none hover:bg-slate-100 transition group"
+                                title="Klik untuk mengurutkan berdasarkan Cabang Distributor">
+                                <div class="inline-flex items-center gap-1.5">
+                                    <span class="{{ $fefoSortBy === 'distributor' ? 'font-bold' : '' }}" style="{{ $fefoSortBy === 'distributor' ? 'color: #0d6d5f;' : '' }}">Distributor / Cabang</span>
+                                    @if ($fefoSortBy === 'distributor')
+                                        @if ($fefoSortDir === 'asc')
+                                            <svg width="13" height="13" style="width: 13px; height: 13px; min-width: 13px; flex-shrink: 0; color: #0d6d5f;" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 15l7-7 7 7"></path>
+                                            </svg>
+                                        @else
+                                            <svg width="13" height="13" style="width: 13px; height: 13px; min-width: 13px; flex-shrink: 0; color: #0d6d5f;" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M19 9l-7 7-7-7"></path>
+                                            </svg>
+                                        @endif
+                                    @else
+                                        <svg width="13" height="13" style="width: 13px; height: 13px; min-width: 13px; flex-shrink: 0;" class="text-slate-300 group-hover:text-slate-500 transition" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4"></path>
+                                        </svg>
+                                    @endif
+                                </div>
+                            </th>
+
+                            <!-- No. Batch (Sortable) -->
+                            <th wire:click="setFefoSort('batch_no')"
+                                class="text-left py-3.5 px-4 w-28 cursor-pointer select-none hover:bg-slate-100 transition group"
+                                title="Klik untuk mengurutkan berdasarkan Nomor Batch">
+                                <div class="inline-flex items-center gap-1.5">
+                                    <span class="{{ $fefoSortBy === 'batch_no' ? 'font-bold' : '' }}" style="{{ $fefoSortBy === 'batch_no' ? 'color: #0d6d5f;' : '' }}">No. Batch</span>
+                                    @if ($fefoSortBy === 'batch_no')
+                                        @if ($fefoSortDir === 'asc')
+                                            <svg width="13" height="13" style="width: 13px; height: 13px; min-width: 13px; flex-shrink: 0; color: #0d6d5f;" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 15l7-7 7 7"></path>
+                                            </svg>
+                                        @else
+                                            <svg width="13" height="13" style="width: 13px; height: 13px; min-width: 13px; flex-shrink: 0; color: #0d6d5f;" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M19 9l-7 7-7-7"></path>
+                                            </svg>
+                                        @endif
+                                    @else
+                                        <svg width="13" height="13" style="width: 13px; height: 13px; min-width: 13px; flex-shrink: 0;" class="text-slate-300 group-hover:text-slate-500 transition" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4"></path>
+                                        </svg>
+                                    @endif
+                                </div>
+                            </th>
+
+                            <!-- Expired Date (Sortable) -->
+                            <th wire:click="setFefoSort('expired_date')"
+                                class="text-center py-3.5 px-4 w-32 cursor-pointer select-none hover:bg-slate-100 transition group"
+                                title="Klik untuk mengurutkan berdasarkan Tanggal Kedaluwarsa">
+                                <div class="inline-flex items-center justify-center gap-1.5 w-full">
+                                    <span class="{{ $fefoSortBy === 'expired_date' ? 'font-bold' : '' }}" style="{{ $fefoSortBy === 'expired_date' ? 'color: #0d6d5f;' : '' }}">Expired Date</span>
+                                    @if ($fefoSortBy === 'expired_date')
+                                        @if ($fefoSortDir === 'asc')
+                                            <svg width="13" height="13" style="width: 13px; height: 13px; min-width: 13px; flex-shrink: 0; color: #0d6d5f;" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 15l7-7 7 7"></path>
+                                            </svg>
+                                        @else
+                                            <svg width="13" height="13" style="width: 13px; height: 13px; min-width: 13px; flex-shrink: 0; color: #0d6d5f;" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M19 9l-7 7-7-7"></path>
+                                            </svg>
+                                        @endif
+                                    @else
+                                        <svg width="13" height="13" style="width: 13px; height: 13px; min-width: 13px; flex-shrink: 0;" class="text-slate-300 group-hover:text-slate-500 transition" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4"></path>
+                                        </svg>
+                                    @endif
+                                </div>
+                            </th>
+
+                            <!-- Sisa Waktu (Sortable) -->
+                            <th wire:click="setFefoSort('days')"
+                                class="text-center py-3.5 px-4 w-36 cursor-pointer select-none hover:bg-slate-100 transition group"
+                                title="Klik untuk mengurutkan berdasarkan Sisa Waktu (FEFO)">
+                                <div class="inline-flex items-center justify-center gap-1.5 w-full">
+                                    <span class="{{ $fefoSortBy === 'days' ? 'font-bold' : '' }}" style="{{ $fefoSortBy === 'days' ? 'color: #0d6d5f;' : '' }}">Sisa Waktu</span>
+                                    @if ($fefoSortBy === 'days')
+                                        @if ($fefoSortDir === 'asc')
+                                            <svg width="13" height="13" style="width: 13px; height: 13px; min-width: 13px; flex-shrink: 0; color: #0d6d5f;" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 15l7-7 7 7"></path>
+                                            </svg>
+                                        @else
+                                            <svg width="13" height="13" style="width: 13px; height: 13px; min-width: 13px; flex-shrink: 0; color: #0d6d5f;" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M19 9l-7 7-7-7"></path>
+                                            </svg>
+                                        @endif
+                                    @else
+                                        <svg width="13" height="13" style="width: 13px; height: 13px; min-width: 13px; flex-shrink: 0;" class="text-slate-300 group-hover:text-slate-500 transition" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4"></path>
+                                        </svg>
+                                    @endif
+                                </div>
+                            </th>
+
+                            <!-- Kuantitas (Sortable) -->
+                            <th wire:click="setFefoSort('quantity')"
+                                class="text-right py-3.5 px-4 w-28 cursor-pointer select-none hover:bg-slate-100 transition group"
+                                title="Klik untuk mengurutkan berdasarkan Kuantitas">
+                                <div class="inline-flex items-center justify-end gap-1.5 w-full">
+                                    <span class="{{ $fefoSortBy === 'quantity' ? 'font-bold' : '' }}" style="{{ $fefoSortBy === 'quantity' ? 'color: #0d6d5f;' : '' }}">Kuantitas</span>
+                                    @if ($fefoSortBy === 'quantity')
+                                        @if ($fefoSortDir === 'asc')
+                                            <svg width="13" height="13" style="width: 13px; height: 13px; min-width: 13px; flex-shrink: 0; color: #0d6d5f;" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 15l7-7 7 7"></path>
+                                            </svg>
+                                        @else
+                                            <svg width="13" height="13" style="width: 13px; height: 13px; min-width: 13px; flex-shrink: 0; color: #0d6d5f;" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M19 9l-7 7-7-7"></path>
+                                            </svg>
+                                        @endif
+                                    @else
+                                        <svg width="13" height="13" style="width: 13px; height: 13px; min-width: 13px; flex-shrink: 0;" class="text-slate-300 group-hover:text-slate-500 transition" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4"></path>
+                                        </svg>
+                                    @endif
+                                </div>
+                            </th>
+
+                            <!-- Status & Rekomendasi (Sortable) -->
+                            <th wire:click="setFefoSort('tier')"
+                                class="text-left py-3.5 px-4 w-52 cursor-pointer select-none hover:bg-slate-100 transition group"
+                                title="Klik untuk mengurutkan berdasarkan Status & Rekomendasi">
+                                <div class="inline-flex items-center gap-1.5">
+                                    <span class="{{ $fefoSortBy === 'tier' ? 'font-bold' : '' }}" style="{{ $fefoSortBy === 'tier' ? 'color: #0d6d5f;' : '' }}">Status & Rekomendasi</span>
+                                    @if ($fefoSortBy === 'tier')
+                                        @if ($fefoSortDir === 'asc')
+                                            <svg width="13" height="13" style="width: 13px; height: 13px; min-width: 13px; flex-shrink: 0; color: #0d6d5f;" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 15l7-7 7 7"></path>
+                                            </svg>
+                                        @else
+                                            <svg width="13" height="13" style="width: 13px; height: 13px; min-width: 13px; flex-shrink: 0; color: #0d6d5f;" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M19 9l-7 7-7-7"></path>
+                                            </svg>
+                                        @endif
+                                    @else
+                                        <svg width="13" height="13" style="width: 13px; height: 13px; min-width: 13px; flex-shrink: 0;" class="text-slate-300 group-hover:text-slate-500 transition" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4"></path>
+                                        </svg>
+                                    @endif
+                                </div>
+                            </th>
                         </tr>
                     </thead>
                     <tbody class="divide-y divide-slate-100 bg-white">
@@ -810,7 +1024,7 @@
                                 </td>
                                 <td class="py-3.5 px-4 text-center font-mono">
                                     <span class="font-bold {{ $r->tier === 'expired' || $r->tier === 'critical' ? 'text-rose-700' : ($r->tier === 'warning' ? 'text-amber-700' : 'text-slate-700') }}">
-                                        {{ $e->expired_date ? $e->expired_date->format('d/m/Y') : '—' }}
+                                        {{ $e->expired_date ? $e->expired_date->translatedFormat('d M Y') : '—' }}
                                     </span>
                                 </td>
                                 <td class="py-3.5 px-4 text-center font-mono">
@@ -917,7 +1131,7 @@
                 </div>
                 <div class="text-[10px] text-slate-400 mt-2 pt-2 border-t border-slate-100 flex justify-between">
                     <span>Target: 100%</span>
-                    <span>Acuan: {{ \Illuminate\Support\Carbon::parse($complianceSummary['target_date'])->translatedFormat('d M Y') }}</span>
+                    <span>Acuan: <strong class="text-slate-600">{{ \Illuminate\Support\Carbon::parse($complianceSummary['target_date'])->translatedFormat('d M Y') }}</strong></span>
                 </div>
             </div>
         </div>
@@ -935,9 +1149,13 @@
                     <div class="flex flex-wrap items-center gap-2.5">
                         <!-- Date Picker Tanggal Acuan -->
                         <div class="flex items-center gap-2 bg-slate-50 px-3 py-1.5 rounded-xl border border-slate-200 shadow-2xs">
-                            <span class="text-[11px] font-bold uppercase tracking-wider text-slate-500">Tgl Acuan:</span>
-                            <input type="date" wire:model.live="complianceDate"
-                                   class="text-xs border-0 bg-transparent text-slate-900 font-bold focus:outline-none focus:ring-0 cursor-pointer">
+                            <span class="text-[11px] font-bold uppercase tracking-wider text-slate-500 whitespace-nowrap">Tgl Acuan:</span>
+                            <div class="w-32">
+                                <x-date-picker wire:model.live="complianceDate"
+                                               class="w-full text-xs border-0 bg-transparent text-slate-900 font-bold focus:outline-none focus:ring-0 cursor-pointer p-0"
+                                               placeholder="DD/MM/YYYY"
+                                               title="Tanggal Acuan" />
+                            </div>
                         </div>
 
                         <!-- Sub-Filter Buttons as Segmented Control -->

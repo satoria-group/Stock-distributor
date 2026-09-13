@@ -146,10 +146,14 @@
         <div class="{{ $activeTab === 'manual' ? '' : 'hidden' }}">
             <div class="space-y-3">
                 <div class="flex flex-wrap items-end gap-3">
-                    <div>
+                    <div class="w-40">
                         <label class="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1.5">Tanggal Snapshot</label>
-                        <input type="date" wire:model="tanggal" class="rounded-xl border border-slate-300 px-3.5 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-[#0d6d5f]/25 focus:border-[#0d6d5f]">
+                        <x-date-picker wire:model="tanggal"
+                                       class="w-full rounded-xl border border-slate-300 px-3.5 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-[#0d6d5f]/25 focus:border-[#0d6d5f]"
+                                       placeholder="DD/MM/YYYY"
+                                       title="Tanggal Snapshot" />
                     </div>
+
                     <div>
                         <label class="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1.5">Distributor</label>
                         <select wire:model="distributorId" class="rounded-xl border border-slate-300 px-3.5 py-2 text-xs w-64 focus:outline-none focus:ring-2 focus:ring-[#0d6d5f]/25 focus:border-[#0d6d5f]">
@@ -175,7 +179,7 @@
                     <div class="pt-2 text-xs text-gray-500 border-t border-gray-100">
                         Riwayat tanggal tersimpan untuk distributor ini:
                         @foreach ($recentDates as $d)
-                            <button type="button" wire:click="setDateAndLoad('{{ $d->toDateString() }}')" class="font-mono underline mr-2 text-brand hover:text-brand-dark cursor-pointer">{{ $d->format('d M Y') }}</button>
+                            <button type="button" wire:click="setDateAndLoad('{{ $d->toDateString() }}')" class="font-mono underline mr-2 text-brand hover:text-brand-dark cursor-pointer">{{ $d->translatedFormat('d M Y') }}</button>
                         @endforeach
                     </div>
                 @endif
@@ -226,7 +230,7 @@
                                     <td class="px-3 py-2 font-mono text-gray-600">{{ $item['satuan'] ?? 'PCS' }}</td>
                                     <td class="px-3 py-2 text-right font-mono font-semibold text-gray-900">{{ number_format($item['quantity'] ?? 0, 0, ',', '.') }}</td>
                                     <td class="px-3 py-2 font-mono text-gray-500">
-                                        {{ $item['expired_date'] ?? '—' }}
+                                        {{ !empty($item['expired_date']) ? \Carbon\Carbon::parse($item['expired_date'])->translatedFormat('d M Y') : '—' }}
                                         @if(! empty($item['batch_no']))
                                             <span class="text-[10px] text-gray-400">({{ $item['batch_no'] }})</span>
                                         @endif
@@ -272,8 +276,8 @@
                     <h3 class="text-base font-bold text-gray-900">
                         Grid Stock — {{ $distributorId ? $distributors->firstWhere('id', $distributorId)?->name : 'Pilih distributor dulu' }}
                     </h3>
-                    <span class="font-medium text-xs text-slate-600 bg-slate-100 px-2 py-0.5 rounded-md">
-                        {{ $tanggal }}
+                    <span class="font-semibold text-xs text-emerald-800 bg-emerald-50 border border-emerald-200/80 px-2.5 py-0.5 rounded-full">
+                        {{ $tanggal ? \Carbon\Carbon::parse($tanggal)->translatedFormat('d M Y') : '—' }}
                     </span>
                 </div>
                 <!-- Real-time Live Counters -->
@@ -389,7 +393,7 @@
                 </div>
                 <div class="flex justify-between">
                     <span class="text-gray-500">Tanggal Snapshot:</span>
-                    <span class="font-mono font-medium text-gray-800">{{ isset($saveSummary['tanggal']) ? \Illuminate\Support\Carbon::parse($saveSummary['tanggal'])->format('d M Y') : '—' }}</span>
+                    <span class="font-mono font-medium text-gray-800">{{ isset($saveSummary['tanggal']) ? \Illuminate\Support\Carbon::parse($saveSummary['tanggal'])->translatedFormat('d M Y') : '—' }}</span>
                 </div>
                 <div class="flex justify-between items-center pt-2 border-t border-gray-200">
                     <span class="text-gray-500 font-medium">Total Item Tersimpan:</span>
@@ -453,7 +457,7 @@
                 <div class="flex justify-between items-center">
                     <span class="text-slate-500">Tanggal Snapshot:</span>
                     <span class="font-mono font-semibold text-slate-800">
-                        {{ isset($pendingImportData['tanggal']) ? \Illuminate\Support\Carbon::parse($pendingImportData['tanggal'])->format('d M Y') : '—' }}
+                        {{ isset($pendingImportData['tanggal']) ? \Illuminate\Support\Carbon::parse($pendingImportData['tanggal'])->translatedFormat('d M Y') : '—' }}
                     </span>
                 </div>
                 <div class="flex justify-between items-center pt-2 border-t border-slate-200">
@@ -555,6 +559,27 @@
     <script>
         let gridApi = null;
 
+        function formatToDDMMYYYY(val) {
+            if (!val) return '';
+            const str = String(val).trim();
+            if (!str) return '';
+            const isoMatch = str.match(/^(\d{4})[-\/](\d{1,2})[-\/](\d{1,2})/);
+            if (isoMatch) {
+                const y = isoMatch[1];
+                const m = isoMatch[2].padStart(2, '0');
+                const d = isoMatch[3].padStart(2, '0');
+                return `${d}/${m}/${y}`;
+            }
+            const dmyMatch = str.match(/^(\d{1,2})[-\/](\d{1,2})[-\/](\d{4})/);
+            if (dmyMatch) {
+                const d = dmyMatch[1].padStart(2, '0');
+                const m = dmyMatch[2].padStart(2, '0');
+                const y = dmyMatch[3];
+                return `${d}/${m}/${y}`;
+            }
+            return str;
+        }
+
         function statusRenderer(params) {
             if (params.value) {
                 return `<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-bold uppercase bg-[#dcece7] text-[#07352d] tracking-wider">Ter-mapping</span>`;
@@ -643,7 +668,7 @@
                 },
                 {
                     field: 'quantity',
-                    headerName: 'Qty ✎',
+                    headerName: 'Qty',
                     editable: true,
                     type: 'numericColumn',
                     width: 120,
@@ -653,7 +678,7 @@
                 },
                 {
                     field: 'satuan',
-                    headerName: 'Satuan ✎',
+                    headerName: 'Satuan',
                     editable: true,
                     width: 105,
                     cellClass: 'editable-cell font-medium text-slate-700',
@@ -661,14 +686,16 @@
                 },
                 {
                     field: 'expired_date',
-                    headerName: 'ED (YYYY-MM-DD) ✎',
+                    headerName: 'ED',
                     editable: true,
-                    width: 160,
-                    cellClass: 'editable-cell font-medium text-slate-700'
+                    width: 140,
+                    cellClass: 'editable-cell font-medium text-slate-700',
+                    valueFormatter: p => formatToDDMMYYYY(p.value),
+                    valueParser: p => formatToDDMMYYYY(p.newValue)
                 },
                 {
                     field: 'batch_no',
-                    headerName: 'Batch No ✎',
+                    headerName: 'Batch No',
                     editable: true,
                     width: 140,
                     cellClass: 'editable-cell font-medium text-slate-700'
@@ -698,7 +725,7 @@
                 gridApi = window.agGridCreateGrid(gridEl, {
                     columnDefs,
                     rowData: rows || [],
-                    defaultColDef: { resizable: true, sortable: true },
+                    defaultColDef: { resizable: true, sortable: false },
                     singleClickEdit: true,
                     stopEditingWhenCellsLoseFocus: true,
                     onCellValueChanged: function(params) {

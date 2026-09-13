@@ -126,6 +126,7 @@ class ImapService
                         'from_name' => $fromName ?: ($fromEmail ?: 'Pengirim Tidak Dikenal'),
                         'from_email' => $fromEmail,
                         'subject' => $subject ?: '(Tanpa Subjek)',
+                        'is_daily_stock' => $this->isDailyStockSubject($subject),
                         'date' => $dateCarbon?->toIso8601String(),
                         'date_display' => $dateCarbon ? $dateCarbon->translatedFormat('d M Y, H:i') : '—',
                         'is_read' => $isSeen,
@@ -242,10 +243,12 @@ class ImapService
 
             $flags = $message->getFlags();
             $isSeen = $flags ? ($flags->has('seen') || $flags->contains('Seen') || $flags->contains('\\Seen')) : false;
+            $subjectStr = (string) $message->getSubject();
 
             return [
                 'uid' => (string) $uid,
-                'subject' => (string) $message->getSubject() ?: '(Tanpa Subjek)',
+                'subject' => $subjectStr ?: '(Tanpa Subjek)',
+                'is_daily_stock' => $this->isDailyStockSubject($subjectStr),
                 'from_name' => $fromObj?->personal ?: ($fromObj?->mail ?? 'Pengirim Tidak Dikenal'),
                 'from_email' => $fromObj?->mail ?? '',
                 'to' => implode(', ', array_filter($toList)),
@@ -414,6 +417,27 @@ class ImapService
                 Cache::forget("mail:inbox:page:{$page}:per-page:{$perPage}");
             }
         }
+    }
+
+    /**
+     * Check if a subject matches the Daily Stock keyword patterns.
+     */
+    public function isDailyStockSubject(?string $subject): bool
+    {
+        if (! $subject) {
+            return false;
+        }
+
+        $keywords = config('imap.stock_subject_keywords', ['Satoria Daily Stock']);
+        $subjectLower = mb_strtolower($subject);
+
+        foreach ($keywords as $keyword) {
+            if ($keyword !== '' && str_contains($subjectLower, mb_strtolower($keyword))) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**
