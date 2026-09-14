@@ -78,12 +78,34 @@ class Dashboard extends Component
 
     public string $fefoSortDir = 'asc';
 
+    public string $fefoChartUnit = 'BTL'; // 'BTL', 'AMP', 'PCS'
+
+    // Trend Stock On Hand Line Chart
+    public string $trendUnit = 'BTL'; // 'BTL', 'AMP', 'PCS'
+
+    public int $trendPeriod = 30; // 7, 30, 90
+
     // Tab 3: Kepatuhan Upload Cabang
     public string $complianceDate = '';
 
     public string $complianceStatus = 'all'; // 'all', 'submitted', 'missing'
 
     public string $complianceSearch = '';
+
+    // Tab 4: Stok Macet & Slow-Moving (Dead Stock Alert)
+    public int $stagnantPeriod = 30; // 14, 30, 60
+
+    public string $stagnantRiskFilter = 'all'; // 'all', 'dead', 'slow', 'critical_ed'
+
+    public ?int $stagnantBranchId = null;
+
+    public string $stagnantSatuanFilter = '';
+
+    public string $stagnantSearch = '';
+
+    public string $stagnantSortBy = 'days_stagnant'; // 'days_stagnant', 'quantity', 'item_name', 'expired_date', 'turnover_pct', 'distributor'
+
+    public string $stagnantSortDir = 'desc';
 
     public function mount(): void
     {
@@ -98,6 +120,9 @@ class Dashboard extends Component
         }
         if ($tab === 'compliance' && $subFilter) {
             $this->complianceStatus = $subFilter;
+        }
+        if ($tab === 'stagnant' && $subFilter) {
+            $this->stagnantRiskFilter = $subFilter;
         }
         $this->resetPage();
     }
@@ -178,6 +203,20 @@ class Dashboard extends Component
         $this->resetPage();
     }
 
+    public function setTrendUnit(string $unit): void
+    {
+        if (in_array($unit, ['BTL', 'AMP', 'PCS'])) {
+            $this->trendUnit = $unit;
+        }
+    }
+
+    public function setTrendPeriod(int $period): void
+    {
+        if (in_array($period, [7, 30, 90])) {
+            $this->trendPeriod = $period;
+        }
+    }
+
     public function resetFilters(): void
     {
         $this->selectedBranchId = null;
@@ -188,6 +227,13 @@ class Dashboard extends Component
         $this->resetPage();
     }
 
+    public function setFefoChartUnit(string $unit): void
+    {
+        if (in_array($unit, ['BTL', 'AMP', 'PCS'])) {
+            $this->fefoChartUnit = $unit;
+        }
+    }
+
     public function resetFefoFilters(): void
     {
         $this->fefoBranchId = null;
@@ -196,6 +242,65 @@ class Dashboard extends Component
         $this->expirySearch = '';
         $this->fefoSortBy = 'days';
         $this->fefoSortDir = 'asc';
+        $this->fefoChartUnit = 'BTL';
+        $this->resetPage();
+    }
+
+    public function updatedStagnantPeriod(): void
+    {
+        $this->resetPage();
+    }
+
+    public function updatedStagnantRiskFilter(): void
+    {
+        $this->resetPage();
+    }
+
+    public function updatedStagnantBranchId(): void
+    {
+        $this->resetPage();
+    }
+
+    public function updatedStagnantSatuanFilter(): void
+    {
+        $this->resetPage();
+    }
+
+    public function updatedStagnantSearch(): void
+    {
+        $this->resetPage();
+    }
+
+    public function updatedStagnantSortBy(): void
+    {
+        $this->resetPage();
+    }
+
+    public function updatedStagnantSortDir(): void
+    {
+        $this->resetPage();
+    }
+
+    public function setStagnantSort(string $column): void
+    {
+        if ($this->stagnantSortBy === $column) {
+            $this->stagnantSortDir = $this->stagnantSortDir === 'asc' ? 'desc' : 'asc';
+        } else {
+            $this->stagnantSortBy = $column;
+            $this->stagnantSortDir = in_array($column, ['days_stagnant', 'quantity', 'turnover_pct']) ? 'desc' : 'asc';
+        }
+        $this->resetPage();
+    }
+
+    public function resetStagnantFilters(): void
+    {
+        $this->stagnantPeriod = 30;
+        $this->stagnantRiskFilter = 'all';
+        $this->stagnantBranchId = null;
+        $this->stagnantSatuanFilter = '';
+        $this->stagnantSearch = '';
+        $this->stagnantSortBy = 'days_stagnant';
+        $this->stagnantSortDir = 'desc';
         $this->resetPage();
     }
 
@@ -203,6 +308,7 @@ class Dashboard extends Component
     {
         $this->selectedBranchId = null;
         $this->fefoBranchId = null;
+        $this->stagnantBranchId = null;
         $this->resetPage();
     }
 
@@ -398,6 +504,506 @@ class Dashboard extends Component
 
             if ($valA == $valB) {
                 return $a->days <=> $b->days;
+            }
+
+            return ($valA < $valB xor $isDesc) ? -1 : 1;
+        })->values();
+    }
+
+    /**
+     * Hitung pergerakan posisi stok fisik harian (Trend Stock On Hand).
+     * Berbasis snapshot harian, terpisah per satuan (tidak dicampur),
+     * dan mengabaikan missing dates (return null agar tidak turun ke 0).
+     */
+    public function calculateStockTrend(array $scopedDistributorIds, ?string $latestSnapshotDate): array
+    {
+        // 1. Tanggal Acuan (berdasarkan latest snapshot aktif atau hari ini)
+        $endDate = $latestSnapshotDate ?: Carbon::today()->toDateString();
+        $startDate = Carbon::parse($endDate)->subDays($this->trendPeriod - 1)->toDateString();
+
+        // 2. Query agregasi langsung ke database
+        $trendQuery = StockEntry::query()
+            ->whereBetween('tanggal', [$startDate, $endDate]);
+
+        if ($this->selectedBranchId) {
+            $trendQuery->where('distributor_id', $this->selectedBranchId);
+        } else {
+            $trendQuery->whereIn('distributor_id', $scopedDistributorIds ?: [0]);
+        }
+
+        // 3. Filter Satuan (BTL, AMP, PCS) sesuai klasifikasi standar farmasi Satoria
+        if ($this->trendUnit === 'BTL') {
+            $trendQuery->where(function ($q) {
+                $q->whereRaw('UPPER(satuan) LIKE ?', ['%BTL%'])
+                  ->orWhereRaw('UPPER(satuan) LIKE ?', ['%BOTOL%']);
+            });
+            $unitLabel = 'Botol (BTL)';
+        } elseif ($this->trendUnit === 'AMP') {
+            $trendQuery->where(function ($q) {
+                $q->whereRaw('UPPER(satuan) LIKE ?', ['%AMP%']);
+            });
+            $unitLabel = 'Ampul (AMP)';
+        } else {
+            $trendQuery->where(function ($q) {
+                $q->whereRaw('UPPER(satuan) NOT LIKE ?', ['%BTL%'])
+                  ->whereRaw('UPPER(satuan) NOT LIKE ?', ['%BOTOL%'])
+                  ->whereRaw('UPPER(satuan) NOT LIKE ?', ['%AMP%']);
+            });
+            $unitLabel = 'Pcs / Box (PCS)';
+        }
+
+        $dailySums = $trendQuery
+            ->select('tanggal', DB::raw('SUM(quantity) as total_qty'))
+            ->groupBy('tanggal')
+            ->orderBy('tanggal', 'asc')
+            ->pluck('total_qty', 'tanggal')
+            ->mapWithKeys(fn ($qty, $date) => [Carbon::parse($date)->toDateString() => (float) $qty])
+            ->all();
+
+        // 4. Bangun timeline kalender harian dalam rentang periode
+        $curr = Carbon::parse($startDate);
+        $end = Carbon::parse($endDate);
+
+        $labels = [];
+        $fullDates = [];
+        $dataPoints = [];
+        $activeDays = 0;
+        $firstQty = null;
+        $latestQty = null;
+
+        while ($curr->lte($end)) {
+            $dateStr = $curr->toDateString();
+            $labels[] = $curr->translatedFormat('d M');
+            $fullDates[] = $curr->translatedFormat('d F Y');
+
+            if (isset($dailySums[$dateStr])) {
+                $qty = (float) $dailySums[$dateStr];
+                $dataPoints[] = $qty;
+                $activeDays++;
+                if ($firstQty === null) {
+                    $firstQty = $qty;
+                }
+                $latestQty = $qty;
+            } else {
+                // Missing date: kembalikan null untuk jeda grafik line (bukan 0)
+                $dataPoints[] = null;
+            }
+
+            $curr->addDay();
+        }
+
+        // 5. Hitung Delta & Perubahan Persentase
+        $delta = null;
+        $deltaPct = null;
+        if ($firstQty !== null && $latestQty !== null) {
+            $delta = $latestQty - $firstQty;
+            if ($firstQty > 0) {
+                $deltaPct = round(($delta / $firstQty) * 100, 1);
+            }
+        }
+
+        return [
+            'labels' => $labels,
+            'full_dates' => $fullDates,
+            'data' => $dataPoints,
+            'unit' => $this->trendUnit,
+            'unit_label' => $unitLabel,
+            'period' => $this->trendPeriod,
+            'start_date' => $startDate,
+            'end_date' => $endDate,
+            'start_date_formatted' => Carbon::parse($startDate)->translatedFormat('d M Y'),
+            'end_date_formatted' => Carbon::parse($endDate)->translatedFormat('d M Y'),
+            'active_days' => $activeDays,
+            'total_period_days' => $this->trendPeriod,
+            'first_qty' => $firstQty,
+            'latest_qty' => $latestQty,
+            'delta' => $delta,
+            'delta_pct' => $deltaPct,
+        ];
+    }
+
+    /**
+     * Hitung horizon umur kedaluwarsa makro (Macro Expiry Horizon Breakdown).
+     * Membagi stok fisik (BTL / AMP / PCS) ke dalam 5 zona farmasi:
+     * < 1 bln (expired), 1-3 bln (kritis), 3-6 bln (waspada), 6-12 bln (perhatian), > 12 bln (aman).
+     */
+    public function calculateFefoHorizon(Collection $allCurrentEntries, array $scopedDistributorIds): array
+    {
+        $unit = $this->fefoChartUnit;
+        $unitLabel = match ($unit) {
+            'BTL' => 'Botol (BTL)',
+            'AMP' => 'Ampul (AMP)',
+            default => 'Pcs / Box (PCS)',
+        };
+
+        // Filter entri stok berdasarkan satuan dan ketersediaan expired_date
+        $matchingEntries = $allCurrentEntries->filter(function ($entry) use ($unit) {
+            if ($entry->expired_date === null) {
+                return false;
+            }
+            $sat = strtoupper(trim((string) $entry->satuan));
+            if ($unit === 'BTL') {
+                return str_contains($sat, 'BTL') || str_contains($sat, 'BOTOL');
+            } elseif ($unit === 'AMP') {
+                return str_contains($sat, 'AMP');
+            } else {
+                return ! str_contains($sat, 'BTL') && ! str_contains($sat, 'BOTOL') && ! str_contains($sat, 'AMP');
+            }
+        });
+
+        // Filter jika ada cabang spesifik yang dipilih di Tab FEFO atau filter utama
+        $effectiveBranchId = $this->fefoBranchId ?: $this->selectedBranchId;
+        if ($effectiveBranchId) {
+            $matchingEntries = $matchingEntries->filter(fn ($e) => (int) $e->distributor_id === (int) $effectiveBranchId);
+        }
+
+        // Definisi 5 Tier Horizon Kedaluwarsa Standar Supply Chain Farmasi
+        $tierDefs = [
+            'expired' => [
+                'label' => '< 1 Bulan / Expired',
+                'color' => '#dc2626',
+            ],
+            'critical' => [
+                'label' => '1 - 3 Bulan (< 90 Hari)',
+                'color' => '#e11d48',
+            ],
+            'warning' => [
+                'label' => '3 - 6 Bulan (90 - 180 Hari)',
+                'color' => '#f59e0b',
+            ],
+            'caution' => [
+                'label' => '6 - 12 Bulan (180 - 365 Hari)',
+                'color' => '#06b6d4',
+            ],
+            'safe' => [
+                'label' => '> 12 Bulan (> 365 Hari)',
+                'color' => '#10b981',
+            ],
+        ];
+
+        // 1. Hitung Agregat Nasional (Total Qty, Total Batch, dan % Tiap Tier)
+        $national = [];
+        $totalQty = 0.0;
+        $totalBatches = 0;
+
+        foreach ($tierDefs as $k => $def) {
+            $national[$k] = [
+                'id' => $k,
+                'label' => $def['label'],
+                'color' => $def['color'],
+                'qty' => 0.0,
+                'pct' => 0.0,
+                'batches' => 0,
+            ];
+        }
+
+        foreach ($matchingEntries as $entry) {
+            $q = (float) $entry->quantity;
+            $days = $entry->daysToExpiry();
+
+            if ($days < 30) {
+                $tier = 'expired';
+            } elseif ($days <= 90) {
+                $tier = 'critical';
+            } elseif ($days <= 180) {
+                $tier = 'warning';
+            } elseif ($days <= 365) {
+                $tier = 'caution';
+            } else {
+                $tier = 'safe';
+            }
+
+            $national[$tier]['qty'] += $q;
+            $national[$tier]['batches']++;
+            $totalQty += $q;
+            $totalBatches++;
+        }
+
+        foreach ($national as $k => &$item) {
+            $item['pct'] = $totalQty > 0 ? round(($item['qty'] / $totalQty) * 100, 1) : 0.0;
+        }
+        unset($item);
+
+        // 2. Tentukan Labels & Baris Horizon (Distributor Group vs Branch)
+        if ($effectiveBranchId) {
+            $branch = Distributor::find($effectiveBranchId);
+            $labels = [$branch?->name ?? 'Cabang '.$effectiveBranchId];
+            $entityMapping = [
+                $labels[0] => $matchingEntries,
+            ];
+        } elseif ($this->selectedGroup !== 'ALL') {
+            // Tampilkan per Cabang dalam grup yang dipilih
+            $groupedByBranch = $matchingEntries->groupBy(fn ($e) => $e->distributor?->name ?? 'Lainnya');
+            $sortedBranches = $groupedByBranch->sortByDesc(fn ($entries) => $entries->sum('quantity'))->take(12);
+            $labels = $sortedBranches->keys()->values()->all();
+            $entityMapping = [];
+            foreach ($labels as $lbl) {
+                $entityMapping[$lbl] = $groupedByBranch->get($lbl, collect());
+            }
+            if (empty($labels)) {
+                $labels = [$this->selectedGroup === 'OTHER' ? 'Distributor Lainnya' : $this->selectedGroup];
+                $entityMapping[$labels[0]] = collect();
+            }
+        } else {
+            // Tampilan Nasional: 6 Grup Distributor
+            $labels = ['KFTD', 'SDL', 'UDC', 'GMP', 'MAM', 'OTHER'];
+            $entityMapping = [];
+            foreach ($labels as $grp) {
+                $entityMapping[$grp] = $matchingEntries->filter(function ($e) use ($grp) {
+                    return self::getDistributorGroup($e->distributor?->distributor_code) === $grp;
+                });
+            }
+        }
+
+        // 3. Bangun 5 Datasets Bertumpuk (Stacked Datasets) untuk Chart.js
+        $datasets = [];
+        foreach ($tierDefs as $tierKey => $def) {
+            $tierDataPoints = [];
+            foreach ($labels as $lbl) {
+                $entriesForEntity = $entityMapping[$lbl] ?? collect();
+                $sumTier = 0.0;
+                foreach ($entriesForEntity as $e) {
+                    $days = $e->daysToExpiry();
+                    $matchTier = match (true) {
+                        $days < 30 => 'expired',
+                        $days <= 90 => 'critical',
+                        $days <= 180 => 'warning',
+                        $days <= 365 => 'caution',
+                        default => 'safe',
+                    };
+                    if ($matchTier === $tierKey) {
+                        $sumTier += (float) $e->quantity;
+                    }
+                }
+                $tierDataPoints[] = round($sumTier, 2);
+            }
+
+            $datasets[] = [
+                'label' => $def['label'],
+                'data' => $tierDataPoints,
+                'backgroundColor' => $def['color'],
+                'borderRadius' => 3,
+                'stack' => 'horizon',
+            ];
+        }
+
+        return [
+            'labels' => $labels,
+            'datasets' => $datasets,
+            'unit' => $unit,
+            'unit_label' => $unitLabel,
+            'total_qty' => $totalQty,
+            'total_batches' => $totalBatches,
+            'national' => $national,
+            'has_data' => $totalQty > 0,
+        ];
+    }
+
+    /**
+     * Hitung indikator stok macet (dead stock) dan pergerakan lambat (slow-moving)
+     * berdasarkan perbandingan kuantitas antar snapshot dalam jendela hari evaluasi.
+     */
+    public function calculateStagnantStock(Collection $latestEntries, array $scopedDistributorIds, ?string $latestSnapshotDate): Collection
+    {
+        $endDate = $latestSnapshotDate ?: Carbon::today()->toDateString();
+        $startDate = Carbon::parse($endDate)->subDays($this->stagnantPeriod - 1)->toDateString();
+
+        // Hanya evaluasi item yang saat ini ada stok fisiknya di cabang (> 0)
+        $activeEntries = $latestEntries->filter(fn ($e) => (float) $e->quantity > 0);
+
+        if ($activeEntries->isEmpty()) {
+            return collect();
+        }
+
+        // Ambil riwayat snapshot dalam jendela evaluasi
+        $history = StockEntry::query()
+            ->whereBetween('tanggal', [$startDate, $endDate])
+            ->whereIn('distributor_id', $scopedDistributorIds ?: [0])
+            ->select('distributor_id', 'distributor_item_id', 'tanggal', 'quantity')
+            ->orderBy('tanggal', 'asc')
+            ->get()
+            ->groupBy(fn ($r) => "{$r->distributor_id}-{$r->distributor_item_id}");
+
+        $rows = collect();
+
+        foreach ($activeEntries as $entry) {
+            $key = "{$entry->distributor_id}-{$entry->distributor_item_id}";
+            $snapshots = $history->get($key, collect());
+
+            $qLatest = (float) $entry->quantity;
+            if ($snapshots->isEmpty()) {
+                $qFirst = $qLatest;
+                $firstDate = $entry->tanggal ? $entry->tanggal->toDateString() : $endDate;
+                $snapshotsCount = 1;
+            } else {
+                $firstSnapshot = $snapshots->first();
+                $qFirst = (float) $firstSnapshot->quantity;
+                $firstDate = $firstSnapshot->tanggal ? $firstSnapshot->tanggal->toDateString() : $endDate;
+                $snapshotsCount = $snapshots->count();
+            }
+
+            $totalOutflow = 0.0;
+            $prevQ = null;
+            $lastOutflowDate = null;
+
+            foreach ($snapshots as $s) {
+                $q = (float) $s->quantity;
+                if ($prevQ !== null && $q < $prevQ) {
+                    $outflow = $prevQ - $q;
+                    $totalOutflow += $outflow;
+                    $lastOutflowDate = $s->tanggal ? $s->tanggal->toDateString() : null;
+                }
+                $prevQ = $q;
+            }
+
+            $daysObserved = (int) Carbon::parse($firstDate)->diffInDays(Carbon::parse($endDate));
+
+            if ($lastOutflowDate) {
+                $daysStagnant = (int) Carbon::parse($lastOutflowDate)->diffInDays(Carbon::parse($endDate));
+            } else {
+                $daysStagnant = max(1, $daysObserved);
+            }
+
+            $turnoverPct = $qFirst > 0 ? round(($totalOutflow / $qFirst) * 100, 1) : 0.0;
+
+            // Klasifikasi:
+            // 1. Dead Stock: Tidak ada penurunan stok sama sekali dan qLatest >= qFirst
+            // 2. Slow Moving: Ada penurunan stok tapi perputaran < 10% dalam periode
+            // 3. Normal: Perputaran >= 10%
+            if ($totalOutflow <= 0 && $qLatest >= $qFirst) {
+                $status = 'dead_stock';
+            } elseif ($totalOutflow > 0 && $turnoverPct < 10.0) {
+                $status = 'slow_moving';
+            } else {
+                $status = 'normal';
+            }
+
+            // Abaikan item yang pergerakannya normal
+            if ($status === 'normal') {
+                continue;
+            }
+
+            $isNearEd = in_array($entry->expiryStatus(), ['critical', 'warning', 'expired'])
+                || ($entry->daysToExpiry() !== null && $entry->daysToExpiry() <= 180);
+
+            if ($status === 'dead_stock' && $isNearEd) {
+                $actionText = 'Prioritas Retur / Penjualan Cepat';
+                $actionColor = 'rose';
+            } elseif ($status === 'dead_stock') {
+                $actionText = 'Relokasi Antar Cabang';
+                $actionColor = 'amber';
+            } elseif ($status === 'slow_moving' && $isNearEd) {
+                $actionText = 'Push Sales / Evaluasi ED';
+                $actionColor = 'orange';
+            } else {
+                $actionText = 'Evaluasi Kuota Restock';
+                $actionColor = 'sky';
+            }
+
+            $rows->push((object) [
+                'entry' => $entry,
+                'distributor' => $entry->distributor,
+                'distributorItem' => $entry->distributorItem,
+                'qLatest' => $qLatest,
+                'qFirst' => $qFirst,
+                'totalOutflow' => $totalOutflow,
+                'turnoverPct' => $turnoverPct,
+                'daysStagnant' => $daysStagnant,
+                'snapshotsCount' => $snapshotsCount,
+                'status' => $status,
+                'isNearEd' => $isNearEd,
+                'actionText' => $actionText,
+                'actionColor' => $actionColor,
+            ]);
+        }
+
+        return $rows;
+    }
+
+    private function applyStagnantFilters(Collection $rows): Collection
+    {
+        if ($this->stagnantBranchId) {
+            $rows = $rows->filter(fn ($r) => (int) $r->entry->distributor_id === (int) $this->stagnantBranchId);
+        }
+
+        if ($this->stagnantSatuanFilter) {
+            $rows = $rows->filter(function ($r) {
+                $sat = strtoupper(trim((string) $r->entry->satuan));
+                if ($this->stagnantSatuanFilter === 'BTL') {
+                    return str_contains($sat, 'BTL') || str_contains($sat, 'BOTOL');
+                }
+                if ($this->stagnantSatuanFilter === 'AMP') {
+                    return str_contains($sat, 'AMP');
+                }
+                if ($this->stagnantSatuanFilter === 'PCS') {
+                    return ! str_contains($sat, 'BTL') && ! str_contains($sat, 'BOTOL') && ! str_contains($sat, 'AMP');
+                }
+
+                return true;
+            });
+        }
+
+        if ($this->stagnantRiskFilter === 'dead') {
+            $rows = $rows->where('status', 'dead_stock');
+        } elseif ($this->stagnantRiskFilter === 'slow') {
+            $rows = $rows->where('status', 'slow_moving');
+        } elseif ($this->stagnantRiskFilter === 'critical_ed') {
+            $rows = $rows->filter(fn ($r) => in_array($r->status, ['dead_stock', 'slow_moving']) && $r->isNearEd);
+        } else {
+            // 'all': dead_stock dan slow_moving
+            $rows = $rows->filter(fn ($r) => in_array($r->status, ['dead_stock', 'slow_moving']));
+        }
+
+        if (trim($this->stagnantSearch) !== '') {
+            $term = mb_strtolower(trim($this->stagnantSearch));
+            $rows = $rows->filter(function ($r) use ($term) {
+                $name = mb_strtolower($r->distributorItem?->item_name ?? '');
+                $code = mb_strtolower($r->distributorItem?->source_item_id ?? '');
+                $ns = mb_strtolower($r->distributorItem?->netsuiteItem?->netsuite_name ?? '');
+                $batch = mb_strtolower($r->entry->batch_no ?? '');
+                $dist = mb_strtolower($r->distributor?->name ?? '');
+
+                return str_contains($name, $term)
+                    || str_contains($code, $term)
+                    || str_contains($ns, $term)
+                    || str_contains($batch, $term)
+                    || str_contains($dist, $term);
+            });
+        }
+
+        $isDesc = ($this->stagnantSortDir === 'desc');
+
+        return $rows->sort(function ($a, $b) use ($isDesc) {
+            switch ($this->stagnantSortBy) {
+                case 'quantity':
+                    $valA = (float) $a->qLatest;
+                    $valB = (float) $b->qLatest;
+                    break;
+                case 'distributor':
+                    $valA = strtolower((string) ($a->distributor?->name ?? ''));
+                    $valB = strtolower((string) ($b->distributor?->name ?? ''));
+                    break;
+                case 'expired_date':
+                    $valA = $a->entry->expired_date ? $a->entry->expired_date->timestamp : 0;
+                    $valB = $b->entry->expired_date ? $b->entry->expired_date->timestamp : 0;
+                    break;
+                case 'turnover_pct':
+                    $valA = (float) $a->turnoverPct;
+                    $valB = (float) $b->turnoverPct;
+                    break;
+                case 'days_stagnant':
+                    $valA = (int) $a->daysStagnant;
+                    $valB = (int) $b->daysStagnant;
+                    break;
+                case 'item_name':
+                default:
+                    $valA = strtolower((string) ($a->distributorItem?->item_name ?? ''));
+                    $valB = strtolower((string) ($b->distributorItem?->item_name ?? ''));
+                    break;
+            }
+
+            if ($valA == $valB) {
+                return 0;
             }
 
             return ($valA < $valB xor $isDesc) ? -1 : 1;
@@ -761,6 +1367,9 @@ class Dashboard extends Component
             ['path' => '#', 'pageName' => 'page']
         );
 
+        // 10b. Tab 2: Macro Expiry Horizon Breakdown
+        $chartFefoHorizon = $this->calculateFefoHorizon($allCurrentEntries, $scopedDistributorIds);
+
         // 11. Tab 3: Kepatuhan Upload Cabang (Compliance Tracker)
         $targetComplianceDate = $this->complianceDate ?: ($latestSnapshotDate ?: Carbon::today()->toDateString());
 
@@ -855,10 +1464,39 @@ class Dashboard extends Component
             ['path' => '#', 'pageName' => 'page']
         );
 
+        // 12. Line Chart: Trend Stock On Hand (Snapshot Historis per Satuan)
+        $chartTrend = $this->calculateStockTrend($scopedDistributorIds, $latestSnapshotDate);
+
+        // 13. Tab 4: Stok Macet & Slow-Moving (Dead Stock Alert)
+        $stagnantAllRows = $this->calculateStagnantStock($allCurrentEntries, $scopedDistributorIds, $latestSnapshotDate);
+
+        $stagnantSummary = [
+            'total' => $stagnantAllRows->count(),
+            'dead' => $stagnantAllRows->where('status', 'dead_stock')->count(),
+            'slow' => $stagnantAllRows->where('status', 'slow_moving')->count(),
+            'critical_ed' => $stagnantAllRows->where('isNearEd', true)->count(),
+            'total_qty' => (float) $stagnantAllRows->sum('qLatest'),
+            'avg_days' => $stagnantAllRows->count() > 0 ? (int) round($stagnantAllRows->avg('daysStagnant')) : 0,
+        ];
+
+        $stagnantFiltered = $this->applyStagnantFilters($stagnantAllRows);
+
+        $stagnantTotal = $stagnantFiltered->count();
+        $stagnantSlice = $stagnantFiltered->slice(($page - 1) * $this->perPage, $this->perPage)->values();
+        $stagnantTablePaginated = new LengthAwarePaginator(
+            $stagnantSlice,
+            $stagnantTotal,
+            $this->perPage,
+            $page,
+            ['path' => '#', 'pageName' => 'page']
+        );
+
         // Dispatch browser event agar chart selalu sinkron dengan data terfilter
         $this->dispatch('charts-updated', [
             'top' => $chartTopProducts,
             'donut' => $chartDonut,
+            'trend' => $chartTrend,
+            'fefo' => $chartFefoHorizon,
         ]);
 
         return view('livewire.dashboard', [
@@ -868,6 +1506,11 @@ class Dashboard extends Component
             'stockTable' => $stockTablePaginated,
             'chartTopProducts' => $chartTopProducts,
             'chartDonut' => $chartDonut,
+            'chartTrend' => $chartTrend,
+            'trendUnit' => $this->trendUnit,
+            'trendPeriod' => $this->trendPeriod,
+            'chartFefoHorizon' => $chartFefoHorizon,
+            'fefoChartUnit' => $this->fefoChartUnit,
             'expiryAlerts' => $expiryAlerts,
             'totalDisplayRows' => $totalRows,
             'activeTab' => $this->activeTab,
@@ -887,10 +1530,79 @@ class Dashboard extends Component
             'complianceDate' => $this->complianceDate,
             'complianceStatus' => $this->complianceStatus,
             'complianceSearch' => $this->complianceSearch,
+            'stagnantPeriod' => $this->stagnantPeriod,
+            'stagnantRiskFilter' => $this->stagnantRiskFilter,
+            'stagnantBranchId' => $this->stagnantBranchId,
+            'stagnantSatuanFilter' => $this->stagnantSatuanFilter,
+            'stagnantSearch' => $this->stagnantSearch,
+            'stagnantSortBy' => $this->stagnantSortBy,
+            'stagnantSortDir' => $this->stagnantSortDir,
             'fefoTable' => $fefoTablePaginated,
             'fefoSummary' => $fefoSummary,
             'complianceTable' => $complianceTablePaginated,
             'complianceSummary' => $complianceSummary,
+            'stagnantTable' => $stagnantTablePaginated,
+            'stagnantSummary' => $stagnantSummary,
+        ]);
+    }
+
+    public function exportStagnantCsv(): StreamedResponse
+    {
+        Gate::authorize('dashboard.view');
+
+        $scopedDistributorIds = $this->scopedBranchQuery()->pluck('id')->all();
+        $latestPerDist = $this->latestSnapshotPerDistributor($scopedDistributorIds);
+        $latestSnapshotDate = $latestPerDist->max('max_tanggal');
+        $allCurrentEntries = $this->entriesForLatestSnapshots($latestPerDist);
+
+        $stagnantAll = $this->calculateStagnantStock($allCurrentEntries, $scopedDistributorIds, $latestSnapshotDate);
+        $filtered = $this->applyStagnantFilters($stagnantAll);
+
+        $filename = 'stock-macet-slow-moving-' . now()->format('Y-m-d') . '.csv';
+
+        return response()->streamDownload(function () use ($filtered) {
+            $handle = fopen('php://output', 'w');
+            fputcsv($handle, [
+                'Distributor',
+                'Kode Item Distributor',
+                'Nama Produk Distributor',
+                'Master NetSuite',
+                'Satuan',
+                'No. Batch',
+                'Expired Date',
+                'Status ED',
+                'Stok Terkini',
+                'Stok Awal Periode',
+                'Total Outflow',
+                'Turnover (%)',
+                'Hari Stagnan',
+                'Status Pergerakan',
+                'Rekomendasi Tindakan',
+            ]);
+
+            foreach ($filtered as $row) {
+                fputcsv($handle, [
+                    $row->distributor?->name ?? '-',
+                    $row->distributorItem?->source_item_id ?? '-',
+                    $row->distributorItem?->item_name ?? '-',
+                    $row->distributorItem?->netsuiteItem?->netsuite_name ?? '-',
+                    $row->entry->satuan,
+                    $row->entry->batch_no ?? '-',
+                    $row->entry->expired_date ? $row->entry->expired_date->format('d/m/Y') : '-',
+                    $row->entry->expiryStatus(),
+                    $row->qLatest,
+                    $row->qFirst,
+                    $row->totalOutflow,
+                    $row->turnoverPct . '%',
+                    $row->daysStagnant,
+                    $row->status === 'dead_stock' ? 'Macet Total' : ($row->status === 'slow_moving' ? 'Pergerakan Lambat' : 'Normal'),
+                    $row->actionText,
+                ]);
+            }
+
+            fclose($handle);
+        }, $filename, [
+            'Content-Type' => 'text/csv; charset=UTF-8',
         ]);
     }
 

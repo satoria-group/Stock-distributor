@@ -194,7 +194,140 @@
     <div id="charts-data-holder"
          class="hidden"
          data-top='@json($chartTopProducts)'
-         data-donut='@json($chartDonut)'>
+         data-donut='@json($chartDonut)'
+         data-trend='@json($chartTrend)'
+         data-fefo='@json($chartFefoHorizon)'>
+    </div>
+
+    <!-- Grafik Trend Stock On Hand (Snapshot Historis per Satuan) -->
+    <div class="bg-white rounded-2xl border border-slate-200/80 p-6 shadow-xs mb-7">
+        <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-4 pb-4 border-b border-slate-100">
+            <div>
+                <div class="flex items-center gap-2.5">
+                    <div class="w-8 h-8 rounded-lg flex items-center justify-center text-white shadow-xs shrink-0" style="background: #0d6d5f;">
+                        <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.2" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"/>
+                        </svg>
+                    </div>
+                    <div>
+                        <h3 class="text-sm font-bold text-slate-900 tracking-tight">Trend Stock On Hand</h3>
+                        <p class="text-xs text-slate-500 mt-0.5">
+                            Pergerakan posisi fisik harian (<span class="font-medium text-slate-700">{{ $chartTrend['unit_label'] }}</span>) selama {{ $chartTrend['period'] }} hari terakhir ({{ $chartTrend['start_date_formatted'] }} &ndash; {{ $chartTrend['end_date_formatted'] }})
+                            @if ($selectedBranchId)
+                                &bull; <span class="text-emerald-700 font-medium">{{ $availableBranches->firstWhere('id', $selectedBranchId)?->name }}</span>
+                            @elseif ($selectedGroup !== 'ALL')
+                                &bull; <span class="text-emerald-700 font-medium">{{ $selectedGroup === 'OTHER' ? 'Distributor Lainnya' : $selectedGroup }}</span>
+                            @endif
+                        </p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Controls: Pilihan Satuan & Pilihan Periode -->
+            <div class="flex flex-wrap items-center gap-3">
+                <!-- Unit Selector (BTL, AMP, PCS) -->
+                <div class="flex items-center bg-slate-100/90 p-1 rounded-xl border border-slate-200/70 text-xs">
+                    <button type="button"
+                            wire:click="setTrendUnit('BTL')"
+                            class="px-2.5 py-1.5 rounded-lg transition-all {{ $trendUnit === 'BTL' ? 'bg-white font-bold text-[#0d6d5f] shadow-xs' : 'text-slate-600 hover:text-slate-900 font-medium' }}">
+                        Botol (BTL)
+                    </button>
+                    <button type="button"
+                            wire:click="setTrendUnit('AMP')"
+                            class="px-2.5 py-1.5 rounded-lg transition-all {{ $trendUnit === 'AMP' ? 'bg-white font-bold text-[#0d6d5f] shadow-xs' : 'text-slate-600 hover:text-slate-900 font-medium' }}">
+                        Ampul (AMP)
+                    </button>
+                    <button type="button"
+                            wire:click="setTrendUnit('PCS')"
+                            class="px-2.5 py-1.5 rounded-lg transition-all {{ $trendUnit === 'PCS' ? 'bg-white font-bold text-[#0d6d5f] shadow-xs' : 'text-slate-600 hover:text-slate-900 font-medium' }}">
+                        Pcs/Box (PCS)
+                    </button>
+                </div>
+
+                <!-- Period Selector (7, 30, 90 Hari) -->
+                <div class="flex items-center bg-slate-100/90 p-1 rounded-xl border border-slate-200/70 text-xs">
+                    <button type="button"
+                            wire:click="setTrendPeriod(7)"
+                            class="px-2.5 py-1.5 rounded-lg transition-all {{ $trendPeriod === 7 ? 'bg-slate-900 font-bold text-white shadow-xs' : 'text-slate-600 hover:text-slate-900 font-medium' }}">
+                        7 Hari
+                    </button>
+                    <button type="button"
+                            wire:click="setTrendPeriod(30)"
+                            class="px-2.5 py-1.5 rounded-lg transition-all {{ $trendPeriod === 30 ? 'bg-slate-900 font-bold text-white shadow-xs' : 'text-slate-600 hover:text-slate-900 font-medium' }}">
+                        30 Hari
+                    </button>
+                    <button type="button"
+                            wire:click="setTrendPeriod(90)"
+                            class="px-2.5 py-1.5 rounded-lg transition-all {{ $trendPeriod === 90 ? 'bg-slate-900 font-bold text-white shadow-xs' : 'text-slate-600 hover:text-slate-900 font-medium' }}">
+                        90 Hari
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Quick Summary Stats -->
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-3 py-3 px-4 my-4 bg-slate-50/70 rounded-xl border border-slate-100">
+            <div>
+                <span class="text-[10px] font-bold uppercase tracking-wider text-slate-400">Stok Posisi Terkini</span>
+                <div class="text-base font-extrabold text-slate-900 tabular-nums font-mono mt-0.5">
+                    {{ $chartTrend['latest_qty'] !== null ? number_format($chartTrend['latest_qty'], 0, ',', '.') : '-' }}
+                    <span class="text-xs font-normal text-slate-500">{{ $chartTrend['unit'] }}</span>
+                </div>
+            </div>
+            <div>
+                <span class="text-[10px] font-bold uppercase tracking-wider text-slate-400">Stok Awal Periode</span>
+                <div class="text-base font-extrabold text-slate-900 tabular-nums font-mono mt-0.5">
+                    {{ $chartTrend['first_qty'] !== null ? number_format($chartTrend['first_qty'], 0, ',', '.') : '-' }}
+                    <span class="text-xs font-normal text-slate-500">{{ $chartTrend['unit'] }}</span>
+                </div>
+            </div>
+            <div>
+                <span class="text-[10px] font-bold uppercase tracking-wider text-slate-400">Perubahan (&Delta; Delta)</span>
+                <div class="text-base font-extrabold tabular-nums font-mono mt-0.5 flex items-center gap-1.5">
+                    @if ($chartTrend['delta'] !== null)
+                        @if ($chartTrend['delta'] > 0)
+                            <span class="text-emerald-700">
+                                +{{ number_format($chartTrend['delta'], 0, ',', '.') }}
+                                <span class="text-xs font-semibold">({{ $chartTrend['delta_pct'] > 0 ? '+' : '' }}{{ $chartTrend['delta_pct'] }}%)</span>
+                            </span>
+                        @elseif ($chartTrend['delta'] < 0)
+                            <span class="text-rose-600">
+                                {{ number_format($chartTrend['delta'], 0, ',', '.') }}
+                                <span class="text-xs font-semibold">({{ $chartTrend['delta_pct'] }}%)</span>
+                            </span>
+                        @else
+                            <span class="text-slate-600">0 <span class="text-xs font-semibold">(0%)</span></span>
+                        @endif
+                    @else
+                        <span class="text-slate-400">-</span>
+                    @endif
+                </div>
+            </div>
+            <div>
+                <span class="text-[10px] font-bold uppercase tracking-wider text-slate-400">Kelengkapan Snapshot</span>
+                <div class="text-base font-extrabold text-slate-700 tabular-nums font-mono mt-0.5">
+                    {{ $chartTrend['active_days'] }} <span class="text-xs font-normal text-slate-500">/ {{ $chartTrend['total_period_days'] }} Hari Terisi</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Canvas Grafik Line -->
+        <div wire:ignore class="relative" style="height: 300px;">
+            <canvas id="chart-stock-trend"></canvas>
+            <div id="no-data-trend" class="absolute inset-0 flex flex-col items-center justify-center text-slate-400 text-xs hidden">
+                <div class="text-3xl mb-1">📈</div>
+                <span class="font-medium text-slate-500">Belum ada data riwayat stok untuk satuan dan filter ini.</span>
+                <span class="text-[11px] text-slate-400">Silakan pilih satuan lain atau grup distributor berbeda.</span>
+            </div>
+        </div>
+
+        <!-- Catatan Interpretasi -->
+        <div class="flex items-center gap-1.5 mt-3 pt-3 border-t border-slate-100 text-[11px] text-slate-400">
+            <svg class="w-3.5 h-3.5 shrink-0 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+            </svg>
+            <span>Grafik mencerminkan snapshot stok fisik harian. Garis terputus menandakan tidak adanya data unggahan (libur/tidak upload), bukan stok kosong (0).</span>
+        </div>
     </div>
 
     <!-- Dua Grafik Utama: Top 10 Produk & Distribusi Stok -->
@@ -254,7 +387,7 @@
     </div>
 
     <!-- Modern Segmented Control Navigation Tabs (Full Width) -->
-    <div class="w-full p-1.5 rounded-2xl border border-slate-200 shadow-2xs mb-6 grid grid-cols-1 md:grid-cols-3 gap-1.5"
+    <div class="w-full p-1.5 rounded-2xl border border-slate-200 shadow-2xs mb-6 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-1.5"
          style="background: #edf2f1;">
         <!-- Tab 1: Stok On-Hand -->
         <button type="button" wire:click="switchTab('stock')"
@@ -302,6 +435,26 @@
                   style="background: {{ $complianceSummary['compliance_rate'] >= 80 ? '#059669' : '#d97706' }};">
                 {{ $complianceSummary['compliance_rate'] }}%
             </span>
+        </button>
+
+        <!-- Tab 4: Stok Macet & Slow-Moving (Dead Stock Alert) -->
+        <button type="button" wire:click="switchTab('stagnant')"
+                class="inline-flex items-center justify-center gap-2.5 px-4 py-2.5 rounded-xl text-xs md:text-sm font-bold transition cursor-pointer w-full text-center"
+                style="{{ $activeTab === 'stagnant' ? 'background: #ffffff; color: #b45309; box-shadow: 0 2px 6px rgba(0,0,0,0.08);' : 'color: #475569; background: transparent;' }}">
+            <svg width="17" height="17" style="width: 17px; height: 17px; min-width: 17px; flex-shrink: 0;" class="{{ $activeTab === 'stagnant' ? 'text-amber-600' : 'text-slate-400' }}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path>
+            </svg>
+            <span>Stok Macet & Slow-Moving</span>
+            @if (($stagnantSummary['dead'] ?? 0) > 0)
+                <span class="px-2.5 py-0.5 rounded-full text-[11px] font-mono bg-amber-500 text-white font-bold shadow-2xs">
+                    {{ $stagnantSummary['dead'] }} Macet
+                </span>
+            @else
+                <span class="px-2.5 py-0.5 rounded-full text-[11px] font-mono font-bold"
+                      style="{{ $activeTab === 'stagnant' ? 'background: #fef3c7; color: #92400e;' : 'background: #e2e8f0; color: #475569;' }}">
+                    {{ $stagnantSummary['total'] ?? 0 }}
+                </span>
+            @endif
         </button>
     </div>
 
@@ -709,6 +862,97 @@
                     {{ number_format($fefoSummary['total_qty_at_risk'], 0, ',', '.') }}
                 </div>
                 <div class="text-[11px] text-slate-400 mt-2 pt-2 border-t border-slate-100">Total unit batch expired &lt;6 bulan</div>
+            </div>
+        </div>
+
+        <!-- Grafik Horizon Kedaluwarsa Makro (Macro Expiry Horizon Breakdown) -->
+        <div class="bg-white rounded-2xl border border-slate-200/80 p-6 shadow-xs">
+            <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-4 pb-4 border-b border-slate-100">
+                <div>
+                    <div class="flex items-center gap-2.5">
+                        <div class="w-8 h-8 rounded-lg flex items-center justify-center text-white shadow-xs shrink-0 bg-rose-600">
+                            <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/>
+                            </svg>
+                        </div>
+                        <div>
+                            <h3 class="text-sm font-bold text-slate-900 tracking-tight">Distribusi Horizon Kedaluwarsa Makro</h3>
+                            <p class="text-xs text-slate-500 mt-0.5">
+                                Sebaran umur simpan stok fisik (<span class="font-medium text-slate-700">{{ $chartFefoHorizon['unit_label'] }}</span>) lintas 5 zona kedaluwarsa & distributor
+                                @if ($fefoBranchId)
+                                    &bull; <span class="text-rose-700 font-medium">{{ $availableBranches->firstWhere('id', $fefoBranchId)?->name }}</span>
+                                @elseif ($selectedBranchId)
+                                    &bull; <span class="text-rose-700 font-medium">{{ $availableBranches->firstWhere('id', $selectedBranchId)?->name }}</span>
+                                @elseif ($selectedGroup !== 'ALL')
+                                    &bull; <span class="text-rose-700 font-medium">{{ $selectedGroup === 'OTHER' ? 'Distributor Lainnya' : $selectedGroup }}</span>
+                                @endif
+                            </p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Unit Selector (BTL, AMP, PCS) -->
+                <div class="flex items-center bg-slate-100/90 p-1 rounded-xl border border-slate-200/70 text-xs shrink-0">
+                    <button type="button"
+                            wire:click="setFefoChartUnit('BTL')"
+                            class="px-2.5 py-1.5 rounded-lg transition-all cursor-pointer {{ $fefoChartUnit === 'BTL' ? 'bg-white font-bold text-rose-700 shadow-xs' : 'text-slate-600 hover:text-slate-900 font-medium' }}">
+                        Botol (BTL)
+                    </button>
+                    <button type="button"
+                            wire:click="setFefoChartUnit('AMP')"
+                            class="px-2.5 py-1.5 rounded-lg transition-all cursor-pointer {{ $fefoChartUnit === 'AMP' ? 'bg-white font-bold text-rose-700 shadow-xs' : 'text-slate-600 hover:text-slate-900 font-medium' }}">
+                        Ampul (AMP)
+                    </button>
+                    <button type="button"
+                            wire:click="setFefoChartUnit('PCS')"
+                            class="px-2.5 py-1.5 rounded-lg transition-all cursor-pointer {{ $fefoChartUnit === 'PCS' ? 'bg-white font-bold text-rose-700 shadow-xs' : 'text-slate-600 hover:text-slate-900 font-medium' }}">
+                        Pcs / Box (PCS)
+                    </button>
+                </div>
+            </div>
+
+            <!-- Mini Agregat Horizon Bar (Top Progress Bar) & Legend Chips -->
+            <div class="my-5 p-4 rounded-xl bg-slate-50 border border-slate-200/60">
+                <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-2.5">
+                    <span class="text-xs font-bold text-slate-700">Komposisi Umur Simpan Stok Agregat:</span>
+                    <span class="text-xs text-slate-500 font-mono font-medium">
+                        Total Volume: <b class="text-slate-900">{{ number_format($chartFefoHorizon['total_qty'], 0, ',', '.') }}</b> {{ $chartFefoHorizon['unit'] }} ({{ number_format($chartFefoHorizon['total_batches'], 0, ',', '.') }} batch)
+                    </span>
+                </div>
+
+                <!-- Multi-segment horizontal bar -->
+                <div class="h-4 w-full flex overflow-hidden rounded-lg bg-slate-200/80 p-0.5 gap-0.5 shadow-inner">
+                    @if ($chartFefoHorizon['total_qty'] > 0)
+                        @foreach ($chartFefoHorizon['national'] as $tierKey => $tier)
+                            @if ($tier['pct'] > 0)
+                                <div style="width: {{ $tier['pct'] }}%; background-color: {{ $tier['color'] }};"
+                                     class="h-full first:rounded-l-md last:rounded-r-md transition-all duration-300 relative group cursor-pointer"
+                                     title="{{ $tier['label'] }}: {{ number_format($tier['qty'], 0, ',', '.') }} {{ $chartFefoHorizon['unit'] }} ({{ $tier['pct'] }}%)">
+                                </div>
+                            @endif
+                        @endforeach
+                    @else
+                        <div class="w-full h-full rounded-md bg-slate-300 flex items-center justify-center text-[10px] text-slate-500 font-medium">
+                            Tidak ada stok fisik berkedaluwarsa
+                        </div>
+                    @endif
+                </div>
+
+                <!-- 5 Legend Chips -->
+                <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2.5 mt-3 pt-3 border-t border-slate-200/60 text-xs">
+                    @foreach ($chartFefoHorizon['national'] as $tierKey => $tier)
+                        <div class="flex items-center gap-2 p-1.5 rounded-lg bg-white border border-slate-200/60">
+                            <span class="w-3 h-3 rounded-full shrink-0" style="background-color: {{ $tier['color'] }};"></span>
+                            <div class="min-w-0 flex-1">
+                                <div class="text-[11px] font-semibold text-slate-700 truncate" title="{{ $tier['label'] }}">{{ $tier['label'] }}</div>
+                                <div class="font-mono text-[11px] text-slate-500 flex items-center justify-between mt-0.5">
+                                    <span>{{ number_format($tier['qty'], 0, ',', '.') }}</span>
+                                    <span class="font-bold text-slate-800 ml-1">({{ $tier['pct'] }}%)</span>
+                                </div>
+                            </div>
+                        </div>
+                    @endforeach
+                </div>
             </div>
         </div>
 
@@ -1301,19 +1545,459 @@
     </div>
     @endif
 
+    <!-- TAB 4: STOK MACET & SLOW-MOVING (DEAD STOCK ALERT) -->
+    @if ($activeTab === 'stagnant')
+    <div class="bg-white rounded-2xl border border-slate-200/80 p-6 shadow-xs mb-7">
+        <!-- Toolbar Filter Tab 4 -->
+        <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-4 pb-5 border-b border-slate-100 mb-5">
+            <div>
+                <div class="flex items-center gap-2">
+                    <h3 class="text-base font-bold text-slate-900 tracking-tight">Stok Macet &amp; Slow-Moving (Dead Stock Alert)</h3>
+                    @if ($stagnantSortBy !== 'days_stagnant' || $stagnantSortDir !== 'desc')
+                        <span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-lg text-[11px] font-mono bg-amber-50 text-amber-900 border border-amber-200">
+                            <span>Sortir: <b>{{ match($stagnantSortBy) {
+                                'quantity' => 'Stok Terkini',
+                                'distributor' => 'Distributor',
+                                'expired_date' => 'Expired Date',
+                                'turnover_pct' => 'Perputaran (%)',
+                                'item_name' => 'Nama Produk',
+                                default => 'Hari Stagnan',
+                            } }}</b> ({{ $stagnantSortDir === 'asc' ? 'Terkecil / A→Z' : 'Terbanyak / Z→A' }})</span>
+                            <button type="button" wire:click="$set('stagnantSortBy', 'days_stagnant'); $set('stagnantSortDir', 'desc');" class="text-amber-700 hover:text-amber-950 ml-0.5 font-bold cursor-pointer" title="Kembalikan sortir default">&times;</button>
+                        </span>
+                    @endif
+                </div>
+                <p class="text-xs text-slate-500 mt-1">
+                    Deteksi SKU yang tidak mengalami pergerakan stok atau perputarannya sangat lambat dalam {{ $stagnantPeriod }} hari terakhir
+                </p>
+            </div>
+
+            <!-- Action Buttons: Export CSV & Reset -->
+            <div class="flex items-center gap-2">
+                <button type="button" wire:click="exportStagnantCsv"
+                        class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-slate-200 bg-white text-xs font-semibold text-slate-700 hover:bg-slate-50 hover:text-slate-900 transition shadow-2xs cursor-pointer">
+                    <svg class="w-3.5 h-3.5 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+                    </svg>
+                    <span>Unduh CSV</span>
+                </button>
+
+                @if ($stagnantPeriod !== 30 || $stagnantRiskFilter !== 'all' || $stagnantBranchId || $stagnantSatuanFilter || $stagnantSearch || $stagnantSortBy !== 'days_stagnant' || $stagnantSortDir !== 'desc')
+                    <button type="button" wire:click="resetStagnantFilters"
+                            class="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs font-semibold text-rose-600 hover:bg-rose-50 transition cursor-pointer">
+                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+                        </svg>
+                        <span>Reset</span>
+                    </button>
+                @endif
+            </div>
+        </div>
+
+        <!-- Filter Row (Independen) -->
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-12 gap-3 mb-5">
+            <!-- Period Selector (14, 30, 60 Hari) -->
+            <div class="lg:col-span-3">
+                <label class="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1">Periode Evaluasi</label>
+                <div class="flex items-center bg-slate-100 p-1 rounded-xl border border-slate-200/80 text-xs">
+                    <button type="button" wire:click="$set('stagnantPeriod', 14)"
+                            class="flex-1 py-1.5 rounded-lg transition-all cursor-pointer {{ $stagnantPeriod === 14 ? 'bg-white font-bold text-slate-900 shadow-2xs' : 'text-slate-600 hover:text-slate-900 font-medium' }}">
+                        14 Hari
+                    </button>
+                    <button type="button" wire:click="$set('stagnantPeriod', 30)"
+                            class="flex-1 py-1.5 rounded-lg transition-all cursor-pointer {{ $stagnantPeriod === 30 ? 'bg-white font-bold text-slate-900 shadow-2xs' : 'text-slate-600 hover:text-slate-900 font-medium' }}">
+                        30 Hari
+                    </button>
+                    <button type="button" wire:click="$set('stagnantPeriod', 60)"
+                            class="flex-1 py-1.5 rounded-lg transition-all cursor-pointer {{ $stagnantPeriod === 60 ? 'bg-white font-bold text-slate-900 shadow-2xs' : 'text-slate-600 hover:text-slate-900 font-medium' }}">
+                        60 Hari
+                    </button>
+                </div>
+            </div>
+
+            <!-- Filter Status Kategori -->
+            <div class="lg:col-span-3">
+                <label class="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1">Status Pergerakan</label>
+                <select wire:model.live="stagnantRiskFilter"
+                        class="w-full text-xs font-semibold rounded-xl border border-slate-200 bg-white px-3 py-2 text-slate-800 focus:border-[#0d6d5f] focus:outline-hidden">
+                    <option value="all">Semua Risiko Macet &amp; Slow</option>
+                    <option value="dead">Macet Total (Dead Stock - Outflow 0)</option>
+                    <option value="slow">Pergerakan Lambat (&lt; 10%)</option>
+                    <option value="critical_ed">Macet &amp; Dekat ED (&le; 6 Bulan)</option>
+                </select>
+            </div>
+
+            <!-- Filter Cabang -->
+            <div class="lg:col-span-2">
+                <label class="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1">Cabang</label>
+                <select wire:model.live="stagnantBranchId"
+                        class="w-full text-xs font-semibold rounded-xl border border-slate-200 bg-white px-3 py-2 text-slate-800 focus:border-[#0d6d5f] focus:outline-hidden">
+                    <option value="">Semua Cabang</option>
+                    @foreach ($availableBranches as $b)
+                        <option value="{{ $b->id }}">{{ $b->name }}</option>
+                    @endforeach
+                </select>
+            </div>
+
+            <!-- Filter Satuan -->
+            <div class="lg:col-span-1">
+                <label class="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1">Satuan</label>
+                <select wire:model.live="stagnantSatuanFilter"
+                        class="w-full text-xs font-semibold rounded-xl border border-slate-200 bg-white px-2.5 py-2 text-slate-800 focus:border-[#0d6d5f] focus:outline-hidden">
+                    <option value="">Semua</option>
+                    <option value="BTL">BTL</option>
+                    <option value="AMP">AMP</option>
+                    <option value="PCS">PCS</option>
+                </select>
+            </div>
+
+            <!-- Pencarian -->
+            <div class="lg:col-span-3">
+                <label class="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1">Pencarian</label>
+                <div class="relative">
+                    <input type="text"
+                           wire:model.live.debounce.300ms="stagnantSearch"
+                           placeholder="Cari produk, batch, cabang..."
+                           class="w-full text-xs rounded-xl border border-slate-200 bg-white pl-8 pr-3 py-2 text-slate-800 placeholder-slate-400 focus:border-[#0d6d5f] focus:outline-hidden">
+                    <svg class="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
+                    </svg>
+                </div>
+            </div>
+        </div>
+
+        <!-- 4 KPI Cards Khusus Tab 4 -->
+        <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-5">
+            <!-- Card 1: Total SKU Mengendap -->
+            <div class="bg-amber-50/50 rounded-xl border border-amber-200/80 p-3.5">
+                <span class="text-[10px] font-bold tracking-wider uppercase text-amber-800">TOTAL SKU MENGENDAP</span>
+                <div class="text-2xl font-extrabold text-amber-950 font-mono mt-1">
+                    {{ $stagnantSummary['total'] ?? 0 }} <span class="text-xs font-normal text-amber-700">SKU</span>
+                </div>
+            </div>
+
+            <!-- Card 2: Macet Total (Dead Stock) -->
+            <div class="bg-rose-50/50 rounded-xl border border-rose-200/80 p-3.5">
+                <span class="text-[10px] font-bold tracking-wider uppercase text-rose-800">MACET TOTAL (DEAD STOCK)</span>
+                <div class="text-2xl font-extrabold text-rose-700 font-mono mt-1">
+                    {{ $stagnantSummary['dead'] ?? 0 }} <span class="text-xs font-normal text-rose-600">SKU (Outflow 0)</span>
+                </div>
+            </div>
+
+            <!-- Card 3: Macet & Kritis ED -->
+            <div class="bg-purple-50/50 rounded-xl border border-purple-200/80 p-3.5">
+                <span class="text-[10px] font-bold tracking-wider uppercase text-purple-800">MACET &amp; DEKAT ED (&le; 6 BLN)</span>
+                <div class="text-2xl font-extrabold text-purple-700 font-mono mt-1">
+                    {{ $stagnantSummary['critical_ed'] ?? 0 }} <span class="text-xs font-normal text-purple-600">Prioritas Tindakan</span>
+                </div>
+            </div>
+
+            <!-- Card 4: Total Volume Terkunci -->
+            <div class="bg-slate-50 rounded-xl border border-slate-200 p-3.5">
+                <span class="text-[10px] font-bold tracking-wider uppercase text-slate-600">TOTAL VOLUME TERKUNCI</span>
+                <div class="text-2xl font-extrabold text-slate-800 font-mono mt-1">
+                    {{ number_format($stagnantSummary['total_qty'] ?? 0, 0, ',', '.') }}
+                    <span class="text-xs font-normal text-slate-500">Unit Fisik</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Tabel Detail Stok Macet & Slow-Moving -->
+        <div class="overflow-x-auto rounded-xl border border-slate-200">
+            <table class="w-full text-left border-collapse text-xs">
+                <thead>
+                    <tr class="bg-slate-50/80 border-b border-slate-200 text-slate-600 font-bold uppercase tracking-wider text-[10px]">
+                        <th class="py-3 px-3 cursor-pointer hover:bg-slate-100 transition select-none" wire:click="setStagnantSort('item_name')">
+                            <div class="flex items-center gap-1">
+                                <span>Produk</span>
+                                @if ($stagnantSortBy === 'item_name')
+                                    <span>{{ $stagnantSortDir === 'asc' ? '▲' : '▼' }}</span>
+                                @endif
+                            </div>
+                        </th>
+                        <th class="py-3 px-3 cursor-pointer hover:bg-slate-100 transition select-none" wire:click="setStagnantSort('distributor')">
+                            <div class="flex items-center gap-1">
+                                <span>Distributor / Cabang</span>
+                                @if ($stagnantSortBy === 'distributor')
+                                    <span>{{ $stagnantSortDir === 'asc' ? '▲' : '▼' }}</span>
+                                @endif
+                            </div>
+                        </th>
+                        <th class="py-3 px-2 text-center">Satuan / Batch</th>
+                        <th class="py-3 px-3 text-center cursor-pointer hover:bg-slate-100 transition select-none" wire:click="setStagnantSort('expired_date')">
+                            <div class="flex items-center justify-center gap-1">
+                                <span>Kedaluwarsa (ED)</span>
+                                @if ($stagnantSortBy === 'expired_date')
+                                    <span>{{ $stagnantSortDir === 'asc' ? '▲' : '▼' }}</span>
+                                @endif
+                            </div>
+                        </th>
+                        <th class="py-3 px-3 text-right">Stok Awal</th>
+                        <th class="py-3 px-3 text-right cursor-pointer hover:bg-slate-100 transition select-none" wire:click="setStagnantSort('quantity')">
+                            <div class="flex items-center justify-end gap-1">
+                                <span>Stok Terkini</span>
+                                @if ($stagnantSortBy === 'quantity')
+                                    <span>{{ $stagnantSortDir === 'asc' ? '▲' : '▼' }}</span>
+                                @endif
+                            </div>
+                        </th>
+                        <th class="py-3 px-3 text-center cursor-pointer hover:bg-slate-100 transition select-none" wire:click="setStagnantSort('turnover_pct')">
+                            <div class="flex items-center justify-center gap-1">
+                                <span>Perputaran</span>
+                                @if ($stagnantSortBy === 'turnover_pct')
+                                    <span>{{ $stagnantSortDir === 'asc' ? '▲' : '▼' }}</span>
+                                @endif
+                            </div>
+                        </th>
+                        <th class="py-3 px-3 text-center cursor-pointer hover:bg-slate-100 transition select-none" wire:click="setStagnantSort('days_stagnant')">
+                            <div class="flex items-center justify-center gap-1">
+                                <span>Hari Stagnan</span>
+                                @if ($stagnantSortBy === 'days_stagnant')
+                                    <span>{{ $stagnantSortDir === 'asc' ? '▲' : '▼' }}</span>
+                                @endif
+                            </div>
+                        </th>
+                        <th class="py-3 px-3 text-center">Status &amp; Rekomendasi</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-slate-100 font-sans">
+                    @forelse ($stagnantTable as $row)
+                        <tr class="hover:bg-amber-50/20 transition-colors">
+                            <td class="py-2.5 px-3">
+                                <div class="font-bold text-slate-900 leading-tight">
+                                    {{ $row->distributorItem?->item_name ?? 'Produk Tanpa Nama' }}
+                                </div>
+                                <div class="text-[11px] text-slate-500 font-mono mt-0.5 flex items-center gap-1.5">
+                                    @if ($row->distributorItem?->source_item_id)
+                                        <span>Code: {{ $row->distributorItem->source_item_id }}</span>
+                                    @endif
+                                    @if ($row->distributorItem?->netsuiteItem?->netsuite_name)
+                                        &bull; <span class="text-emerald-700 font-semibold">{{ $row->distributorItem->netsuiteItem->netsuite_name }}</span>
+                                    @endif
+                                </div>
+                            </td>
+                            <td class="py-2.5 px-3">
+                                <div class="font-semibold text-slate-800">{{ $row->distributor?->name ?? '-' }}</div>
+                                <div class="text-[10px] text-slate-400 font-mono uppercase">{{ $row->distributor?->distributor_code ?? '' }}</div>
+                            </td>
+                            <td class="py-2.5 px-2 text-center">
+                                <span class="inline-block px-1.5 py-0.5 rounded-md text-[10px] font-bold font-mono bg-slate-100 text-slate-700">
+                                    {{ $row->entry->satuan }}
+                                </span>
+                                @if ($row->entry->batch_no)
+                                    <div class="text-[10px] font-mono text-slate-500 mt-0.5">{{ $row->entry->batch_no }}</div>
+                                @endif
+                            </td>
+                            <td class="py-2.5 px-3 text-center">
+                                @if ($row->entry->expired_date)
+                                    <div class="font-mono text-xs font-semibold {{ $row->isNearEd ? 'text-rose-700' : 'text-slate-700' }}">
+                                        {{ $row->entry->expired_date->format('d/m/Y') }}
+                                    </div>
+                                    <div class="text-[10px] mt-0.5">
+                                        @if ($row->entry->daysToExpiry() !== null)
+                                            @if ($row->entry->daysToExpiry() < 0)
+                                                <span class="text-rose-600 font-bold">Lewat ED</span>
+                                            @elseif ($row->entry->daysToExpiry() <= 90)
+                                                <span class="text-rose-600 font-bold">&lt; 3 Bln ({{ $row->entry->daysToExpiry() }} hr)</span>
+                                            @elseif ($row->entry->daysToExpiry() <= 180)
+                                                <span class="text-amber-600 font-semibold">3-6 Bln ({{ $row->entry->daysToExpiry() }} hr)</span>
+                                            @else
+                                                <span class="text-slate-400">&gt; 6 Bln</span>
+                                            @endif
+                                        @endif
+                                    </div>
+                                @else
+                                    <span class="text-slate-300">-</span>
+                                @endif
+                            </td>
+                            <td class="py-2.5 px-3 text-right font-mono tabular-nums text-slate-600">
+                                {{ number_format($row->qFirst, 0, ',', '.') }}
+                            </td>
+                            <td class="py-2.5 px-3 text-right font-mono tabular-nums font-bold text-slate-900">
+                                {{ number_format($row->qLatest, 0, ',', '.') }}
+                            </td>
+                            <td class="py-2.5 px-3 text-center font-mono text-xs">
+                                @if ($row->turnoverPct <= 0)
+                                    <span class="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-100 text-rose-800">
+                                        0%
+                                    </span>
+                                @else
+                                    <span class="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800">
+                                        -{{ $row->turnoverPct }}%
+                                    </span>
+                                @endif
+                            </td>
+                            <td class="py-2.5 px-3 text-center font-mono">
+                                <span class="font-bold text-slate-800">{{ $row->daysStagnant }}</span>
+                                <span class="text-[10px] text-slate-400">hari</span>
+                            </td>
+                            <td class="py-2.5 px-3 text-center">
+                                <div>
+                                    @if ($row->status === 'dead_stock')
+                                        <span class="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider bg-rose-100 text-rose-800">
+                                            Macet Total
+                                        </span>
+                                    @else
+                                        <span class="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider bg-amber-100 text-amber-800">
+                                            Slow-Moving
+                                        </span>
+                                    @endif
+                                </div>
+                                <div class="mt-1">
+                                    <span class="inline-block px-1.5 py-0.5 rounded text-[10px] font-semibold
+                                        {{ match($row->actionColor) {
+                                            'rose' => 'bg-rose-50 text-rose-700 border border-rose-200',
+                                            'amber' => 'bg-amber-50 text-amber-800 border border-amber-200',
+                                            'orange' => 'bg-orange-50 text-orange-800 border border-orange-200',
+                                            'sky' => 'bg-sky-50 text-sky-800 border border-sky-200',
+                                            default => 'bg-slate-100 text-slate-700',
+                                        } }}">
+                                        {{ $row->actionText }}
+                                    </span>
+                                </div>
+                            </td>
+                        </tr>
+                    @empty
+                        <tr>
+                            <td colspan="9" class="py-12 text-center text-slate-400">
+                                <div class="text-3xl mb-2">🎉</div>
+                                <div class="font-bold text-slate-700 text-sm">Tidak ada stok macet atau lambat bergerak</div>
+                                <div class="text-xs text-slate-400 mt-0.5">Semua produk pada filter ini memiliki perputaran stok yang lancar.</div>
+                            </td>
+                        </tr>
+                    @endforelse
+                </tbody>
+            </table>
+        </div>
+
+        <!-- Pagination Tab 4 -->
+        <div class="mt-4 pt-4 border-t border-slate-100 flex flex-col sm:flex-row items-center justify-between gap-3">
+            <div class="text-xs text-slate-500 font-medium">
+                Menampilkan <b class="text-slate-800">{{ $stagnantTable->firstItem() ?? 0 }}</b> - <b class="text-slate-800">{{ $stagnantTable->lastItem() ?? 0 }}</b> dari <b class="text-slate-800">{{ $stagnantTable->total() }}</b> SKU
+            </div>
+            <div>
+                {{ $stagnantTable->links('livewire::tailwind') }}
+            </div>
+        </div>
+    </div>
+    @endif
+
     <!-- Scripts Chart.js -->
     @script
     <script>
         let chartTopInstance = null;
         let chartDonutInstance = null;
+        let chartTrendInstance = null;
+        let chartFefoInstance = null;
 
-        function updateChartData(topData, donutData) {
+        function updateChartData(topData, donutData, trendData, fefoData) {
             const canvasTop = document.getElementById('chart-top-products');
             const noDataTop = document.getElementById('no-data-top');
             const canvasDonut = document.getElementById('chart-donut-dist');
             const noDataDonut = document.getElementById('no-data-donut');
+            const canvasTrend = document.getElementById('chart-stock-trend');
+            const noDataTrend = document.getElementById('no-data-trend');
 
-            // 1. Horizontal Bar Chart (Top 10 Produk)
+            // 1. Line Chart (Trend Stock On Hand)
+            if (canvasTrend && window.Chart) {
+                if (chartTrendInstance) {
+                    chartTrendInstance.destroy();
+                    chartTrendInstance = null;
+                }
+
+                const hasTrendData = trendData && trendData.labels && trendData.labels.length > 0 &&
+                    (trendData.data || []).some(v => v !== null && v !== undefined);
+
+                if (!hasTrendData) {
+                    canvasTrend.style.display = 'none';
+                    if (noDataTrend) noDataTrend.classList.remove('hidden');
+                } else {
+                    canvasTrend.style.display = 'block';
+                    if (noDataTrend) noDataTrend.classList.add('hidden');
+
+                    const ctx = canvasTrend.getContext('2d');
+                    const gradient = ctx.createLinearGradient(0, 0, 0, 280);
+                    gradient.addColorStop(0, 'rgba(13, 109, 95, 0.22)');
+                    gradient.addColorStop(1, 'rgba(13, 109, 95, 0.00)');
+
+                    chartTrendInstance = new window.Chart(canvasTrend, {
+                        type: 'line',
+                        data: {
+                            labels: trendData.labels,
+                            datasets: [{
+                                label: 'Total Stok (' + (trendData.unit || '') + ')',
+                                data: trendData.data,
+                                borderColor: '#0d6d5f',
+                                backgroundColor: gradient,
+                                borderWidth: 2.5,
+                                tension: 0.3,
+                                fill: true,
+                                spanGaps: false, // JANGAN hubungkan garis jika data null (missing snapshot)
+                                pointRadius: 3.5,
+                                pointHoverRadius: 6,
+                                pointBackgroundColor: '#0d6d5f',
+                                pointBorderColor: '#ffffff',
+                                pointBorderWidth: 2,
+                                fullDates: trendData.full_dates || []
+                            }]
+                        },
+                        options: {
+                            responsive: true,
+                            maintainAspectRatio: false,
+                            interaction: {
+                                intersect: false,
+                                mode: 'index',
+                            },
+                            plugins: {
+                                legend: {
+                                    display: false
+                                },
+                                tooltip: {
+                                    backgroundColor: 'rgba(15, 23, 42, 0.95)',
+                                    titleFont: { size: 12, family: 'Plus Jakarta Sans', weight: 'bold' },
+                                    bodyFont: { size: 12, family: 'JetBrains Mono' },
+                                    padding: 10,
+                                    cornerRadius: 8,
+                                    callbacks: {
+                                        title: function(ctxList) {
+                                            if (!ctxList.length) return '';
+                                            const idx = ctxList[0].dataIndex;
+                                            const fDates = ctxList[0].dataset.fullDates;
+                                            return (fDates && fDates[idx]) ? fDates[idx] : ctxList[0].label;
+                                        },
+                                        label: function(ctx) {
+                                            if (ctx.raw === null || ctx.raw === undefined) {
+                                                return 'Tidak ada upload data (Libur/Belum setor)';
+                                            }
+                                            return 'Total Stok: ' + Number(ctx.raw).toLocaleString('id-ID') + ' ' + (trendData.unit || '');
+                                        }
+                                    }
+                                }
+                            },
+                            scales: {
+                                x: {
+                                    grid: { color: '#f1f5f9' },
+                                    ticks: {
+                                        font: { size: 11, family: 'JetBrains Mono' },
+                                        maxRotation: 0,
+                                        autoSkip: true,
+                                        maxTicksLimit: 15
+                                    }
+                                },
+                                y: {
+                                    grid: { color: '#f1f5f9' },
+                                    ticks: {
+                                        font: { size: 11, family: 'JetBrains Mono' },
+                                        callback: val => Number(val).toLocaleString('id-ID')
+                                    }
+                                }
+                            }
+                        }
+                    });
+                }
+            }
+
+            // 2. Horizontal Bar Chart (Top 10 Produk)
             if (canvasTop && window.Chart) {
                 if (chartTopInstance) {
                     chartTopInstance.destroy();
@@ -1375,7 +2059,7 @@
                 }
             }
 
-            // 2. Donut Chart (Distribusi Stok)
+            // 3. Donut Chart (Distribusi Stok)
             if (canvasDonut && window.Chart) {
                 if (chartDonutInstance) {
                     chartDonutInstance.destroy();
@@ -1431,6 +2115,85 @@
                     });
                 }
             }
+
+            // 4. Horizontal Stacked Bar Chart (Horizon Kedaluwarsa Makro)
+            const canvasFefo = document.getElementById('chart-fefo-horizon');
+            const noDataFefo = document.getElementById('no-data-fefo');
+
+            if (!canvasFefo && chartFefoInstance) {
+                chartFefoInstance.destroy();
+                chartFefoInstance = null;
+            }
+
+            if (canvasFefo && window.Chart) {
+                if (chartFefoInstance) {
+                    chartFefoInstance.destroy();
+                    chartFefoInstance = null;
+                }
+
+                const hasFefoData = fefoData && fefoData.has_data && fefoData.labels && fefoData.labels.length > 0;
+                if (!hasFefoData) {
+                    canvasFefo.style.display = 'none';
+                    if (noDataFefo) noDataFefo.classList.remove('hidden');
+                } else {
+                    canvasFefo.style.display = 'block';
+                    if (noDataFefo) noDataFefo.classList.add('hidden');
+
+                    chartFefoInstance = new window.Chart(canvasFefo, {
+                        type: 'bar',
+                        data: {
+                            labels: fefoData.labels,
+                            datasets: fefoData.datasets
+                        },
+                        options: {
+                            indexAxis: 'y',
+                            responsive: true,
+                            maintainAspectRatio: false,
+                            plugins: {
+                                legend: {
+                                    position: 'top',
+                                    labels: {
+                                        boxWidth: 12,
+                                        font: { size: 11, family: 'Plus Jakarta Sans' }
+                                    }
+                                },
+                                tooltip: {
+                                    backgroundColor: 'rgba(15, 23, 42, 0.95)',
+                                    titleFont: { size: 12, family: 'Plus Jakarta Sans', weight: 'bold' },
+                                    bodyFont: { size: 12, family: 'JetBrains Mono' },
+                                    padding: 10,
+                                    cornerRadius: 8,
+                                    callbacks: {
+                                        label: function(ctx) {
+                                            const val = ctx.raw || 0;
+                                            if (val === 0) return null;
+                                            const label = ctx.dataset.label || '';
+                                            return label + ': ' + Number(val).toLocaleString('id-ID') + ' ' + (fefoData.unit || '');
+                                        }
+                                    }
+                                }
+                            },
+                            scales: {
+                                x: {
+                                    stacked: true,
+                                    grid: { color: '#f1f5f9' },
+                                    ticks: {
+                                        font: { size: 10, family: 'JetBrains Mono' },
+                                        callback: val => Number(val).toLocaleString('id-ID')
+                                    }
+                                },
+                                y: {
+                                    stacked: true,
+                                    grid: { display: false },
+                                    ticks: {
+                                        font: { size: 11, family: 'Plus Jakarta Sans' }
+                                    }
+                                }
+                            }
+                        }
+                    });
+                }
+            }
         }
 
         // 1. Initial Render from DOM data holder
@@ -1440,7 +2203,9 @@
                 try {
                     const top = JSON.parse(holder.getAttribute('data-top') || '{}');
                     const donut = JSON.parse(holder.getAttribute('data-donut') || '{}');
-                    updateChartData(top, donut);
+                    const trend = JSON.parse(holder.getAttribute('data-trend') || '{}');
+                    const fefo = JSON.parse(holder.getAttribute('data-fefo') || '{}');
+                    updateChartData(top, donut, trend, fefo);
                 } catch(e) {
                     console.error('Error parsing chart data:', e);
                 }
@@ -1453,7 +2218,7 @@
         $wire.on('charts-updated', (payload) => {
             const data = Array.isArray(payload) ? payload[0] : payload;
             if (data) {
-                updateChartData(data.top, data.donut);
+                updateChartData(data.top, data.donut, data.trend, data.fefo);
             }
         });
 
