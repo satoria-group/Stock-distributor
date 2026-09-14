@@ -229,17 +229,23 @@
                 <div class="flex items-center bg-slate-100/90 p-1 rounded-xl border border-slate-200/70 text-xs">
                     <button type="button"
                             wire:click="setTrendUnit('BTL')"
-                            class="px-2.5 py-1.5 rounded-lg transition-all {{ $trendUnit === 'BTL' ? 'bg-white font-bold text-[#0d6d5f] shadow-xs' : 'text-slate-600 hover:text-slate-900 font-medium' }}">
+                            wire:loading.attr="disabled"
+                            wire:target="setTrendUnit,setTrendPeriod"
+                            class="px-2.5 py-1.5 rounded-lg transition-all cursor-pointer {{ $trendUnit === 'BTL' ? 'bg-white font-bold text-[#0d6d5f] shadow-xs' : 'text-slate-600 hover:text-slate-900 font-medium' }}">
                         Botol (BTL)
                     </button>
                     <button type="button"
                             wire:click="setTrendUnit('AMP')"
-                            class="px-2.5 py-1.5 rounded-lg transition-all {{ $trendUnit === 'AMP' ? 'bg-white font-bold text-[#0d6d5f] shadow-xs' : 'text-slate-600 hover:text-slate-900 font-medium' }}">
+                            wire:loading.attr="disabled"
+                            wire:target="setTrendUnit,setTrendPeriod"
+                            class="px-2.5 py-1.5 rounded-lg transition-all cursor-pointer {{ $trendUnit === 'AMP' ? 'bg-white font-bold text-[#0d6d5f] shadow-xs' : 'text-slate-600 hover:text-slate-900 font-medium' }}">
                         Ampul (AMP)
                     </button>
                     <button type="button"
                             wire:click="setTrendUnit('PCS')"
-                            class="px-2.5 py-1.5 rounded-lg transition-all {{ $trendUnit === 'PCS' ? 'bg-white font-bold text-[#0d6d5f] shadow-xs' : 'text-slate-600 hover:text-slate-900 font-medium' }}">
+                            wire:loading.attr="disabled"
+                            wire:target="setTrendUnit,setTrendPeriod"
+                            class="px-2.5 py-1.5 rounded-lg transition-all cursor-pointer {{ $trendUnit === 'PCS' ? 'bg-white font-bold text-[#0d6d5f] shadow-xs' : 'text-slate-600 hover:text-slate-900 font-medium' }}">
                         Pcs/Box (PCS)
                     </button>
                 </div>
@@ -248,17 +254,23 @@
                 <div class="flex items-center bg-slate-100/90 p-1 rounded-xl border border-slate-200/70 text-xs">
                     <button type="button"
                             wire:click="setTrendPeriod(7)"
-                            class="px-2.5 py-1.5 rounded-lg transition-all {{ $trendPeriod === 7 ? 'bg-slate-900 font-bold text-white shadow-xs' : 'text-slate-600 hover:text-slate-900 font-medium' }}">
+                            wire:loading.attr="disabled"
+                            wire:target="setTrendUnit,setTrendPeriod"
+                            class="px-2.5 py-1.5 rounded-lg transition-all cursor-pointer {{ $trendPeriod === 7 ? 'bg-slate-900 font-bold text-white shadow-xs' : 'text-slate-600 hover:text-slate-900 font-medium' }}">
                         7 Hari
                     </button>
                     <button type="button"
                             wire:click="setTrendPeriod(30)"
-                            class="px-2.5 py-1.5 rounded-lg transition-all {{ $trendPeriod === 30 ? 'bg-slate-900 font-bold text-white shadow-xs' : 'text-slate-600 hover:text-slate-900 font-medium' }}">
+                            wire:loading.attr="disabled"
+                            wire:target="setTrendUnit,setTrendPeriod"
+                            class="px-2.5 py-1.5 rounded-lg transition-all cursor-pointer {{ $trendPeriod === 30 ? 'bg-slate-900 font-bold text-white shadow-xs' : 'text-slate-600 hover:text-slate-900 font-medium' }}">
                         30 Hari
                     </button>
                     <button type="button"
                             wire:click="setTrendPeriod(90)"
-                            class="px-2.5 py-1.5 rounded-lg transition-all {{ $trendPeriod === 90 ? 'bg-slate-900 font-bold text-white shadow-xs' : 'text-slate-600 hover:text-slate-900 font-medium' }}">
+                            wire:loading.attr="disabled"
+                            wire:target="setTrendUnit,setTrendPeriod"
+                            class="px-2.5 py-1.5 rounded-lg transition-all cursor-pointer {{ $trendPeriod === 90 ? 'bg-slate-900 font-bold text-white shadow-xs' : 'text-slate-600 hover:text-slate-900 font-medium' }}">
                         90 Hari
                     </button>
                 </div>
@@ -312,12 +324,26 @@
         </div>
 
         <!-- Canvas Grafik Line -->
-        <div wire:ignore class="relative" style="height: 300px;">
-            <canvas id="chart-stock-trend"></canvas>
-            <div id="no-data-trend" class="absolute inset-0 flex flex-col items-center justify-center text-slate-400 text-xs hidden">
-                <div class="text-3xl mb-1">📈</div>
-                <span class="font-medium text-slate-500">Belum ada data riwayat stok untuk satuan dan filter ini.</span>
-                <span class="text-[11px] text-slate-400">Silakan pilih satuan lain atau grup distributor berbeda.</span>
+        <div class="relative" style="height: 300px;">
+            <!-- Loading Indicator Overlay saat ganti unit/periode grafik -->
+            <div wire:loading wire:target="setTrendUnit,setTrendPeriod"
+                 class="absolute inset-0 bg-white/75 backdrop-blur-[1.5px] flex items-center justify-center z-20 rounded-xl transition-all">
+                <div class="inline-flex items-center gap-2.5 px-3.5 py-2 rounded-xl bg-slate-900/90 text-white text-xs font-semibold shadow-lg backdrop-blur-md">
+                    <svg class="animate-spin h-3.5 w-3.5 text-emerald-400 shrink-0" fill="none" viewBox="0 0 24 24">
+                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path>
+                    </svg>
+                    <span>Memperbarui grafik...</span>
+                </div>
+            </div>
+
+            <div wire:ignore class="w-full h-full">
+                <canvas id="chart-stock-trend"></canvas>
+                <div id="no-data-trend" class="absolute inset-0 flex flex-col items-center justify-center text-slate-400 text-xs hidden">
+                    <div class="text-3xl mb-1">📈</div>
+                    <span class="font-medium text-slate-500">Belum ada data riwayat stok untuk satuan dan filter ini.</span>
+                    <span class="text-[11px] text-slate-400">Silakan pilih satuan lain atau grup distributor berbeda.</span>
+                </div>
             </div>
         </div>
 
@@ -387,7 +413,9 @@
     </div>
 
     <!-- Modern Segmented Control Navigation Tabs (Full Width) -->
-    <div class="w-full p-1.5 rounded-2xl border border-slate-200 shadow-2xs mb-6 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-1.5"
+    <div class="w-full p-1.5 rounded-2xl border border-slate-200 shadow-2xs mb-6 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-1.5 transition-opacity duration-150"
+         wire:loading.class="opacity-70 pointer-events-none cursor-wait"
+         wire:target="switchTab"
          style="background: #edf2f1;">
         <!-- Tab 1: Stok On-Hand -->
         <button type="button" wire:click="switchTab('stock')"
@@ -895,16 +923,22 @@
                 <div class="flex items-center bg-slate-100/90 p-1 rounded-xl border border-slate-200/70 text-xs shrink-0">
                     <button type="button"
                             wire:click="setFefoChartUnit('BTL')"
+                            wire:loading.attr="disabled"
+                            wire:target="setFefoChartUnit"
                             class="px-2.5 py-1.5 rounded-lg transition-all cursor-pointer {{ $fefoChartUnit === 'BTL' ? 'bg-white font-bold text-rose-700 shadow-xs' : 'text-slate-600 hover:text-slate-900 font-medium' }}">
                         Botol (BTL)
                     </button>
                     <button type="button"
                             wire:click="setFefoChartUnit('AMP')"
+                            wire:loading.attr="disabled"
+                            wire:target="setFefoChartUnit"
                             class="px-2.5 py-1.5 rounded-lg transition-all cursor-pointer {{ $fefoChartUnit === 'AMP' ? 'bg-white font-bold text-rose-700 shadow-xs' : 'text-slate-600 hover:text-slate-900 font-medium' }}">
                         Ampul (AMP)
                     </button>
                     <button type="button"
                             wire:click="setFefoChartUnit('PCS')"
+                            wire:loading.attr="disabled"
+                            wire:target="setFefoChartUnit"
                             class="px-2.5 py-1.5 rounded-lg transition-all cursor-pointer {{ $fefoChartUnit === 'PCS' ? 'bg-white font-bold text-rose-700 shadow-xs' : 'text-slate-600 hover:text-slate-900 font-medium' }}">
                         Pcs / Box (PCS)
                     </button>
@@ -912,7 +946,18 @@
             </div>
 
             <!-- Mini Agregat Horizon Bar (Top Progress Bar) & Legend Chips -->
-            <div class="my-5 p-4 rounded-xl bg-slate-50 border border-slate-200/60">
+            <div class="my-5 p-4 rounded-xl bg-slate-50 border border-slate-200/60 relative">
+                <!-- Loading Indicator Overlay saat ganti unit FEFO Horizon -->
+                <div wire:loading wire:target="setFefoChartUnit"
+                     class="absolute inset-0 bg-white/75 backdrop-blur-[1.5px] flex items-center justify-center z-20 rounded-xl transition-all">
+                    <div class="inline-flex items-center gap-2.5 px-3.5 py-2 rounded-xl bg-slate-900/90 text-white text-xs font-semibold shadow-lg backdrop-blur-md">
+                        <svg class="animate-spin h-3.5 w-3.5 text-rose-400 shrink-0" fill="none" viewBox="0 0 24 24">
+                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path>
+                        </svg>
+                        <span>Memperbarui horizon...</span>
+                    </div>
+                </div>
                 <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-2.5">
                     <span class="text-xs font-bold text-slate-700">Komposisi Umur Simpan Stok Agregat:</span>
                     <span class="text-xs text-slate-500 font-mono font-medium">
@@ -2214,18 +2259,23 @@
 
         readAndRender();
 
+        let lastChartEventTime = 0;
+
         // 2. Event Listener dari Livewire Dispatch
         $wire.on('charts-updated', (payload) => {
+            lastChartEventTime = Date.now();
             const data = Array.isArray(payload) ? payload[0] : payload;
             if (data) {
                 updateChartData(data.top, data.donut, data.trend, data.fefo);
             }
         });
 
-        // 3. Fail-safe hook saat morphing selesai
+        // 3. Fail-safe hook saat morphing selesai (dilewati jika baru saja diperbarui via charts-updated)
         if (window.Livewire) {
             window.Livewire.hook('morph.updated', () => {
-                readAndRender();
+                if (Date.now() - lastChartEventTime > 300) {
+                    readAndRender();
+                }
             });
         }
     </script>

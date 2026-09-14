@@ -1025,7 +1025,7 @@ class Dashboard extends Component
 
         // 4. Hitung snapshot sebelumnya untuk komparasi Delta (Δ) tanpa N+1 query
         $previousQuantities = collect();
-        if ($latestPerDist->isNotEmpty()) {
+        if ($this->activeTab === 'stock' && $latestPerDist->isNotEmpty()) {
             $prevDates = StockEntry::query()
                 ->select('distributor_id', DB::raw('MAX(tanggal) as prev_tanggal'))
                 ->where(function ($q) use ($latestPerDist) {
@@ -1322,174 +1322,239 @@ class Dashboard extends Component
             ->values();
 
         // 10. Tab 2: Monitoring Kedaluwarsa (FEFO Watchlist)
-        $fefoAllRows = $this->fefoRowsFrom($allCurrentEntries);
+        if ($this->activeTab === 'expiry') {
+            $fefoAllRows = $this->fefoRowsFrom($allCurrentEntries);
 
-        // Filter Cabang & Satuan milik Tab FEFO sendiri (tidak terpengaruh Tab 1)
-        if ($this->fefoBranchId) {
-            $fefoAllRows = $fefoAllRows->filter(fn ($r) => (int) $r->entry->distributor_id === (int) $this->fefoBranchId);
+            if ($this->fefoBranchId) {
+                $fefoAllRows = $fefoAllRows->filter(fn ($r) => (int) $r->entry->distributor_id === (int) $this->fefoBranchId);
+            }
+
+            if ($this->fefoSatuanFilter) {
+                $fefoAllRows = $fefoAllRows->filter(function ($r) {
+                    $sat = strtoupper(trim((string) $r->entry->satuan));
+                    if ($this->fefoSatuanFilter === 'BTL') {
+                        return str_contains($sat, 'BTL') || str_contains($sat, 'BOTOL');
+                    }
+                    if ($this->fefoSatuanFilter === 'AMP') {
+                        return str_contains($sat, 'AMP');
+                    }
+                    if ($this->fefoSatuanFilter === 'PCS') {
+                        return ! str_contains($sat, 'BTL') && ! str_contains($sat, 'BOTOL') && ! str_contains($sat, 'AMP');
+                    }
+
+                    return true;
+                });
+            }
+
+            $fefoSummary = [
+                'total' => $fefoAllRows->count(),
+                'expired' => $fefoAllRows->where('tier', 'expired')->count(),
+                'critical' => $fefoAllRows->where('tier', 'critical')->count(),
+                'warning' => $fefoAllRows->where('tier', 'warning')->count(),
+                'safe' => $fefoAllRows->where('tier', 'safe')->count(),
+                'total_qty_at_risk' => (float) $fefoAllRows->whereIn('tier', ['expired', 'critical', 'warning'])->sum(fn ($r) => (float) $r->entry->quantity),
+            ];
+
+            $fefoFiltered = $this->applyFefoFilters($fefoAllRows);
+
+            $fefoTotal = $fefoFiltered->count();
+            $fefoSlice = $fefoFiltered->slice(($page - 1) * $this->perPage, $this->perPage)->values();
+            $fefoTablePaginated = new LengthAwarePaginator(
+                $fefoSlice,
+                $fefoTotal,
+                $this->perPage,
+                $page,
+                ['path' => '#', 'pageName' => 'page']
+            );
+
+            // 10b. Tab 2: Macro Expiry Horizon Breakdown
+            $chartFefoHorizon = $this->calculateFefoHorizon($allCurrentEntries, $scopedDistributorIds);
+        } else {
+            // Tab 2 tidak aktif: Gunakan agregat instan in-memory untuk badge
+            $fefoTotalCount = $allCurrentEntries->filter(fn ($r) => $r->expired_date !== null)->count();
+            $fefoSummary = [
+                'total' => $fefoTotalCount,
+                'expired' => 0,
+                'critical' => $kpi['expiring_soon'],
+                'warning' => 0,
+                'safe' => 0,
+                'total_qty_at_risk' => 0.0,
+            ];
+            $fefoTablePaginated = new LengthAwarePaginator(
+                collect(),
+                $fefoTotalCount,
+                $this->perPage,
+                1,
+                ['path' => '#', 'pageName' => 'page']
+            );
+            $chartFefoHorizon = [
+                'labels' => [],
+                'datasets' => [],
+                'unit' => $this->fefoChartUnit,
+                'unit_label' => match ($this->fefoChartUnit) {
+                    'BTL' => 'Botol (BTL)',
+                    'AMP' => 'Ampul (AMP)',
+                    default => 'Pcs / Box (PCS)',
+                },
+                'total_qty' => 0.0,
+                'total_batches' => 0,
+                'national' => [],
+                'has_data' => false,
+            ];
         }
-
-        if ($this->fefoSatuanFilter) {
-            $fefoAllRows = $fefoAllRows->filter(function ($r) {
-                $sat = strtoupper(trim((string) $r->entry->satuan));
-                if ($this->fefoSatuanFilter === 'BTL') {
-                    return str_contains($sat, 'BTL') || str_contains($sat, 'BOTOL');
-                }
-                if ($this->fefoSatuanFilter === 'AMP') {
-                    return str_contains($sat, 'AMP');
-                }
-                if ($this->fefoSatuanFilter === 'PCS') {
-                    return ! str_contains($sat, 'BTL') && ! str_contains($sat, 'BOTOL') && ! str_contains($sat, 'AMP');
-                }
-
-                return true;
-            });
-        }
-
-        $fefoSummary = [
-            'total' => $fefoAllRows->count(),
-            'expired' => $fefoAllRows->where('tier', 'expired')->count(),
-            'critical' => $fefoAllRows->where('tier', 'critical')->count(),
-            'warning' => $fefoAllRows->where('tier', 'warning')->count(),
-            'safe' => $fefoAllRows->where('tier', 'safe')->count(),
-            'total_qty_at_risk' => (float) $fefoAllRows->whereIn('tier', ['expired', 'critical', 'warning'])->sum(fn ($r) => (float) $r->entry->quantity),
-        ];
-
-        $fefoFiltered = $this->applyFefoFilters($fefoAllRows);
-
-        $fefoTotal = $fefoFiltered->count();
-        $fefoSlice = $fefoFiltered->slice(($page - 1) * $this->perPage, $this->perPage)->values();
-        $fefoTablePaginated = new LengthAwarePaginator(
-            $fefoSlice,
-            $fefoTotal,
-            $this->perPage,
-            $page,
-            ['path' => '#', 'pageName' => 'page']
-        );
-
-        // 10b. Tab 2: Macro Expiry Horizon Breakdown
-        $chartFefoHorizon = $this->calculateFefoHorizon($allCurrentEntries, $scopedDistributorIds);
 
         // 11. Tab 3: Kepatuhan Upload Cabang (Compliance Tracker)
         $targetComplianceDate = $this->complianceDate ?: ($latestSnapshotDate ?: Carbon::today()->toDateString());
 
-        // Jumlah baris & kuantitas HANYA untuk tanggal kepatuhan yang dipilih.
-        //
-        // Sebelumnya keduanya adalah agregat sepanjang masa (COUNT/SUM tanpa
-        // batas tanggal) namun ditampilkan bersebelahan dengan "upload
-        // terakhir", sehingga terbaca seolah angka hari itu.
-        //
-        // Keberadaan distributor di koleksi ini sekaligus menandakan ia sudah
-        // setor pada tanggal tersebut, jadi query $submittedDistributorIds yang
-        // terpisah tidak lagi diperlukan.
-        $onTargetDate = StockEntry::query()
-            ->select('distributor_id', DB::raw('COUNT(*) as total_rows'), DB::raw('SUM(quantity) as total_qty'))
-            ->where('tanggal', $targetComplianceDate)
-            ->groupBy('distributor_id')
-            ->get()
-            ->keyBy('distributor_id');
+        if ($this->activeTab === 'compliance') {
+            $onTargetDate = StockEntry::query()
+                ->select('distributor_id', DB::raw('COUNT(*) as total_rows'), DB::raw('SUM(quantity) as total_qty'))
+                ->where('tanggal', $targetComplianceDate)
+                ->groupBy('distributor_id')
+                ->get()
+                ->keyBy('distributor_id');
 
-        // "Upload terakhir" memang bersifat sepanjang masa — itulah maknanya.
-        $lastUploadDates = StockEntry::query()
-            ->select('distributor_id', DB::raw('MAX(tanggal) as last_date'))
-            ->groupBy('distributor_id')
-            ->get()
-            ->keyBy('distributor_id');
+            $lastUploadDates = StockEntry::query()
+                ->select('distributor_id', DB::raw('MAX(tanggal) as last_date'))
+                ->groupBy('distributor_id')
+                ->get()
+                ->keyBy('distributor_id');
 
-        $complianceAllRows = $availableBranches->map(function ($b) use ($onTargetDate, $lastUploadDates, $targetComplianceDate) {
-            $today = $onTargetDate->get($b->id);
-            $hasSubmitted = $today !== null;
-            $lastDate = $lastUploadDates->get($b->id)?->last_date;
+            $complianceAllRows = $availableBranches->map(function ($b) use ($onTargetDate, $lastUploadDates, $targetComplianceDate) {
+                $today = $onTargetDate->get($b->id);
+                $hasSubmitted = $today !== null;
+                $lastDate = $lastUploadDates->get($b->id)?->last_date;
 
-            $daysOverdue = null;
-            if (! $hasSubmitted && $lastDate) {
-                // diffInDays bertanda: positif hanya bila upload terakhir
-                // memang SEBELUM tanggal target. Tanpa argumen false, memilih
-                // tanggal kepatuhan yang lebih awal dari upload terakhir
-                // menghasilkan "terlambat N hari" yang tidak masuk akal.
-                $diff = (int) Carbon::parse($lastDate)->diffInDays(Carbon::parse($targetComplianceDate), false);
-                $daysOverdue = $diff > 0 ? $diff : null;
-            }
+                $daysOverdue = null;
+                if (! $hasSubmitted && $lastDate) {
+                    $diff = (int) Carbon::parse($lastDate)->diffInDays(Carbon::parse($targetComplianceDate), false);
+                    $daysOverdue = $diff > 0 ? $diff : null;
+                }
 
-            return (object) [
-                'distributor' => $b,
-                'hasSubmitted' => $hasSubmitted,
-                'lastDate' => $lastDate,
-                'daysOverdue' => $daysOverdue,
-                'totalRows' => (int) ($today?->total_rows ?? 0),
-                'totalQty' => (float) ($today?->total_qty ?? 0),
-            ];
-        });
-
-        $complianceSummary = [
-            'total_branches' => $complianceAllRows->count(),
-            'total_submitted' => $complianceAllRows->where('hasSubmitted', true)->count(),
-            'total_missing' => $complianceAllRows->where('hasSubmitted', false)->count(),
-            'compliance_rate' => $complianceAllRows->count() > 0 ? round(($complianceAllRows->where('hasSubmitted', true)->count() / $complianceAllRows->count()) * 100, 1) : 0,
-            'target_date' => $targetComplianceDate,
-        ];
-
-        $complianceFiltered = $complianceAllRows;
-        if ($this->complianceStatus === 'submitted') {
-            $complianceFiltered = $complianceFiltered->where('hasSubmitted', true);
-        } elseif ($this->complianceStatus === 'missing') {
-            $complianceFiltered = $complianceFiltered->where('hasSubmitted', false);
-        }
-
-        if (trim($this->complianceSearch) !== '') {
-            $term = mb_strtolower(trim($this->complianceSearch));
-            $complianceFiltered = $complianceFiltered->filter(function ($r) use ($term) {
-                $name = mb_strtolower($r->distributor->name ?? '');
-                $code = mb_strtolower($r->distributor->distributor_code ?? '');
-
-                return str_contains($name, $term) || str_contains($code, $term);
+                return (object) [
+                    'distributor' => $b,
+                    'hasSubmitted' => $hasSubmitted,
+                    'lastDate' => $lastDate,
+                    'daysOverdue' => $daysOverdue,
+                    'totalRows' => (int) ($today?->total_rows ?? 0),
+                    'totalQty' => (float) ($today?->total_qty ?? 0),
+                ];
             });
-        }
 
-        $complianceFiltered = $complianceFiltered->sort(function ($a, $b) {
-            if ($a->hasSubmitted !== $b->hasSubmitted) {
-                return $a->hasSubmitted ? 1 : -1;
+            $complianceSummary = [
+                'total_branches' => $complianceAllRows->count(),
+                'total_submitted' => $complianceAllRows->where('hasSubmitted', true)->count(),
+                'total_missing' => $complianceAllRows->where('hasSubmitted', false)->count(),
+                'compliance_rate' => $complianceAllRows->count() > 0 ? round(($complianceAllRows->where('hasSubmitted', true)->count() / $complianceAllRows->count()) * 100, 1) : 0,
+                'target_date' => $targetComplianceDate,
+            ];
+
+            $complianceFiltered = $complianceAllRows;
+            if ($this->complianceStatus === 'submitted') {
+                $complianceFiltered = $complianceFiltered->where('hasSubmitted', true);
+            } elseif ($this->complianceStatus === 'missing') {
+                $complianceFiltered = $complianceFiltered->where('hasSubmitted', false);
             }
 
-            return strcmp($a->distributor->distributor_code, $b->distributor->distributor_code);
-        })->values();
+            if (trim($this->complianceSearch) !== '') {
+                $term = mb_strtolower(trim($this->complianceSearch));
+                $complianceFiltered = $complianceFiltered->filter(function ($r) use ($term) {
+                    $name = mb_strtolower($r->distributor->name ?? '');
+                    $code = mb_strtolower($r->distributor->distributor_code ?? '');
 
-        $complianceTotal = $complianceFiltered->count();
-        $complianceSlice = $complianceFiltered->slice(($page - 1) * $this->perPage, $this->perPage)->values();
-        $complianceTablePaginated = new LengthAwarePaginator(
-            $complianceSlice,
-            $complianceTotal,
-            $this->perPage,
-            $page,
-            ['path' => '#', 'pageName' => 'page']
-        );
+                    return str_contains($name, $term) || str_contains($code, $term);
+                });
+            }
+
+            $complianceFiltered = $complianceFiltered->sort(function ($a, $b) {
+                if ($a->hasSubmitted !== $b->hasSubmitted) {
+                    return $a->hasSubmitted ? 1 : -1;
+                }
+
+                return strcmp($a->distributor->distributor_code, $b->distributor->distributor_code);
+            })->values();
+
+            $complianceTotal = $complianceFiltered->count();
+            $complianceSlice = $complianceFiltered->slice(($page - 1) * $this->perPage, $this->perPage)->values();
+            $complianceTablePaginated = new LengthAwarePaginator(
+                $complianceSlice,
+                $complianceTotal,
+                $this->perPage,
+                $page,
+                ['path' => '#', 'pageName' => 'page']
+            );
+        } else {
+            // Tab 3 tidak aktif: hitung persentase kepatuhan secara cepat via COUNT DISTINCT
+            $submittedCount = StockEntry::query()
+                ->where('tanggal', $targetComplianceDate)
+                ->whereIn('distributor_id', $scopedDistributorIds ?: [0])
+                ->distinct('distributor_id')
+                ->count('distributor_id');
+
+            $totalBranchesCount = count($availableBranches);
+            $complianceRate = $totalBranchesCount > 0 ? round(($submittedCount / $totalBranchesCount) * 100, 1) : 0;
+
+            $complianceSummary = [
+                'total_branches' => $totalBranchesCount,
+                'total_submitted' => $submittedCount,
+                'total_missing' => max(0, $totalBranchesCount - $submittedCount),
+                'compliance_rate' => $complianceRate,
+                'target_date' => $targetComplianceDate,
+            ];
+            $complianceTablePaginated = new LengthAwarePaginator(
+                collect(),
+                $totalBranchesCount,
+                $this->perPage,
+                1,
+                ['path' => '#', 'pageName' => 'page']
+            );
+        }
 
         // 12. Line Chart: Trend Stock On Hand (Snapshot Historis per Satuan)
         $chartTrend = $this->calculateStockTrend($scopedDistributorIds, $latestSnapshotDate);
 
         // 13. Tab 4: Stok Macet & Slow-Moving (Dead Stock Alert)
-        $stagnantAllRows = $this->calculateStagnantStock($allCurrentEntries, $scopedDistributorIds, $latestSnapshotDate);
+        if ($this->activeTab === 'stagnant') {
+            $stagnantAllRows = $this->calculateStagnantStock($allCurrentEntries, $scopedDistributorIds, $latestSnapshotDate);
 
-        $stagnantSummary = [
-            'total' => $stagnantAllRows->count(),
-            'dead' => $stagnantAllRows->where('status', 'dead_stock')->count(),
-            'slow' => $stagnantAllRows->where('status', 'slow_moving')->count(),
-            'critical_ed' => $stagnantAllRows->where('isNearEd', true)->count(),
-            'total_qty' => (float) $stagnantAllRows->sum('qLatest'),
-            'avg_days' => $stagnantAllRows->count() > 0 ? (int) round($stagnantAllRows->avg('daysStagnant')) : 0,
-        ];
+            $stagnantSummary = [
+                'total' => $stagnantAllRows->count(),
+                'dead' => $stagnantAllRows->where('status', 'dead_stock')->count(),
+                'slow' => $stagnantAllRows->where('status', 'slow_moving')->count(),
+                'critical_ed' => $stagnantAllRows->where('isNearEd', true)->count(),
+                'total_qty' => (float) $stagnantAllRows->sum('qLatest'),
+                'avg_days' => $stagnantAllRows->count() > 0 ? (int) round($stagnantAllRows->avg('daysStagnant')) : 0,
+            ];
 
-        $stagnantFiltered = $this->applyStagnantFilters($stagnantAllRows);
+            $stagnantFiltered = $this->applyStagnantFilters($stagnantAllRows);
 
-        $stagnantTotal = $stagnantFiltered->count();
-        $stagnantSlice = $stagnantFiltered->slice(($page - 1) * $this->perPage, $this->perPage)->values();
-        $stagnantTablePaginated = new LengthAwarePaginator(
-            $stagnantSlice,
-            $stagnantTotal,
-            $this->perPage,
-            $page,
-            ['path' => '#', 'pageName' => 'page']
-        );
+            $stagnantTotal = $stagnantFiltered->count();
+            $stagnantSlice = $stagnantFiltered->slice(($page - 1) * $this->perPage, $this->perPage)->values();
+            $stagnantTablePaginated = new LengthAwarePaginator(
+                $stagnantSlice,
+                $stagnantTotal,
+                $this->perPage,
+                $page,
+                ['path' => '#', 'pageName' => 'page']
+            );
+        } else {
+            // Tab 4 tidak aktif: lewati query riwayat 30 hari & nested loop yang sangat berat
+            $stagnantSummary = [
+                'total' => 0,
+                'dead' => 0,
+                'slow' => 0,
+                'critical_ed' => 0,
+                'total_qty' => 0.0,
+                'avg_days' => 0,
+            ];
+            $stagnantTablePaginated = new LengthAwarePaginator(
+                collect(),
+                0,
+                $this->perPage,
+                1,
+                ['path' => '#', 'pageName' => 'page']
+            );
+        }
 
         // Dispatch browser event agar chart selalu sinkron dengan data terfilter
         $this->dispatch('charts-updated', [
