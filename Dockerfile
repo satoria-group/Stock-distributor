@@ -14,7 +14,8 @@ RUN apk add --no-cache \
         libpng \
         libjpeg-turbo \
         freetype \
-        icu-libs
+        icu-libs \
+        netcat-openbsd
 
 # Header & toolchain hanya dibutuhkan saat compile ekstensi, dibuang lagi
 # setelah selesai supaya image tidak membawa beban build.
@@ -40,6 +41,7 @@ RUN apk add --no-cache --virtual .build-deps \
         bcmath \
         opcache \
         exif \
+        pcntl \
     && apk del .build-deps .pq-dev
 
 # Konfigurasi batas upload PHP (sejalan dengan Nginx client_max_body_size 50M)
@@ -50,7 +52,7 @@ RUN { \
         echo 'max_execution_time = 300'; \
     } > /usr/local/etc/php/conf.d/docker-php-uploads.ini
 
-COPY --from=composer:2.7 /usr/bin/composer /usr/bin/composer
+COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
 
 COPY docker/entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh

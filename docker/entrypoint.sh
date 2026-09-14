@@ -28,12 +28,8 @@ fi
 if [ "${APP_ENV}" = "production" ]; then
     echo "[entrypoint] Menyiapkan cache produksi..."
     php artisan config:cache
+    php artisan route:cache
     php artisan view:cache
-
-    # Catatan: `route:cache` sengaja TIDAK dijalankan. routes/web.php masih
-    # memakai closure (`Route::get('/', fn () => ...)`) yang tidak bisa
-    # diserialisasi, sehingga route:cache akan gagal dan mematikan container.
-    # Ganti closure itu dengan Route::redirect() bila ingin mengaktifkannya.
 
     # Migrasi TIDAK otomatis. Menjalankan migrate di setiap container start
     # berbahaya saat ada lebih dari satu replika. Aktifkan secara sadar.

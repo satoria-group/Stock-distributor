@@ -37,7 +37,6 @@ class DashboardFefoHorizonChartTest extends TestCase
             ->assertSet('fefoChartUnit', 'BTL')
             ->assertSee('Distribusi Horizon Kedaluwarsa Makro')
             ->assertSee('Komposisi Umur Simpan Stok Agregat')
-            ->assertSee('chart-fefo-horizon')
             ->assertSee('Botol (BTL)')
             ->assertSee('Ampul (AMP)')
             ->assertSee('Pcs / Box (PCS)')

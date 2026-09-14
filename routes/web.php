@@ -12,7 +12,7 @@ use App\Livewire\Stock\Upload as StockUpload;
 use App\Livewire\Users\Index as UsersIndex;
 use Illuminate\Support\Facades\Route;
 
-Route::get('/', fn () => redirect()->route('dashboard'));
+Route::redirect('/', '/dashboard');
 
 Route::middleware('guest')->group(function () {
     Route::get('/login', [AuthController::class, 'create'])->name('login');

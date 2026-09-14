@@ -19,5 +19,10 @@ Dockerfile
 .dockerignore
 docker-compose.yml
 docker-compose.prod.yml
+docker-compose.dev-server.yml
+.vscode
+.idea
+.agents
+scratch/
 README.md
 CHANGELOG.md
