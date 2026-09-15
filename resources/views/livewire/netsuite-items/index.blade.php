@@ -1,19 +1,55 @@
 <div>
     @include('partials.flash-alert')
 
-    <div class="flex flex-wrap items-center justify-between gap-4 mb-6">
-        <div class="relative w-full sm:w-96">
-            <div class="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400">
-                <svg width="15" height="15" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
-                </svg>
+    <div class="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 mb-6">
+        <div class="flex flex-wrap items-center gap-3">
+            <div class="relative w-full sm:w-72">
+                <div class="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400">
+                    <svg width="15" height="15" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
+                    </svg>
+                </div>
+                <input type="text" wire:model.live.debounce.300ms="search" placeholder="Cari kode atau nama produk..."
+                       class="w-full pl-10 pr-4 py-2.5 text-xs rounded-xl border border-slate-200 bg-white text-slate-800 focus:outline-none focus:ring-2 focus:ring-[#0d6d5f]/25 focus:border-[#0d6d5f] transition shadow-2xs">
             </div>
-            <input type="text" wire:model.live.debounce.300ms="search" placeholder="Cari kode atau nama produk Netsuite..."
-                   class="w-full pl-10 pr-4 py-2.5 text-xs rounded-xl border border-slate-200 bg-white text-slate-800 focus:outline-none focus:ring-2 focus:ring-[#0d6d5f]/25 focus:border-[#0d6d5f] transition shadow-2xs">
+
+            <!-- Segmented Price Status Filter -->
+            <div class="inline-flex p-1 bg-slate-100 rounded-xl border border-slate-200 gap-1 text-xs shadow-2xs shrink-0">
+                <button type="button" wire:click="setPriceFilter('all')"
+                        class="px-3 py-1.5 rounded-lg cursor-pointer transition font-semibold {{ $priceFilter === 'all' ? 'bg-white text-slate-900 shadow-2xs font-bold' : 'text-slate-600 hover:text-slate-900' }}">
+                    Semua
+                    <span class="ml-1 text-[11px] px-1.5 py-0.5 rounded-md {{ $priceFilter === 'all' ? 'bg-slate-100 text-slate-700' : 'bg-white/80 text-slate-500' }} font-mono font-bold">{{ $totalCount }}</span>
+                </button>
+                <button type="button" wire:click="setPriceFilter('with_price')"
+                        class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg cursor-pointer transition font-semibold {{ $priceFilter === 'with_price' ? 'bg-[#0d6d5f] text-white shadow-2xs font-bold' : 'text-emerald-700 hover:bg-emerald-50' }}">
+                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"/>
+                    </svg>
+                    Sudah Ada Harga
+                    <span class="text-[11px] px-1.5 py-0.5 rounded-md {{ $priceFilter === 'with_price' ? 'bg-white/20 text-white' : 'bg-emerald-100/80 text-emerald-800' }} font-mono font-bold">{{ $withPriceCount }}</span>
+                </button>
+                <button type="button" wire:click="setPriceFilter('without_price')"
+                        class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg cursor-pointer transition font-semibold {{ $priceFilter === 'without_price' ? 'bg-amber-600 text-white shadow-2xs font-bold' : 'text-amber-800 hover:bg-amber-50' }}">
+                    Belum Ada Harga
+                    <span class="text-[11px] px-1.5 py-0.5 rounded-md {{ $priceFilter === 'without_price' ? 'bg-white/20 text-white' : 'bg-amber-100/80 text-amber-800' }} font-mono font-bold">{{ $withoutPriceCount }}</span>
+                </button>
+            </div>
+
+            <!-- Reset Filter Button -->
+            @if ($priceFilter !== 'all' || !empty($search))
+            <button type="button" wire:click="resetFilters"
+                    class="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs text-slate-500 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition cursor-pointer font-medium"
+                    title="Reset pencarian dan filter harga">
+                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                </svg>
+                <span>Reset</span>
+            </button>
+            @endif
         </div>
 
         @can('create', \App\Models\NetsuiteItem::class)
-        <button wire:click="openCreate" class="inline-flex items-center gap-2 bg-[#0d6d5f] hover:bg-[#07352d] text-white text-xs font-bold rounded-xl px-4 py-2.5 transition shadow-2xs cursor-pointer">
+        <button wire:click="openCreate" class="inline-flex items-center gap-2 bg-[#0d6d5f] hover:bg-[#07352d] text-white text-xs font-bold rounded-xl px-4 py-2.5 transition shadow-2xs cursor-pointer shrink-0">
             <svg width="15" height="15" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.2" d="M12 4v16m8-8H4"/>
             </svg>
@@ -24,12 +60,40 @@
 
     <div class="bg-white border border-slate-200/80 rounded-2xl overflow-hidden shadow-xs">
         <table class="w-full text-xs text-left">
-            <thead class="bg-slate-50/90 text-[11px] uppercase tracking-wider text-slate-500 font-bold border-b border-slate-200">
+            <thead class="bg-slate-50/90 text-[11px] uppercase tracking-wider text-slate-500 font-bold border-b border-slate-200 select-none">
                 <tr>
-                    <th class="px-5 py-3.5 w-40">Netsuite ID</th>
-                    <th class="px-5 py-3.5">Nama Produk</th>
-                    <th class="px-5 py-3.5 w-36 text-center">Satuan Default</th>
-                    <th class="px-5 py-3.5 w-36 text-right">Aksi</th>
+                    <th wire:click="sortByColumn('netsuite_id')" class="px-5 py-3.5 w-40 cursor-pointer hover:text-slate-800 transition">
+                        <div class="inline-flex items-center gap-1">
+                            <span>Netsuite ID</span>
+                            @if ($sortBy === 'netsuite_id')
+                                <span class="text-[#0d6d5f] font-bold">{{ $sortDirection === 'asc' ? '↑' : '↓' }}</span>
+                            @else
+                                <span class="text-slate-300">↕</span>
+                            @endif
+                        </div>
+                    </th>
+                    <th wire:click="sortByColumn('netsuite_name')" class="px-5 py-3.5 cursor-pointer hover:text-slate-800 transition">
+                        <div class="inline-flex items-center gap-1">
+                            <span>Nama Produk</span>
+                            @if ($sortBy === 'netsuite_name')
+                                <span class="text-[#0d6d5f] font-bold">{{ $sortDirection === 'asc' ? '↑' : '↓' }}</span>
+                            @else
+                                <span class="text-slate-300">↕</span>
+                            @endif
+                        </div>
+                    </th>
+                    <th wire:click="sortByColumn('price')" class="px-5 py-3.5 w-40 text-right cursor-pointer hover:text-slate-800 transition">
+                        <div class="inline-flex items-center justify-end gap-1 w-full">
+                            <span>Harga DPL (Rp)</span>
+                            @if ($sortBy === 'price')
+                                <span class="text-[#0d6d5f] font-bold">{{ $sortDirection === 'asc' ? '↑' : '↓' }}</span>
+                            @else
+                                <span class="text-slate-300">↕</span>
+                            @endif
+                        </div>
+                    </th>
+                    <th class="px-5 py-3.5 w-32 text-center">Satuan Default</th>
+                    <th class="px-5 py-3.5 w-28 text-right">Aksi</th>
                 </tr>
             </thead>
             <tbody class="divide-y divide-slate-100 bg-white">
@@ -37,6 +101,13 @@
                     <tr class="hover:bg-slate-50/80 transition">
                         <td class="px-5 py-3.5 font-mono text-slate-700 font-semibold text-xs">{{ $item->netsuite_id }}</td>
                         <td class="px-5 py-3.5 font-bold text-slate-900 text-xs">{{ $item->netsuite_name }}</td>
+                        <td class="px-5 py-3.5 text-right font-mono text-xs font-bold text-slate-800">
+                            @if ($item->unit_price > 0)
+                                Rp {{ number_format($item->unit_price, 0, ',', '.') }}
+                            @else
+                                <span class="text-slate-400 font-normal italic">—</span>
+                            @endif
+                        </td>
                         <td class="px-5 py-3.5 text-center font-mono">
                             <span class="px-2.5 py-1 rounded-lg bg-slate-100 text-slate-700 font-semibold text-[11px] border border-slate-200/60">
                                 {{ $item->default_satuan ?: '—' }}
@@ -65,7 +136,7 @@
                     </tr>
                 @empty
                     <tr>
-                        <td colspan="4" class="px-5 py-14 text-center text-slate-400">
+                        <td colspan="5" class="px-5 py-14 text-center text-slate-400">
                             <div class="text-3xl mb-2">📦</div>
                             <div class="font-bold text-slate-700 text-sm">Belum ada data produk</div>
                             <div class="text-xs text-slate-400 mt-0.5">Produk master belum terdaftar atau tidak cocok dengan filter.</div>
@@ -96,6 +167,14 @@
                     @error('netsuite_name') <p class="text-xs text-rose-600 mt-1">{{ $message }}</p> @enderror
                 </div>
                 <div>
+                    <label class="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1.5">Harga Acuan DPL (Rp)</label>
+                    <div class="relative">
+                        <span class="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400 font-bold text-xs">Rp</span>
+                        <input type="number" step="any" wire:model="price" placeholder="mis. 14324" class="w-full rounded-xl border border-slate-200 pl-10 pr-3.5 py-2.5 text-xs text-slate-800 font-mono focus:outline-none focus:ring-2 focus:ring-[#0d6d5f]/25 focus:border-[#0d6d5f]">
+                    </div>
+                    @error('price') <p class="text-xs text-rose-600 mt-1">{{ $message }}</p> @enderror
+                </div>
+                <div>
                     <label class="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1.5">Satuan Default</label>
                     <input type="text" wire:model="default_satuan" placeholder="mis. BOTOL, PCS, BOX" class="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-[#0d6d5f]/25 focus:border-[#0d6d5f]">
                 </div>
@@ -108,3 +187,4 @@
     </div>
     @endif
 </div>
+

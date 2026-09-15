@@ -398,7 +398,7 @@ class Dashboard extends Component
         }
 
         return StockEntry::query()
-            ->with(['distributor', 'distributorItem.netsuiteItem'])
+            ->with(['distributor', 'distributorItem.netsuiteItem.dplPrice'])
             ->where(function ($query) use ($latestPerDist) {
                 foreach ($latestPerDist as $ld) {
                     $query->orWhere(function ($sub) use ($ld) {
@@ -421,6 +421,8 @@ class Dashboard extends Component
             ->map(function ($e) {
                 $tier = $e->expiryStatus();
                 $meta = self::FEFO_TIER_META[$tier] ?? self::FEFO_TIER_META['safe'];
+                $unitPrice = (float) ($e->distributorItem?->netsuiteItem?->unit_price ?? 0.0);
+                $totalValue = (float) $e->quantity * $unitPrice;
 
                 return (object) [
                     'entry' => $e,
@@ -429,6 +431,8 @@ class Dashboard extends Component
                     'label' => $meta['label'],
                     'badgeClass' => $meta['badge'],
                     'action' => $meta['action'],
+                    'unit_price' => $unitPrice,
+                    'total_value' => $totalValue,
                 ];
             });
     }
@@ -470,6 +474,10 @@ class Dashboard extends Component
 
         return $rows->sort(function ($a, $b) use ($isDesc) {
             switch ($this->fefoSortBy) {
+                case 'total_value':
+                    $valA = (float) $a->total_value;
+                    $valB = (float) $b->total_value;
+                    break;
                 case 'item_name':
                     $valA = strtolower((string) ($a->entry->distributorItem?->item_name ?? ''));
                     $valB = strtolower((string) ($b->entry->distributorItem?->item_name ?? ''));
@@ -900,6 +908,9 @@ class Dashboard extends Component
                 $actionColor = 'sky';
             }
 
+            $unitPrice = (float) ($entry->distributorItem?->netsuiteItem?->unit_price ?? 0.0);
+            $lockedCapital = $qLatest * $unitPrice;
+
             $rows->push((object) [
                 'entry' => $entry,
                 'distributor' => $entry->distributor,
@@ -914,6 +925,8 @@ class Dashboard extends Component
                 'isNearEd' => $isNearEd,
                 'actionText' => $actionText,
                 'actionColor' => $actionColor,
+                'unit_price' => $unitPrice,
+                'locked_capital' => $lockedCapital,
             ]);
         }
 
@@ -975,6 +988,14 @@ class Dashboard extends Component
 
         return $rows->sort(function ($a, $b) use ($isDesc) {
             switch ($this->stagnantSortBy) {
+                case 'total_value':
+                    $valA = (float) $a->locked_capital;
+                    $valB = (float) $b->locked_capital;
+                    break;
+                case 'unit_price':
+                    $valA = (float) $a->unit_price;
+                    $valB = (float) $b->unit_price;
+                    break;
                 case 'quantity':
                     $valA = (float) $a->qLatest;
                     $valB = (float) $b->qLatest;
@@ -1065,11 +1086,14 @@ class Dashboard extends Component
             'total_branches' => $allCurrentEntries->pluck('distributor_id')->unique()->count(),
             'expiring_soon' => 0,
             'unmapped' => 0,
+            'total_value' => 0.0,
         ];
 
         foreach ($allCurrentEntries as $entry) {
             $sat = strtoupper(trim((string) $entry->satuan));
             $q = (float) $entry->quantity;
+            $unitPrice = (float) ($entry->distributorItem?->netsuiteItem?->unit_price ?? 0.0);
+            $kpi['total_value'] += ($q * $unitPrice);
 
             if (str_contains($sat, 'BTL') || str_contains($sat, 'BOTOL')) {
                 $kpi['total_btl'] += $q;
@@ -1251,11 +1275,15 @@ class Dashboard extends Component
             $prevQty = $prev ? (float) $prev->quantity : null;
             $delta = $prevQty !== null ? ((float) $entry->quantity - $prevQty) : null;
             $deltaPct = ($prevQty && $prevQty != 0.0) ? round($delta / $prevQty * 100, 1) : null;
+            $unitPrice = (float) ($entry->distributorItem?->netsuiteItem?->unit_price ?? 0.0);
+            $totalValue = (float) $entry->quantity * $unitPrice;
 
             return (object) [
                 'entry' => $entry,
                 'delta' => $delta,
                 'delta_pct' => $deltaPct,
+                'unit_price' => $unitPrice,
+                'total_value' => $totalValue,
             ];
         });
 
@@ -1263,6 +1291,14 @@ class Dashboard extends Component
         $isDesc = $this->sortDir === 'desc';
         $mappedTableRows = $mappedTableRows->sort(function ($a, $b) use ($isDesc) {
             switch ($this->sortBy) {
+                case 'total_value':
+                    $valA = (float) $a->total_value;
+                    $valB = (float) $b->total_value;
+                    break;
+                case 'unit_price':
+                    $valA = (float) $a->unit_price;
+                    $valB = (float) $b->unit_price;
+                    break;
                 case 'quantity':
                     $valA = (float) $a->entry->quantity;
                     $valB = (float) $b->entry->quantity;
@@ -1353,6 +1389,7 @@ class Dashboard extends Component
                 'warning' => $fefoAllRows->where('tier', 'warning')->count(),
                 'safe' => $fefoAllRows->where('tier', 'safe')->count(),
                 'total_qty_at_risk' => (float) $fefoAllRows->whereIn('tier', ['expired', 'critical', 'warning'])->sum(fn ($r) => (float) $r->entry->quantity),
+                'total_risk_value' => (float) $fefoAllRows->whereIn('tier', ['expired', 'critical'])->sum(fn ($r) => (float) $r->total_value),
             ];
 
             $fefoFiltered = $this->applyFefoFilters($fefoAllRows);
@@ -1379,6 +1416,7 @@ class Dashboard extends Component
                 'warning' => 0,
                 'safe' => 0,
                 'total_qty_at_risk' => 0.0,
+                'total_risk_value' => 0.0,
             ];
             $fefoTablePaginated = new LengthAwarePaginator(
                 collect(),
@@ -1524,6 +1562,7 @@ class Dashboard extends Component
                 'critical_ed' => $stagnantAllRows->where('isNearEd', true)->count(),
                 'total_qty' => (float) $stagnantAllRows->sum('qLatest'),
                 'avg_days' => $stagnantAllRows->count() > 0 ? (int) round($stagnantAllRows->avg('daysStagnant')) : 0,
+                'total_locked_capital' => (float) $stagnantAllRows->sum('locked_capital'),
             ];
 
             $stagnantFiltered = $this->applyStagnantFilters($stagnantAllRows);
@@ -1546,6 +1585,7 @@ class Dashboard extends Component
                 'critical_ed' => 0,
                 'total_qty' => 0.0,
                 'avg_days' => 0,
+                'total_locked_capital' => 0.0,
             ];
             $stagnantTablePaginated = new LengthAwarePaginator(
                 collect(),
@@ -1636,7 +1676,9 @@ class Dashboard extends Component
                 'No. Batch',
                 'Expired Date',
                 'Status ED',
+                'Harga Satuan (Rp)',
                 'Stok Terkini',
+                'Total Nilai Stok (Rp)',
                 'Stok Awal Periode',
                 'Total Outflow',
                 'Turnover (%)',
@@ -1655,7 +1697,9 @@ class Dashboard extends Component
                     $row->entry->batch_no ?? '-',
                     $row->entry->expired_date ? $row->entry->expired_date->format('d/m/Y') : '-',
                     $row->entry->expiryStatus(),
+                    $row->unit_price > 0 ? $row->unit_price : 0,
                     $row->qLatest,
+                    $row->locked_capital > 0 ? $row->locked_capital : 0,
                     $row->qFirst,
                     $row->totalOutflow,
                     $row->turnoverPct . '%',
@@ -1738,6 +1782,8 @@ class Dashboard extends Component
                 'Status Kedaluwarsa',
                 'Kuantitas',
                 'Satuan',
+                'Harga Satuan (Rp)',
+                'Estimasi Nilai (Rp)',
             ]);
 
             foreach ($mapped as $r) {
@@ -1756,6 +1802,8 @@ class Dashboard extends Component
                     $r->label,
                     $e->quantity,
                     $e->satuan,
+                    $r->unit_price > 0 ? $r->unit_price : 0,
+                    $r->total_value > 0 ? $r->total_value : 0,
                 ]);
             }
             fclose($handle);

@@ -79,8 +79,8 @@
         </div>
     </div>
 
-    <!-- 6 KPI Cards (Clean Modern Metric Grid with Icon Badges - Static & Sans-serif) -->
-    <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 mb-7">
+    <!-- 5 KPI Cards (Clean Modern Metric Grid with Icon Badges & Financial Valuation) -->
+    <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3.5 mb-7">
         <!-- Card 1: Total Btl (Infus) -->
         <div class="bg-white rounded-2xl border border-slate-200/80 p-5 shadow-xs flex flex-col justify-between">
             <div class="flex items-start justify-between gap-2">
@@ -153,39 +153,20 @@
             </div>
         </div>
 
-        <!-- Card 5: Total Cabang (Static) -->
-        <div class="bg-white rounded-2xl border border-slate-200/80 p-5 shadow-xs flex flex-col justify-between">
+        <!-- Card 5: Total Nilai Stok (Valuasi DPL Nasional) -->
+        <div class="col-span-2 md:col-span-2 lg:col-span-1 bg-gradient-to-br from-[#062c25] to-[#0d6d5f] text-white rounded-2xl border border-emerald-600/40 p-5 shadow-xs flex flex-col justify-between">
             <div class="flex items-start justify-between gap-2">
-                <span class="text-[11px] font-bold tracking-wider uppercase text-slate-500">TOTAL CABANG</span>
-                <div class="w-10 h-10 rounded-xl flex items-center justify-center shrink-0 border border-purple-200/60"
-                     style="background: #faf5ff; color: #7c3aed;">
-                    <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"/>
-                    </svg>
+                <span class="text-[11px] font-bold tracking-wider uppercase text-emerald-200">NILAI STOK ON HAND</span>
+                <div class="w-10 h-10 rounded-xl flex items-center justify-center shrink-0 border border-emerald-400/40"
+                     style="background: rgba(255, 255, 255, 0.15); color: #6ee7b7;">
+                    <span class="font-extrabold font-mono text-xs">Rp</span>
                 </div>
             </div>
             <div>
-                <div class="text-3xl font-extrabold text-slate-900 tabular-nums tracking-tight mt-2.5">
-                    {{ $kpi['total_branches'] }}
+                <div class="text-xl md:text-2xl font-black text-white tabular-nums tracking-tight mt-2.5">
+                    Rp {{ number_format($kpi['total_value'] ?? 0, 0, ',', '.') }}
                 </div>
-            </div>
-        </div>
-
-        <!-- Card 6: Alert ED Kritis (Static) -->
-        <div class="bg-white rounded-2xl border {{ $kpi['expiring_soon'] > 0 ? 'border-rose-200 bg-rose-50/20' : 'border-slate-200/80' }} p-5 shadow-xs flex flex-col justify-between">
-            <div class="flex items-start justify-between gap-2">
-                <span class="text-[11px] font-bold tracking-wider uppercase {{ $kpi['expiring_soon'] > 0 ? 'text-rose-700' : 'text-slate-500' }}">DEKAT/LEWAT ED</span>
-                <div class="w-10 h-10 rounded-xl flex items-center justify-center shrink-0 border"
-                     style="{{ $kpi['expiring_soon'] > 0 ? 'background: #fff1f2; color: #e11d48; border-color: #fecdd3;' : 'background: #f1f5f9; color: #64748b; border-color: #e2e8f0;' }}">
-                    <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
-                    </svg>
-                </div>
-            </div>
-            <div>
-                <div class="text-3xl font-extrabold tabular-nums tracking-tight mt-2.5 {{ $kpi['expiring_soon'] > 0 ? 'text-rose-600' : 'text-slate-900' }}">
-                    {{ $kpi['expiring_soon'] }}
-                </div>
+                <span class="text-[10px] text-emerald-200/80 block mt-1 font-medium">Acuan Harga DPL</span>
             </div>
         </div>
     </div>
@@ -498,6 +479,8 @@
                     @if ($sortBy !== 'item_name' || $sortDir !== 'asc')
                         <span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-lg text-[11px] font-mono bg-emerald-50 text-emerald-800 border border-emerald-200">
                             <span>Sortir: <b>{{ match($sortBy) {
+                                'total_value' => 'Total Nilai (Rp)',
+                                'unit_price' => 'Harga Satuan',
                                 'quantity' => 'Kuantitas',
                                 'distributor' => 'Distributor',
                                 'satuan' => 'Satuan',
@@ -546,18 +529,6 @@
                            placeholder="Cari produk / batch..."
                            class="w-full pl-9 pr-3 py-2.5 text-xs rounded-xl border border-slate-200 bg-slate-50/70 text-slate-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#0d6d5f]/20 focus:border-[#0d6d5f] transition">
                 </div>
-
-                <!-- Reset Filter Button -->
-                @if ($selectedBranchId || $satuanFilter || $search || $sortBy !== 'item_name' || $sortDir !== 'asc')
-                    <button type="button" wire:click="resetFilters"
-                            class="px-3 py-2.5 rounded-xl text-xs font-semibold text-slate-600 hover:text-slate-900 hover:bg-slate-100 border border-slate-200 transition cursor-pointer inline-flex items-center gap-1.5"
-                            title="Reset semua filter dan sortir ke kondisi awal">
-                        <svg width="13" height="13" style="width: 13px; height: 13px; min-width: 13px; flex-shrink: 0;" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
-                        </svg>
-                        <span>Reset</span>
-                    </button>
-                @endif
             </div>
         </div>
 
@@ -642,11 +613,59 @@
 
                         <!-- Kuantitas (Sortable) -->
                         <th wire:click="setSort('quantity')"
-                            class="text-right py-3.5 px-4 w-32 cursor-pointer select-none hover:bg-slate-100 transition group"
+                            class="text-right py-3.5 px-3 w-28 cursor-pointer select-none hover:bg-slate-100 transition group"
                             title="Klik untuk mengurutkan berdasarkan Kuantitas Stok">
                             <div class="inline-flex items-center justify-end gap-1.5 w-full">
                                 <span class="{{ $sortBy === 'quantity' ? 'font-bold' : '' }}" style="{{ $sortBy === 'quantity' ? 'color: #0d6d5f;' : '' }}">Kuantitas</span>
                                 @if ($sortBy === 'quantity')
+                                    @if ($sortDir === 'asc')
+                                        <svg width="13" height="13" style="width: 13px; height: 13px; min-width: 13px; flex-shrink: 0; color: #0d6d5f;" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 15l7-7 7 7"></path>
+                                        </svg>
+                                    @else
+                                        <svg width="13" height="13" style="width: 13px; height: 13px; min-width: 13px; flex-shrink: 0; color: #0d6d5f;" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M19 9l-7 7-7-7"></path>
+                                        </svg>
+                                    @endif
+                                @else
+                                    <svg width="13" height="13" style="width: 13px; height: 13px; min-width: 13px; flex-shrink: 0;" class="text-slate-300 group-hover:text-slate-500 transition" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4"></path>
+                                    </svg>
+                                @endif
+                            </div>
+                        </th>
+
+                        <!-- Harga Satuan DPL -->
+                        <th wire:click="setSort('unit_price')"
+                            class="text-right py-3.5 px-3 w-28 cursor-pointer select-none hover:bg-slate-100 transition group"
+                            title="Klik untuk mengurutkan berdasarkan Harga Satuan DPL">
+                            <div class="inline-flex items-center justify-end gap-1.5 w-full">
+                                <span class="{{ $sortBy === 'unit_price' ? 'font-bold' : '' }}" style="{{ $sortBy === 'unit_price' ? 'color: #0d6d5f;' : '' }}">Harga (Rp)</span>
+                                @if ($sortBy === 'unit_price')
+                                    @if ($sortDir === 'asc')
+                                        <svg width="13" height="13" style="width: 13px; height: 13px; min-width: 13px; flex-shrink: 0; color: #0d6d5f;" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 15l7-7 7 7"></path>
+                                        </svg>
+                                    @else
+                                        <svg width="13" height="13" style="width: 13px; height: 13px; min-width: 13px; flex-shrink: 0; color: #0d6d5f;" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M19 9l-7 7-7-7"></path>
+                                        </svg>
+                                    @endif
+                                @else
+                                    <svg width="13" height="13" style="width: 13px; height: 13px; min-width: 13px; flex-shrink: 0;" class="text-slate-300 group-hover:text-slate-500 transition" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4"></path>
+                                    </svg>
+                                @endif
+                            </div>
+                        </th>
+
+                        <!-- Total Nilai (Sortable) -->
+                        <th wire:click="setSort('total_value')"
+                            class="text-right py-3.5 px-3 w-36 cursor-pointer select-none hover:bg-slate-100 transition group"
+                            title="Klik untuk mengurutkan berdasarkan Total Nilai Stok (Rp)">
+                            <div class="inline-flex items-center justify-end gap-1.5 w-full">
+                                <span class="{{ $sortBy === 'total_value' ? 'font-bold' : '' }}" style="{{ $sortBy === 'total_value' ? 'color: #0d6d5f;' : '' }}">Total Nilai (Rp)</span>
+                                @if ($sortBy === 'total_value')
                                     @if ($sortDir === 'asc')
                                         <svg width="13" height="13" style="width: 13px; height: 13px; min-width: 13px; flex-shrink: 0; color: #0d6d5f;" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 15l7-7 7 7"></path>
@@ -743,8 +762,22 @@
                                 <span class="font-bold text-slate-900">{{ $r->entry->distributor?->name ?? '—' }}</span>
                                 <span class="block text-[10px] font-mono text-slate-400 mt-0.5">{{ $r->entry->distributor?->distributor_code }}</span>
                             </td>
-                            <td class="py-3.5 px-4 text-right font-mono font-extrabold text-slate-900 text-sm">
+                            <td class="py-3.5 px-3 text-right font-mono font-extrabold text-slate-900 text-sm">
                                 {{ number_format($r->entry->quantity, 0, ',', '.') }}
+                            </td>
+                            <td class="py-3.5 px-3 text-right font-mono text-xs text-slate-600">
+                                @if ($r->unit_price > 0)
+                                    Rp {{ number_format($r->unit_price, 0, ',', '.') }}
+                                @else
+                                    <span class="text-slate-400 font-normal">—</span>
+                                @endif
+                            </td>
+                            <td class="py-3.5 px-3 text-right font-mono font-bold text-xs text-slate-900">
+                                @if ($r->total_value > 0)
+                                    Rp {{ number_format($r->total_value, 0, ',', '.') }}
+                                @else
+                                    <span class="text-slate-400 font-normal">—</span>
+                                @endif
                             </td>
                             <td class="py-3.5 px-4 text-right font-mono">
                                 @if ($r->delta_pct === null)
@@ -785,7 +818,7 @@
                         </tr>
                     @empty
                         <tr>
-                            <td colspan="7" class="py-14 text-center text-slate-400">
+                            <td colspan="9" class="py-14 text-center text-slate-400">
                                 <div class="text-3xl mb-2">📦</div>
                                 <div class="font-bold text-slate-600 text-sm">Tidak ada data stok yang cocok dengan filter</div>
                                 <div class="text-xs text-slate-400 mt-1">Coba sesuaikan kata kunci pencarian atau cabang distributor</div>
@@ -1061,6 +1094,12 @@
                         </button>
                     </div>
 
+                    @if (($fefoSummary['total_risk_value'] ?? 0) > 0)
+                        <div class="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-rose-50 text-rose-800 border border-rose-200 text-xs font-bold shadow-2xs shrink-0">
+                            <span>⚠️ Potensi Kerugian ED Kritis: <b>Rp {{ number_format($fefoSummary['total_risk_value'], 0, ',', '.') }}</b></span>
+                        </div>
+                    @endif
+
                     <!-- Filter Controls FEFO: Cabang, Satuan, Search & Reset -->
                     <div class="flex flex-wrap items-center gap-2.5">
                         <!-- Filter Cabang FEFO -->
@@ -1096,18 +1135,6 @@
                                    placeholder="Cari produk / batch..."
                                    class="w-full text-xs rounded-xl border border-slate-200 bg-slate-50/70 pl-9 pr-3 py-2 text-slate-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#0d6d5f]/20 focus:border-[#0d6d5f] transition">
                         </div>
-
-                        <!-- Reset Filter Button FEFO -->
-                        @if ($expiryRiskFilter !== 'all' || $expirySearch || $fefoBranchId || $fefoSatuanFilter || $fefoSortBy !== 'days' || $fefoSortDir !== 'asc')
-                            <button type="button" wire:click="resetFefoFilters"
-                                    class="px-3 py-2 rounded-xl text-xs font-semibold text-slate-600 hover:text-slate-900 hover:bg-slate-100 border border-slate-200 transition cursor-pointer inline-flex items-center gap-1.5 shrink-0"
-                                    title="Reset semua filter dan sortir FEFO ke kondisi awal">
-                                <svg width="13" height="13" style="width: 13px; height: 13px; min-width: 13px; flex-shrink: 0;" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
-                                </svg>
-                                <span>Reset</span>
-                            </button>
-                        @endif
                     </div>
                 </div>
             </div>
@@ -1241,11 +1268,35 @@
 
                             <!-- Kuantitas (Sortable) -->
                             <th wire:click="setFefoSort('quantity')"
-                                class="text-right py-3.5 px-4 w-28 cursor-pointer select-none hover:bg-slate-100 transition group"
+                                class="text-right py-3.5 px-3 w-28 cursor-pointer select-none hover:bg-slate-100 transition group"
                                 title="Klik untuk mengurutkan berdasarkan Kuantitas">
                                 <div class="inline-flex items-center justify-end gap-1.5 w-full">
                                     <span class="{{ $fefoSortBy === 'quantity' ? 'font-bold' : '' }}" style="{{ $fefoSortBy === 'quantity' ? 'color: #0d6d5f;' : '' }}">Kuantitas</span>
                                     @if ($fefoSortBy === 'quantity')
+                                        @if ($fefoSortDir === 'asc')
+                                            <svg width="13" height="13" style="width: 13px; height: 13px; min-width: 13px; flex-shrink: 0; color: #0d6d5f;" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 15l7-7 7 7"></path>
+                                            </svg>
+                                        @else
+                                            <svg width="13" height="13" style="width: 13px; height: 13px; min-width: 13px; flex-shrink: 0; color: #0d6d5f;" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M19 9l-7 7-7-7"></path>
+                                            </svg>
+                                        @endif
+                                    @else
+                                        <svg width="13" height="13" style="width: 13px; height: 13px; min-width: 13px; flex-shrink: 0;" class="text-slate-300 group-hover:text-slate-500 transition" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4"></path>
+                                        </svg>
+                                    @endif
+                                </div>
+                            </th>
+
+                            <!-- Estimasi Nilai (Sortable) -->
+                            <th wire:click="setFefoSort('total_value')"
+                                class="text-right py-3.5 px-3 w-36 cursor-pointer select-none hover:bg-slate-100 transition group"
+                                title="Klik untuk mengurutkan berdasarkan Estimasi Nilai Batch">
+                                <div class="inline-flex items-center justify-end gap-1.5 w-full">
+                                    <span class="{{ $fefoSortBy === 'total_value' ? 'font-bold' : '' }}" style="{{ $fefoSortBy === 'total_value' ? 'color: #0d6d5f;' : '' }}">Nilai Batch (Rp)</span>
+                                    @if ($fefoSortBy === 'total_value')
                                         @if ($fefoSortDir === 'asc')
                                             <svg width="13" height="13" style="width: 13px; height: 13px; min-width: 13px; flex-shrink: 0; color: #0d6d5f;" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 15l7-7 7 7"></path>
@@ -1335,9 +1386,17 @@
                                         </span>
                                     @endif
                                 </td>
-                                <td class="py-3.5 px-4 text-right font-mono font-extrabold text-slate-900">
+                                <td class="py-3.5 px-3 text-right font-mono font-extrabold text-slate-900">
                                     {{ number_format($e->quantity, 0, ',', '.') }}
                                     <span class="block text-[10px] text-slate-400 font-normal">{{ $e->satuan }}</span>
+                                </td>
+                                <td class="py-3.5 px-3 text-right font-mono font-bold text-xs {{ $r->tier === 'expired' || $r->tier === 'critical' ? 'text-rose-700' : 'text-slate-800' }}">
+                                    @if ($r->total_value > 0)
+                                        Rp {{ number_format($r->total_value, 0, ',', '.') }}
+                                        <span class="block text-[10px] text-slate-400 font-normal">@ Rp {{ number_format($r->unit_price, 0, ',', '.') }}</span>
+                                    @else
+                                        <span class="text-slate-400 font-normal">—</span>
+                                    @endif
                                 </td>
                                 <td class="py-3.5 px-4">
                                     <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-[9px] font-mono uppercase font-bold border {{ $r->badgeClass }}">
@@ -1350,7 +1409,7 @@
                             </tr>
                         @empty
                             <tr>
-                                <td colspan="8" class="py-12 text-center text-slate-400">
+                                <td colspan="9" class="py-12 text-center text-slate-400">
                                     <div class="text-3xl mb-2">🗓️</div>
                                     <div class="font-bold text-slate-600 text-sm">Tidak ada data batch yang sesuai dengan filter kedaluwarsa</div>
                                 </td>
@@ -1434,6 +1493,25 @@
                         <h3 class="text-base font-bold text-slate-900 tracking-tight">Status Kepatuhan Laporan Stok Cabang</h3>
                         <p class="text-xs text-slate-500 mt-1">Daftar cabang distributor dan status pengunggahan snapshot pada tanggal acuan</p>
                     </div>
+                </div>
+
+                <!-- Baris 2: Search Input dengan icon yang rapi -->
+                <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-1">
+                    <!-- Sub-Filter Buttons as Segmented Control -->
+                    <div class="inline-flex p-1 bg-slate-100 rounded-xl border border-slate-200 gap-1 text-xs shadow-2xs">
+                        <button type="button" wire:click="$set('complianceStatus', 'all')"
+                                class="px-3 py-1.5 rounded-lg cursor-pointer transition font-bold {{ $complianceStatus === 'all' ? 'bg-white text-slate-900 shadow-2xs' : 'text-slate-600 hover:text-slate-900' }}">
+                            Semua ({{ $complianceSummary['total_branches'] }})
+                        </button>
+                        <button type="button" wire:click="$set('complianceStatus', 'submitted')"
+                                class="px-3 py-1.5 rounded-lg cursor-pointer transition font-bold {{ $complianceStatus === 'submitted' ? 'bg-emerald-600 text-white shadow-2xs' : 'text-emerald-700 hover:bg-emerald-50' }}">
+                            Sudah ({{ $complianceSummary['total_submitted'] }})
+                        </button>
+                        <button type="button" wire:click="$set('complianceStatus', 'missing')"
+                                class="px-3 py-1.5 rounded-lg cursor-pointer transition font-bold {{ $complianceStatus === 'missing' ? 'bg-rose-600 text-white shadow-2xs' : 'text-rose-700 hover:bg-rose-50' }}">
+                            Belum ({{ $complianceSummary['total_missing'] }})
+                        </button>
+                    </div>
 
                     <div class="flex flex-wrap items-center gap-2.5">
                         <!-- Date Picker Tanggal Acuan -->
@@ -1441,44 +1519,23 @@
                             <span class="text-[11px] font-bold uppercase tracking-wider text-slate-500 whitespace-nowrap">Tgl Acuan:</span>
                             <div class="w-32">
                                 <x-date-picker wire:model.live="complianceDate"
-                                               class="w-full text-xs border-0 bg-transparent text-slate-900 font-bold focus:outline-none focus:ring-0 cursor-pointer p-0"
-                                               placeholder="DD/MM/YYYY"
-                                               title="Tanggal Acuan" />
+                                                class="w-full text-xs border-0 bg-transparent text-slate-900 font-bold focus:outline-none focus:ring-0 cursor-pointer p-0"
+                                                placeholder="DD/MM/YYYY"
+                                                title="Tanggal Acuan" />
                             </div>
                         </div>
 
-                        <!-- Sub-Filter Buttons as Segmented Control -->
-                        <div class="inline-flex p-1 bg-slate-100 rounded-xl border border-slate-200 gap-1 text-xs shadow-2xs">
-                            <button type="button" wire:click="$set('complianceStatus', 'all')"
-                                    class="px-3 py-1.5 rounded-lg cursor-pointer transition font-bold {{ $complianceStatus === 'all' ? 'bg-white text-slate-900 shadow-2xs' : 'text-slate-600 hover:text-slate-900' }}">
-                                Semua ({{ $complianceSummary['total_branches'] }})
-                            </button>
-                            <button type="button" wire:click="$set('complianceStatus', 'submitted')"
-                                    class="px-3 py-1.5 rounded-lg cursor-pointer transition font-bold {{ $complianceStatus === 'submitted' ? 'bg-emerald-600 text-white shadow-2xs' : 'text-emerald-700 hover:bg-emerald-50' }}">
-                                Sudah ({{ $complianceSummary['total_submitted'] }})
-                            </button>
-                            <button type="button" wire:click="$set('complianceStatus', 'missing')"
-                                    class="px-3 py-1.5 rounded-lg cursor-pointer transition font-bold {{ $complianceStatus === 'missing' ? 'bg-rose-600 text-white shadow-2xs' : 'text-rose-700 hover:bg-rose-50' }}">
-                                Belum ({{ $complianceSummary['total_missing'] }})
-                            </button>
+                        <!-- Search Input -->
+                        <div class="relative w-full sm:w-72">
+                            <div class="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400">
+                                <svg width="15" height="15" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
+                                </svg>
+                            </div>
+                            <input type="text" wire:model.live.debounce.300ms="complianceSearch"
+                                   placeholder="Cari kode atau nama cabang..."
+                                   class="w-full pl-10 pr-4 py-2 text-xs rounded-xl border border-slate-200 bg-slate-50/70 text-slate-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#0d6d5f]/25 focus:border-[#0d6d5f] transition shadow-2xs">
                         </div>
-                    </div>
-                </div>
-
-                <!-- Baris 2: Search Input dengan icon yang rapi -->
-                <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-1">
-                    <div class="relative w-full sm:w-80">
-                        <div class="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400">
-                            <svg width="15" height="15" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
-                            </svg>
-                        </div>
-                        <input type="text" wire:model.live.debounce.300ms="complianceSearch"
-                               placeholder="Cari kode atau nama cabang..."
-                               class="w-full pl-10 pr-4 py-2 text-xs rounded-xl border border-slate-200 bg-slate-50/70 text-slate-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#0d6d5f]/25 focus:border-[#0d6d5f] transition shadow-2xs">
-                    </div>
-                    <div class="text-xs text-slate-500 font-medium">
-                        Total <span class="font-bold text-slate-800">{{ $complianceTable->total() }}</span> cabang terdaftar
                     </div>
                 </div>
             </div>
@@ -1711,8 +1768,8 @@
             </div>
         </div>
 
-        <!-- 4 KPI Cards Khusus Tab 4 -->
-        <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-5">
+        <!-- 5 KPI Cards Khusus Tab 4 -->
+        <div class="grid grid-cols-2 lg:grid-cols-5 gap-3 mb-5">
             <!-- Card 1: Total SKU Mengendap -->
             <div class="bg-amber-50/50 rounded-xl border border-amber-200/80 p-3.5">
                 <span class="text-[10px] font-bold tracking-wider uppercase text-amber-800">TOTAL SKU MENGENDAP</span>
@@ -1744,6 +1801,15 @@
                     {{ number_format($stagnantSummary['total_qty'] ?? 0, 0, ',', '.') }}
                     <span class="text-xs font-normal text-slate-500">Unit Fisik</span>
                 </div>
+            </div>
+
+            <!-- Card 5: Total Modal Tertahan -->
+            <div class="col-span-2 lg:col-span-1 bg-gradient-to-br from-[#881337] to-[#4c0519] text-white rounded-xl border border-rose-700/60 p-3.5 shadow-xs flex flex-col justify-between">
+                <span class="text-[10px] font-bold tracking-wider uppercase text-rose-200">TOTAL MODAL TERTAHAN</span>
+                <div class="text-xl font-black text-white font-mono mt-1">
+                    Rp {{ number_format($stagnantSummary['total_locked_capital'] ?? 0, 0, ',', '.') }}
+                </div>
+                <span class="text-[10px] text-rose-200/80 block mt-0.5 font-medium">Valuasi Stok Mengendap</span>
             </div>
         </div>
 
@@ -1782,6 +1848,22 @@
                             <div class="flex items-center justify-end gap-1">
                                 <span>Stok Terkini</span>
                                 @if ($stagnantSortBy === 'quantity')
+                                    <span>{{ $stagnantSortDir === 'asc' ? '▲' : '▼' }}</span>
+                                @endif
+                            </div>
+                        </th>
+                        <th class="py-3 px-2 text-right cursor-pointer hover:bg-slate-100 transition select-none" wire:click="setStagnantSort('unit_price')">
+                            <div class="flex items-center justify-end gap-1">
+                                <span>Harga</span>
+                                @if ($stagnantSortBy === 'unit_price')
+                                    <span>{{ $stagnantSortDir === 'asc' ? '▲' : '▼' }}</span>
+                                @endif
+                            </div>
+                        </th>
+                        <th class="py-3 px-3 text-right cursor-pointer hover:bg-slate-100 transition select-none" wire:click="setStagnantSort('total_value')">
+                            <div class="flex items-center justify-end gap-1">
+                                <span>Nilai Tertahan (Rp)</span>
+                                @if ($stagnantSortBy === 'total_value')
                                     <span>{{ $stagnantSortDir === 'asc' ? '▲' : '▼' }}</span>
                                 @endif
                             </div>
@@ -1861,6 +1943,20 @@
                             <td class="py-2.5 px-3 text-right font-mono tabular-nums font-bold text-slate-900">
                                 {{ number_format($row->qLatest, 0, ',', '.') }}
                             </td>
+                            <td class="py-2.5 px-2 text-right font-mono text-slate-600 text-xs">
+                                @if ($row->unit_price > 0)
+                                    Rp {{ number_format($row->unit_price, 0, ',', '.') }}
+                                @else
+                                    <span class="text-slate-400">—</span>
+                                @endif
+                            </td>
+                            <td class="py-2.5 px-3 text-right font-mono font-bold text-slate-900 text-xs">
+                                @if ($row->locked_capital > 0)
+                                    Rp {{ number_format($row->locked_capital, 0, ',', '.') }}
+                                @else
+                                    <span class="text-slate-400 font-normal">—</span>
+                                @endif
+                            </td>
                             <td class="py-2.5 px-3 text-center font-mono text-xs">
                                 @if ($row->turnoverPct <= 0)
                                     <span class="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-100 text-rose-800">
@@ -1904,7 +2000,7 @@
                         </tr>
                     @empty
                         <tr>
-                            <td colspan="9" class="py-12 text-center text-slate-400">
+                            <td colspan="11" class="py-12 text-center text-slate-400">
                                 <div class="text-3xl mb-2">🎉</div>
                                 <div class="font-bold text-slate-700 text-sm">Tidak ada stok macet atau lambat bergerak</div>
                                 <div class="text-xs text-slate-400 mt-0.5">Semua produk pada filter ini memiliki perputaran stok yang lancar.</div>
