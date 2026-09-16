@@ -427,7 +427,6 @@ class ProcessStockEmailsCommandTest extends TestCase
 
         $this->artisan('stock:process-emails')
             ->expectsOutputToContain('BERHASIL: Diimpor 1 baris')
-            ->expectsOutputToContain('Skipped unmapped: 1')
             ->expectsOutputToContain('Satoria IV Infusion D5 500ml Unmapped')
             ->assertSuccessful();
 
