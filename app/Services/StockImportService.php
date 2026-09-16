@@ -87,7 +87,8 @@ class StockImportService
         string $filePath,
         ?string $fromEmail = null,
         ?int $uploadedBy = null,
-        bool $dryRun = false
+        bool $dryRun = false,
+        bool $isEmailAutomation = false
     ): array {
         if (! file_exists($filePath) || ! is_readable($filePath)) {
             return [
@@ -357,6 +358,39 @@ class StockImportService
             ];
         }
 
+        // Cek data duplikat untuk Otomasi Email:
+        // Jika sudah ada data di database untuk distributor dan tanggal yang sama,
+        // tolak otomatis dengan status 'data_already_exists' dan minta user melakukan upload manual.
+        if ($isEmailAutomation || $fromEmail !== null) {
+            $existingCount = StockEntry::query()
+                ->where('distributor_id', $distributor->id)
+                ->where('tanggal', $tanggal)
+                ->count();
+
+            if ($existingCount > 0) {
+                return [
+                    'success' => false,
+                    'status' => 'data_already_exists',
+                    'distributor' => $distributor,
+                    'distributor_code' => $distributorCode,
+                    'distributor_id' => $distributor->id,
+                    'tanggal' => $tanggal,
+                    'total_rows' => 0,
+                    'imported_rows' => 0,
+                    'skipped_rows' => 0,
+                    'skipped_items' => [],
+                    'error' => "Data sudah ada untuk distributor '{$distributor->name}' ({$distributorCode}) pada tanggal {$tanggal} ({$existingCount} baris data ditemukan). Silakan upload manual jika ingin memperbarui.",
+                    'details' => [
+                        'existing_count' => $existingCount,
+                        'distributor_code' => $distributorCode,
+                        'distributor_id' => $distributor->id,
+                        'tanggal' => $tanggal,
+                        'reason' => 'data_already_exists',
+                    ],
+                ];
+            }
+        }
+
         $knownItems = DistributorItem::where('distributor_id', $distributor->id)
             ->get()
             ->keyBy(fn ($i) => mb_strtolower(trim(preg_replace('/\s+/', ' ', $i->item_name))));
@@ -530,7 +564,7 @@ class StockImportService
         file_put_contents($tempFile, $binaryContent);
 
         try {
-            $result = $this->parseAndImportSpreadsheet($tempFile, $fromEmail, null, $dryRun);
+            $result = $this->parseAndImportSpreadsheet($tempFile, $fromEmail, null, $dryRun, true);
 
             // Record to StockEmailLog
             StockEmailLog::create([

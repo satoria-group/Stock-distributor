@@ -438,4 +438,94 @@ class ProcessStockEmailsCommandTest extends TestCase
         $this->assertStringContainsString('Satoria IV Infusion D5 500ml Unmapped', $log->error_message);
         $this->assertContains('Satoria IV Infusion D5 500ml Unmapped', $log->details['unique_skipped_names'] ?? []);
     }
+
+    public function test_command_rejects_duplicate_distributor_and_date_with_data_already_exists(): void
+    {
+        $code = 'DIST_DUP_' . uniqid();
+        $dist = Distributor::create([
+            'distributor_code' => $code,
+            'name' => 'Distributor Duplikat Test',
+            'sender_email' => 'sender@duplikat.com',
+            'is_active' => true,
+        ]);
+
+        $item = DistributorItem::create([
+            'distributor_id' => $dist->id,
+            'item_name' => 'Cefotaxime 1g Satoria',
+            'satuan' => 'BTL',
+        ]);
+
+        // Pre-create existing stock entry for 2026-09-16
+        $existingEntry = StockEntry::create([
+            'distributor_id' => $dist->id,
+            'distributor_item_id' => $item->id,
+            'tanggal' => '2026-09-16',
+            'quantity' => 100,
+            'satuan' => 'BTL',
+            'expired_date' => '2027-12-20',
+            'batch_no' => 'ORIGINAL-BATCH-001',
+        ]);
+
+        // Prepare incoming email spreadsheet for the SAME distributor and SAME date, but different qty/batch
+        $spreadsheet = new Spreadsheet();
+        $sheet = $spreadsheet->getActiveSheet();
+        $sheet->setTitle('Template');
+        $headers = ['Tanggal', 'ID DISTRIBUTOR', 'Distributor Item Name', 'Quantity', 'Satuan', 'ED', 'Batch No'];
+        foreach ($headers as $colIdx => $h) {
+            $colLetter = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($colIdx + 1);
+            $sheet->setCellValue("{$colLetter}1", $h);
+        }
+        $sheet->setCellValue('A2', '16/09/2026');
+        $sheet->setCellValue('B2', $code);
+        $sheet->setCellValue('C2', 'Cefotaxime 1g Satoria');
+        $sheet->setCellValue('D2', 999);
+        $sheet->setCellValue('E2', 'BTL');
+        $sheet->setCellValue('F2', '20/12/2027');
+        $sheet->setCellValue('G2', 'NEW-ATTEMPT-BATCH');
+
+        $writer = new Xlsx($spreadsheet);
+        $tempFile = tempnam(sys_get_temp_dir(), 'test_dup_').'.xlsx';
+        $writer->save($tempFile);
+        $excelBytes = file_get_contents($tempFile);
+        @unlink($tempFile);
+
+        $mock = Mockery::mock(ImapService::class);
+        $mock->shouldReceive('isConfigured')->andReturn(true);
+        $mock->shouldReceive('getUnreadMessages')->andReturn([
+            [
+                'uid' => '9908',
+                'message_id' => '<duplicate@duplikat.com>',
+                'from_name' => 'Sender Duplikat',
+                'from_email' => 'sender@duplikat.com',
+                'subject' => 'Satoria Daily Stock - Duplicate Date Test',
+                'date' => now(),
+                'is_daily_stock' => true,
+                'has_attachments' => true,
+            ],
+        ]);
+        $mock->shouldReceive('getExcelAttachment')->with('9908')->andReturn([
+            'filename' => 'duplicate.xlsx',
+            'content' => $excelBytes,
+        ]);
+        $mock->shouldReceive('markAsRead')->with('9908')->once()->andReturn(true);
+
+        $this->app->instance(ImapService::class, $mock);
+
+        $this->artisan('stock:process-emails')
+            ->expectsOutputToContain('DITOLAK (data_already_exists)')
+            ->assertSuccessful();
+
+        // Ensure original database entry remains UNTOUCHED
+        $existingEntry->refresh();
+        $this->assertEquals(100.0, (float) $existingEntry->quantity);
+        $this->assertEquals('ORIGINAL-BATCH-001', $existingEntry->batch_no);
+
+        // Audit log created with data_already_exists
+        $log = StockEmailLog::where('email_uid', '9908')->first();
+        $this->assertNotNull($log);
+        $this->assertEquals('data_already_exists', $log->status);
+        $this->assertEquals(0, $log->imported_rows);
+        $this->assertStringContainsString('Data sudah ada', $log->error_message);
+        $this->assertStringContainsString('Silakan upload manual', $log->error_message);
+    }
 }

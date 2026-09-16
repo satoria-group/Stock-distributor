@@ -288,12 +288,11 @@
                                                 <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-amber-50 text-amber-700 text-[10px] font-bold border border-amber-200 shrink-0 shadow-2xs" title="{{ $log->error_message ?: ($log->imported_rows . ' baris masuk, ' . $log->skipped_rows . ' item belum ter-mapping') }}">
                                                     <span>⚠️ Auto: Sebagian ({{ $log->imported_rows }}/{{ $log->total_rows }})</span>
                                                 </span>
-                                                @if (! empty($log->details['unique_skipped_names']))
-                                                    <span class="text-[10px] text-amber-800 bg-amber-100/80 border border-amber-300/70 rounded px-1.5 py-0.5 font-mono truncate max-w-[180px]" title="Item belum di-mapping: {{ implode(', ', $log->details['unique_skipped_names']) }}">
-                                                        Unmapped: {{ implode(', ', array_slice($log->details['unique_skipped_names'], 0, 2)) }}{{ count($log->details['unique_skipped_names']) > 2 ? ' +' . (count($log->details['unique_skipped_names']) - 2) : '' }}
-                                                    </span>
-                                                @endif
                                             </div>
+                                        @elseif ($log->status === 'data_already_exists')
+                                            <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-amber-50 text-amber-800 text-[10px] font-bold border border-amber-300 shrink-0 shadow-2xs" title="{{ $log->error_message ?: 'Data sudah ada. Silakan upload manual.' }}">
+                                                <span>⚠️ Data Sudah Ada (Upload Manual)</span>
+                                            </span>
                                         @elseif ($log->status === 'inactive_distributor')
                                             <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-rose-50 text-rose-700 text-[10px] font-bold border border-rose-200 shrink-0 shadow-2xs" title="{{ $log->error_message }}">
                                                 <span>✕ Distributor Non-Aktif</span>
@@ -475,7 +474,7 @@
                 <!-- Banner Status Otomasi Email -->
                 @php $selectedLog = $emailLogs[$selectedEmail['uid']] ?? null; @endphp
                 @if ($selectedLog)
-                    <div class="px-6 py-3.5 border-b {{ $selectedLog->status === 'success' ? 'bg-emerald-50/80 border-emerald-200' : ($selectedLog->status === 'partial_unmapped' ? 'bg-amber-50/80 border-amber-200' : 'bg-rose-50/80 border-rose-200') }} shrink-0">
+                    <div class="px-6 py-3.5 border-b {{ $selectedLog->status === 'success' ? 'bg-emerald-50/80 border-emerald-200' : ($selectedLog->status === 'partial_unmapped' ? 'bg-amber-50/80 border-amber-200' : ($selectedLog->status === 'data_already_exists' ? 'bg-amber-50/90 border-amber-300' : 'bg-rose-50/80 border-rose-200')) }} shrink-0">
                         <div class="flex items-center justify-between text-xs">
                             <div class="flex items-center gap-2.5">
                                 @if ($selectedLog->status === 'success')
@@ -515,6 +514,24 @@
                                                         <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3"/></svg>
                                                     </button>
                                                 @endif
+                                            </div>
+                                        @endif
+                                    </div>
+                                @elseif ($selectedLog->status === 'data_already_exists')
+                                    <span class="w-6 h-6 rounded-full bg-amber-500 text-white flex items-center justify-center font-bold text-xs shrink-0">!</span>
+                                    <div class="flex-1">
+                                        <div class="font-bold text-amber-950 flex items-center gap-2">
+                                            <span>Ditolak: Data Sudah Ada</span>
+                                            <span class="px-2 py-0.5 rounded bg-amber-200 text-amber-900 text-[10px] font-bold uppercase tracking-wider">Silakan Upload Manual</span>
+                                        </div>
+                                        <div class="text-[11px] text-amber-800 mt-0.5">{{ $selectedLog->error_message }}</div>
+                                        @if ($selectedLog->distributor_id && $selectedLog->tanggal_snapshot)
+                                            <div class="mt-2.5">
+                                                <a href="{{ route('stock.upload', ['from_email_uid' => $selectedEmail['uid']]) }}"
+                                                   class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#0d6d5f] hover:bg-[#0b5c50] text-white text-xs font-bold shadow-2xs transition cursor-pointer">
+                                                    <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/></svg>
+                                                    <span>Buka Form Upload Manual dengan Lampiran Ini</span>
+                                                </a>
                                             </div>
                                         @endif
                                     </div>
@@ -711,6 +728,8 @@
                                                     <span class="px-2 py-0.5 rounded-md bg-amber-100 text-amber-800 text-[10px] font-bold">SEBAGIAN</span>
                                                 @elseif ($log->status === 'inactive_distributor')
                                                     <span class="px-2 py-0.5 rounded-md bg-rose-100 text-rose-800 text-[10px] font-bold">NON-AKTIF</span>
+                                                @elseif ($log->status === 'data_already_exists')
+                                                    <span class="px-2 py-0.5 rounded-md bg-amber-100 text-amber-900 border border-amber-300 text-[10px] font-bold">DATA SUDAH ADA</span>
                                                 @else
                                                     <span class="px-2 py-0.5 rounded-md bg-rose-100 text-rose-800 text-[10px] font-bold">{{ strtoupper($log->status) }}</span>
                                                 @endif
@@ -741,6 +760,21 @@
                                                                     class="inline-block text-[10px] text-emerald-700 hover:underline font-bold mt-0.5 cursor-pointer bg-transparent border-0 p-0 text-left">
                                                                 &rarr; Buka Form Mapping Item
                                                             </button>
+                                                        @endif
+                                                    </div>
+                                                @elseif ($log->status === 'data_already_exists')
+                                                    <div class="space-y-0.5">
+                                                        <div class="font-bold text-amber-900 text-[11px]">
+                                                            Data sudah ada. Silakan upload manual.
+                                                        </div>
+                                                        <div class="text-[10px] text-slate-500 truncate max-w-[240px]" title="{{ $log->error_message }}">
+                                                            {{ $log->error_message }}
+                                                        </div>
+                                                        @if ($log->email_uid && $log->email_uid !== 'unknown')
+                                                            <a href="{{ route('stock.upload', ['from_email_uid' => $log->email_uid]) }}"
+                                                               class="inline-block text-[10px] text-emerald-700 hover:underline font-bold mt-0.5 cursor-pointer">
+                                                                &rarr; Upload Manual ke Grid
+                                                            </a>
                                                         @endif
                                                     </div>
                                                 @else

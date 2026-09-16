@@ -227,7 +227,7 @@ class Index extends Component
             'total_processed' => $logsQuery->count(),
             'success_count' => (clone $logsQuery)->where('status', 'success')->count(),
             'partial_count' => (clone $logsQuery)->where('status', 'partial_unmapped')->count(),
-            'failed_count' => (clone $logsQuery)->whereIn('status', ['failed', 'invalid_template', 'unauthorized_sender'])->count(),
+            'failed_count' => (clone $logsQuery)->whereNotIn('status', ['success', 'partial_unmapped'])->count(),
             'last_run' => $logsQuery->latest()->first()?->created_at,
         ];
         $recentLogs = $this->showLogsModal ? \App\Models\StockEmailLog::latest()->take(50)->get() : collect();

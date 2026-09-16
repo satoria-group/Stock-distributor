@@ -171,7 +171,11 @@ class ProcessStockEmailsCommand extends Command
                 $summaryTable[] = [$uid, $fromEmail, "{$distCode} ({$tanggal})", $statusText, $imported, $skipped];
             } else {
                 $err = $result['error'] ?? 'Terjadi kesalahan tidak dikenal saat memproses Excel.';
-                $this->error("GAGAL ({$result['status']}): {$err}");
+                if ($result['status'] === 'data_already_exists') {
+                    $this->warn("DITOLAK (data_already_exists): {$err}");
+                } else {
+                    $this->error("GAGAL ({$result['status']}): {$err}");
+                }
 
                 // Tandai email sebagai sudah dibaca agar tidak terjadi infinite loop per menit
                 if (! $dryRun) {
@@ -179,7 +183,8 @@ class ProcessStockEmailsCommand extends Command
                 }
 
                 $failedCount++;
-                $summaryTable[] = [$uid, $fromEmail, $subject, "FAILED ({$result['status']})", 0, 0];
+                $label = $result['status'] === 'data_already_exists' ? 'REJECTED (Data Sudah Ada)' : "FAILED ({$result['status']})";
+                $summaryTable[] = [$uid, $fromEmail, $subject, $label, 0, 0];
             }
         }
 
