@@ -196,9 +196,9 @@
                         <p class="text-xs text-slate-500 mt-0.5">
                             Pergerakan posisi fisik harian (<span class="font-medium text-slate-700">{{ $chartTrend['unit_label'] }}</span>) selama {{ $chartTrend['period'] }} hari terakhir ({{ $chartTrend['start_date_formatted'] }} &ndash; {{ $chartTrend['end_date_formatted'] }})
                             @if ($selectedBranchId)
-                                &bull; <span class="text-emerald-700 font-medium">{{ $availableBranches->firstWhere('id', $selectedBranchId)?->name }}</span>
+                                <span class="block mt-0.5 text-emerald-700 font-medium">&bull; {{ $availableBranches->firstWhere('id', $selectedBranchId)?->name }}</span>
                             @elseif ($selectedGroup !== 'ALL')
-                                &bull; <span class="text-emerald-700 font-medium">{{ $selectedGroup === 'OTHER' ? 'Distributor Lainnya' : $selectedGroup }}</span>
+                                <span class="block mt-0.5 text-emerald-700 font-medium">&bull; {{ $selectedGroup === 'OTHER' ? 'Distributor Lainnya' : $selectedGroup }}</span>
                             @endif
                         </p>
                     </div>
@@ -671,6 +671,30 @@
                             </div>
                         </th>
 
+                        <!-- Delta vs Sebelumnya (Sortable) -->
+                        <th wire:click="setSort('delta')"
+                            class="text-right py-3.5 px-4 w-36 cursor-pointer select-none hover:bg-slate-100 transition group"
+                            title="Klik untuk mengurutkan berdasarkan Perubahan Delta">
+                            <div class="inline-flex items-center justify-end gap-1.5 w-full">
+                                <span class="{{ $sortBy === 'delta' ? 'font-bold' : '' }}" style="{{ $sortBy === 'delta' ? 'color: #0d6d5f;' : '' }}">Δ vs Kemarin</span>
+                                @if ($sortBy === 'delta')
+                                    @if ($sortDir === 'asc')
+                                        <svg width="13" height="13" style="width: 13px; height: 13px; min-width: 13px; flex-shrink: 0; color: #0d6d5f;" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 15l7-7 7 7"></path>
+                                        </svg>
+                                    @else
+                                        <svg width="13" height="13" style="width: 13px; height: 13px; min-width: 13px; flex-shrink: 0; color: #0d6d5f;" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M19 9l-7 7-7-7"></path>
+                                        </svg>
+                                    @endif
+                                @else
+                                    <svg width="13" height="13" style="width: 13px; height: 13px; min-width: 13px; flex-shrink: 0;" class="text-slate-300 group-hover:text-slate-500 transition" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4"></path>
+                                    </svg>
+                                @endif
+                            </div>
+                        </th>
+
                         <!-- Harga Satuan DPL -->
                         <th wire:click="setSort('unit_price')"
                             class="text-right py-3.5 px-3 w-28 cursor-pointer select-none hover:bg-slate-100 transition group"
@@ -702,30 +726,6 @@
                             <div class="inline-flex items-center justify-end gap-1.5 w-full">
                                 <span class="{{ $sortBy === 'total_value' ? 'font-bold' : '' }}" style="{{ $sortBy === 'total_value' ? 'color: #0d6d5f;' : '' }}">Total Nilai (Rp)</span>
                                 @if ($sortBy === 'total_value')
-                                    @if ($sortDir === 'asc')
-                                        <svg width="13" height="13" style="width: 13px; height: 13px; min-width: 13px; flex-shrink: 0; color: #0d6d5f;" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 15l7-7 7 7"></path>
-                                        </svg>
-                                    @else
-                                        <svg width="13" height="13" style="width: 13px; height: 13px; min-width: 13px; flex-shrink: 0; color: #0d6d5f;" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M19 9l-7 7-7-7"></path>
-                                        </svg>
-                                    @endif
-                                @else
-                                    <svg width="13" height="13" style="width: 13px; height: 13px; min-width: 13px; flex-shrink: 0;" class="text-slate-300 group-hover:text-slate-500 transition" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4"></path>
-                                    </svg>
-                                @endif
-                            </div>
-                        </th>
-
-                        <!-- Delta vs Sebelumnya (Sortable) -->
-                        <th wire:click="setSort('delta')"
-                            class="text-right py-3.5 px-4 w-36 cursor-pointer select-none hover:bg-slate-100 transition group"
-                            title="Klik untuk mengurutkan berdasarkan Perubahan Delta">
-                            <div class="inline-flex items-center justify-end gap-1.5 w-full">
-                                <span class="{{ $sortBy === 'delta' ? 'font-bold' : '' }}" style="{{ $sortBy === 'delta' ? 'color: #0d6d5f;' : '' }}">Δ vs Kemarin</span>
-                                @if ($sortBy === 'delta')
                                     @if ($sortDir === 'asc')
                                         <svg width="13" height="13" style="width: 13px; height: 13px; min-width: 13px; flex-shrink: 0; color: #0d6d5f;" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 15l7-7 7 7"></path>
@@ -801,20 +801,6 @@
                             <td class="py-3.5 px-3 text-right font-mono font-extrabold text-slate-900 text-sm">
                                 {{ number_format($r->entry->quantity, 0, ',', '.') }}
                             </td>
-                            <td class="py-3.5 px-3 text-right font-mono text-xs text-slate-600">
-                                @if ($r->unit_price > 0)
-                                    Rp {{ number_format($r->unit_price, 0, ',', '.') }}
-                                @else
-                                    <span class="text-slate-400 font-normal">—</span>
-                                @endif
-                            </td>
-                            <td class="py-3.5 px-3 text-right font-mono font-bold text-xs text-slate-900">
-                                @if ($r->total_value > 0)
-                                    Rp {{ number_format($r->total_value, 0, ',', '.') }}
-                                @else
-                                    <span class="text-slate-400 font-normal">—</span>
-                                @endif
-                            </td>
                             <td class="py-3.5 px-4 text-right font-mono">
                                 @if ($r->delta_pct === null)
                                     <span class="text-slate-400">—</span>
@@ -828,6 +814,20 @@
                                     </span>
                                 @else
                                     <span class="text-slate-400 font-medium">0%</span>
+                                @endif
+                            </td>
+                            <td class="py-3.5 px-3 text-right font-mono text-xs text-slate-600">
+                                @if ($r->unit_price > 0)
+                                    Rp {{ number_format($r->unit_price, 0, ',', '.') }}
+                                @else
+                                    <span class="text-slate-400 font-normal">—</span>
+                                @endif
+                            </td>
+                            <td class="py-3.5 px-3 text-right font-mono font-bold text-xs text-slate-900">
+                                @if ($r->total_value > 0)
+                                    Rp {{ number_format($r->total_value, 0, ',', '.') }}
+                                @else
+                                    <span class="text-slate-400 font-normal">—</span>
                                 @endif
                             </td>
                             <td class="py-3.5 px-4 font-mono text-[11px]">
@@ -2094,6 +2094,25 @@
         let chartFefoInstance = null;
         let chartComplianceInstance = null;
 
+        // Tanda tangan data terakhir per chart header.
+        //
+        // Chart trend/top/donut berada di dalam wire:ignore sehingga canvas-nya
+        // BERTAHAN saat Livewire mem-morph DOM, dan datanya tidak bergantung pada
+        // tab yang aktif. Tanpa penjaga ini, setiap ganti tab / ganti filter
+        // menghancurkan lalu membangun ulang ketiganya walau isinya sama persis —
+        // dan konstruksi Chart.js (setup canvas + animasi) adalah bagian mahalnya.
+        let lastTrendSig = null;
+        let lastTopSig = null;
+        let lastDonutSig = null;
+
+        function chartSig(data) {
+            try {
+                return JSON.stringify(data ?? null);
+            } catch (e) {
+                return null; // gagal serialisasi -> anggap berubah, bangun ulang
+            }
+        }
+
         function updateChartData(topData, donutData, trendData, fefoData, complianceData) {
             const canvasTop = document.getElementById('chart-top-products');
             const noDataTop = document.getElementById('no-data-top');
@@ -2103,7 +2122,19 @@
             const noDataTrend = document.getElementById('no-data-trend');
 
             // 1. Line Chart (Trend Stock On Hand)
-            if (canvasTrend && window.Chart) {
+            const trendSig = chartSig(trendData);
+            // Lewati bila data identik DAN instance masih terikat ke canvas yang
+            // sama (canvas bertahan karena wire:ignore).
+            const trendUnchanged = chartTrendInstance
+                && chartTrendInstance.canvas === canvasTrend
+                && trendSig !== null
+                && trendSig === lastTrendSig;
+
+            if (trendUnchanged) {
+                // tidak ada yang berubah — biarkan chart yang sudah ada
+            } else if (canvasTrend && window.Chart) {
+                lastTrendSig = trendSig;
+
                 if (chartTrendInstance) {
                     chartTrendInstance.destroy();
                     chartTrendInstance = null;
@@ -2202,7 +2233,16 @@
             }
 
             // 2. Horizontal Bar Chart (Top 10 Produk)
-            if (canvasTop && window.Chart) {
+            const topSig = chartSig(topData);
+            const topUnchanged = chartTopInstance
+                && chartTopInstance.canvas === canvasTop
+                && topSig !== null
+                && topSig === lastTopSig;
+
+            if (topUnchanged) {
+                // tidak ada yang berubah — biarkan chart yang sudah ada
+            } else if (canvasTop && window.Chart) {
+                lastTopSig = topSig;
                 if (chartTopInstance) {
                     chartTopInstance.destroy();
                     chartTopInstance = null;
@@ -2285,7 +2325,16 @@
             }
 
             // 3. Donut Chart (Distribusi Stok)
-            if (canvasDonut && window.Chart) {
+            const donutSig = chartSig(donutData);
+            const donutUnchanged = chartDonutInstance
+                && chartDonutInstance.canvas === canvasDonut
+                && donutSig !== null
+                && donutSig === lastDonutSig;
+
+            if (donutUnchanged) {
+                // tidak ada yang berubah — biarkan chart yang sudah ada
+            } else if (canvasDonut && window.Chart) {
+                lastDonutSig = donutSig;
                 if (chartDonutInstance) {
                     chartDonutInstance.destroy();
                     chartDonutInstance = null;

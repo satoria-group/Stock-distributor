@@ -1496,6 +1496,19 @@ class Dashboard extends Component
             });
         }
 
+        // Jumlah baris hasil filter dipakai badge pada tombol tab, yang tampil di
+        // SEMUA tab — jadi tetap harus dihitung walau tabelnya tidak dirender.
+        // (map() mempertahankan jumlah elemen, jadi nilainya identik dengan
+        // $mappedTableRows->count() seperti perhitungan sebelumnya.)
+        $totalRows = $filteredEntries->count();
+
+        // Tabel detail hanya dirender di dalam blok tab "stock" pada blade. Saat
+        // tab lain aktif, map + sort + paginate di bawah ini hasilnya tidak pernah
+        // ditampilkan — kosongkan sumbernya agar seluruh langkah itu jadi no-op.
+        if ($this->activeTab !== 'stock') {
+            $filteredEntries = collect();
+        }
+
         // Map data tabel dengan komparasi Delta
         $mappedTableRows = $filteredEntries->map(function (StockEntry $entry) use ($previousQuantities) {
             $key = "{$entry->distributor_id}-{$entry->distributor_item_id}";
@@ -1567,7 +1580,6 @@ class Dashboard extends Component
 
         // Paginate secara manual
         $page = $this->getPage();
-        $totalRows = $mappedTableRows->count();
         $slice = $mappedTableRows->slice(($page - 1) * $this->perPage, $this->perPage)->values();
 
         $stockTablePaginated = new LengthAwarePaginator(
@@ -1577,13 +1589,6 @@ class Dashboard extends Component
             $page,
             ['path' => '#', 'pageName' => 'page']
         );
-
-        // 9. Early Warnings
-        $expiryAlerts = $allCurrentEntries
-            ->filter(fn ($r) => $r->expired_date !== null && in_array($r->expiryStatus(), ['critical', 'warning', 'expired']))
-            ->sortBy(fn ($r) => $r->expired_date)
-            ->take(8)
-            ->values();
 
         // 10. Tab 2: Monitoring Kedaluwarsa (FEFO Watchlist)
         if ($this->activeTab === 'expiry') {
@@ -1780,7 +1785,29 @@ class Dashboard extends Component
         $chartTrend = $this->calculateStockTrend($scopedDistributorIds, $latestSnapshotDate);
 
         // 12b. Combo Chart: Tren Kepatuhan Laporan Harian (Daily Compliance Tracker)
-        $chartComplianceTrend = $this->calculateComplianceTrend($scopedDistributorIds, $targetComplianceDate);
+        //
+        // Canvas-nya (#chart-compliance-trend) hanya dirender di dalam blok tab
+        // "compliance", jadi menghitungnya saat tab lain aktif murni terbuang —
+        // termasuk satu query agregasi ke stock_entries.
+        if ($this->activeTab === 'compliance') {
+            $chartComplianceTrend = $this->calculateComplianceTrend($scopedDistributorIds, $targetComplianceDate);
+        } else {
+            $chartComplianceTrend = [
+                'labels' => [],
+                'full_dates' => [],
+                'submitted' => [],
+                'missing' => [],
+                'rates' => [],
+                'total_branches' => 0,
+                'avg_rate' => 0.0,
+                'period' => $this->complianceTrendPeriod,
+                'start_date' => '',
+                'end_date' => '',
+                'start_date_formatted' => '-',
+                'end_date_formatted' => '-',
+                'has_data' => false,
+            ];
+        }
 
         // 13. Tab 4: Stok Macet & Slow-Moving (Dead Stock Alert)
         if ($this->activeTab === 'stagnant') {
@@ -1852,7 +1879,6 @@ class Dashboard extends Component
             'fefoChartUnit' => $this->fefoChartUnit,
             'chartComplianceTrend' => $chartComplianceTrend,
             'complianceTrendPeriod' => $this->complianceTrendPeriod,
-            'expiryAlerts' => $expiryAlerts,
             'totalDisplayRows' => $totalRows,
             'activeTab' => $this->activeTab,
             'selectedGroup' => $this->selectedGroup,
