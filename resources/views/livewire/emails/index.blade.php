@@ -508,11 +508,12 @@
                                                     @endforeach
                                                 </div>
                                                 @if ($selectedLog->distributor_id)
-                                                    <a href="{{ route('distributor-items.index', ['distributorFilter' => $selectedLog->distributor_id, 'mappingFilter' => 'unmapped']) }}"
-                                                       class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold shadow-2xs transition">
-                                                        <span>Mapping Item Distributor Ini Sekarang</span>
+                                                    <button type="button" wire:click="openMappingForLog({{ $selectedLog->id }})" wire:loading.attr="disabled"
+                                                            class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold shadow-2xs transition cursor-pointer disabled:opacity-50">
+                                                        <span wire:loading.remove wire:target="openMappingForLog({{ $selectedLog->id }})">Mapping Item Distributor Ini Sekarang</span>
+                                                        <span wire:loading wire:target="openMappingForLog({{ $selectedLog->id }})">Menyiapkan Antrean Mapping...</span>
                                                         <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3"/></svg>
-                                                    </a>
+                                                    </button>
                                                 @endif
                                             </div>
                                         @endif
@@ -736,10 +737,10 @@
                                                             @endif
                                                         </div>
                                                         @if ($log->distributor_id)
-                                                            <a href="{{ route('distributor-items.index', ['distributorFilter' => $log->distributor_id, 'mappingFilter' => 'unmapped']) }}"
-                                                               class="inline-block text-[10px] text-emerald-700 hover:underline font-bold mt-0.5">
+                                                            <button type="button" wire:click="openMappingForLog({{ $log->id }})"
+                                                                    class="inline-block text-[10px] text-emerald-700 hover:underline font-bold mt-0.5 cursor-pointer bg-transparent border-0 p-0 text-left">
                                                                 &rarr; Buka Form Mapping Item
-                                                            </a>
+                                                            </button>
                                                         @endif
                                                     </div>
                                                 @else

@@ -2,13 +2,17 @@
 
 namespace Tests\Feature;
 
+use App\Models\Distributor;
+use App\Models\DistributorItem;
+use App\Models\StockEmailLog;
 use App\Models\User;
-use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Foundation\Testing\DatabaseTransactions;
 use Livewire\Livewire;
 use Tests\TestCase;
 
 class EmailReaderFeatureTest extends TestCase
 {
+    use DatabaseTransactions;
     public function test_guests_are_redirected_from_emails_to_login(): void
     {
         $response = $this->get(route('emails.index'));
@@ -73,6 +77,57 @@ class EmailReaderFeatureTest extends TestCase
             ->assertSet('onlyDailyStock', false)
             ->set('onlyDailyStock', true)
             ->assertSet('onlyDailyStock', true);
+    }
+
+    public function test_open_mapping_for_log_restores_deleted_item_and_redirects(): void
+    {
+        $user = User::firstOrCreate(
+            ['email' => 'admin@satoriagroup.co.id'],
+            ['name' => 'Admin Satoria', 'password' => bcrypt('password')]
+        );
+        $user->syncRoles([User::ROLE_ADMIN]);
+
+        $code = 'DIST_RESTORE_' . uniqid();
+        $dist = Distributor::create([
+            'distributor_code' => $code,
+            'name' => 'Distributor Restore Test ' . $code,
+            'is_active' => true,
+        ]);
+
+        $item = DistributorItem::create([
+            'distributor_id' => $dist->id,
+            'item_name' => 'Item Yang Pernah Dihapus',
+            'satuan' => 'PCS',
+        ]);
+
+        // Pengguna sengaja menghapus item tersebut (soft-delete)
+        $item->delete();
+        $this->assertTrue($item->fresh()->trashed());
+
+        $log = StockEmailLog::create([
+            'email_uid' => '8888',
+            'from_email' => 'sender@dist.com',
+            'subject' => 'Satoria Daily Stock',
+            'distributor_id' => $dist->id,
+            'distributor_code' => $code,
+            'status' => 'partial_unmapped',
+            'imported_rows' => 0,
+            'skipped_rows' => 1,
+            'details' => [
+                'unique_skipped_names' => ['Item Yang Pernah Dihapus'],
+            ],
+        ]);
+
+        Livewire::actingAs($user)
+            ->test(\App\Livewire\Emails\Index::class)
+            ->call('openMappingForLog', $log->id)
+            ->assertRedirect(route('distributor-items.index', [
+                'distributorFilter' => $dist->id,
+                'mappingFilter' => 'unmapped',
+            ]));
+
+        // Item berhasil di-restore dan tidak berstatus trashed lagi
+        $this->assertFalse($item->fresh()->trashed());
     }
 }
 
