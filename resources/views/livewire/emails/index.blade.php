@@ -222,11 +222,11 @@
                 <thead class="bg-slate-50 text-slate-600 font-bold uppercase text-[11px] tracking-wider border-b border-slate-200/80">
                     <tr>
                         <th class="py-3.5 px-4 w-20 text-center">Status</th>
-                        <th class="py-3.5 px-4 w-60">Pengirim</th>
+                        <th class="py-3.5 px-4 w-52">Pengirim</th>
                         <th class="py-3.5 px-4">Subjek Pesan</th>
-                        <th class="py-3.5 px-4 w-44">Lampiran</th>
-                        <th class="py-3.5 px-4 w-44 text-right">Tanggal Diterima</th>
-                        <th class="py-3.5 px-4 w-28 text-center">Aksi</th>
+                        <th class="py-3.5 px-4 w-32">Lampiran</th>
+                        <th class="py-3.5 px-4 w-36 text-right">Tanggal Diterima</th>
+                        <th class="py-3.5 px-4 w-24 text-center">Aksi</th>
                     </tr>
                 </thead>
                 <tbody class="divide-y divide-slate-100">
@@ -265,52 +265,57 @@
 
                             <!-- Subjek -->
                             <td class="py-3.5 px-4">
-                                <div class="flex items-center gap-2">
-                                    <div class="font-semibold text-slate-900 line-clamp-1 group-hover:text-[#0d6d5f] transition-colors">
+                                <div class="space-y-1.5 min-w-0">
+                                    <div class="font-semibold text-slate-900 truncate group-hover:text-[#0d6d5f] transition-colors" title="{{ $email['subject'] }}">
                                         {{ $email['subject'] }}
                                     </div>
-                                    @if (!empty($email['is_daily_stock']))
-                                        <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-emerald-100 text-emerald-800 text-[10px] font-bold border border-emerald-200 shrink-0 shadow-2xs" title="Sesuai pola Satoria Daily Stock">
-                                            <span class="w-1.5 h-1.5 rounded-full bg-emerald-600 animate-pulse"></span>
-                                            <span>Daily Stock</span>
-                                        </span>
-                                    @endif
 
-                                    @if (isset($emailLogs[$email['uid']]))
-                                        @php $log = $emailLogs[$email['uid']]; @endphp
-                                        @if ($log->status === 'success')
-                                            <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-700 text-[10px] font-bold border border-emerald-200 shrink-0 shadow-2xs" title="Otomatis terproses: {{ $log->imported_rows }} baris masuk database">
-                                                <svg width="10" height="10" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7"/></svg>
-                                                <span>Auto-Imported ({{ $log->imported_rows }})</span>
-                                            </span>
-                                        @elseif ($log->status === 'partial_unmapped')
-                                            <div class="inline-flex items-center gap-1.5 flex-wrap">
-                                                <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-amber-50 text-amber-700 text-[10px] font-bold border border-amber-200 shrink-0 shadow-2xs" title="{{ $log->error_message ?: ($log->imported_rows . ' baris masuk, ' . $log->skipped_rows . ' item belum ter-mapping') }}">
-                                                    <span>⚠️ Auto: Sebagian ({{ $log->imported_rows }}/{{ $log->total_rows }})</span>
-                                                </span>
-                                            </div>
-                                        @elseif ($log->status === 'data_already_exists')
-                                            <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-amber-50 text-amber-800 text-[10px] font-bold border border-amber-300 shrink-0 shadow-2xs" title="{{ $log->error_message ?: 'Data sudah ada. Silakan upload manual.' }}">
-                                                <span>⚠️ Data Sudah Ada (Upload Manual)</span>
-                                            </span>
-                                        @elseif ($log->status === 'inactive_distributor')
-                                            <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-rose-50 text-rose-700 text-[10px] font-bold border border-rose-200 shrink-0 shadow-2xs" title="{{ $log->error_message }}">
-                                                <span>✕ Distributor Non-Aktif</span>
-                                            </span>
-                                        @elseif ($log->status === 'invalid_template')
-                                            <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-rose-50 text-rose-700 text-[10px] font-bold border border-rose-200 shrink-0 shadow-2xs" title="{{ $log->error_message }}">
-                                                <span>✕ Template Tidak Valid</span>
-                                            </span>
-                                        @elseif ($log->status === 'unauthorized_sender')
-                                            <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-rose-50 text-rose-700 text-[10px] font-bold border border-rose-200 shrink-0 shadow-2xs" title="{{ $log->error_message }}">
-                                                <span>✕ Pengirim Tidak Dikenal</span>
-                                            </span>
-                                        @elseif ($log->status === 'failed')
-                                            <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-rose-50 text-rose-700 text-[10px] font-bold border border-rose-200 shrink-0 shadow-2xs" title="{{ $log->error_message }}">
-                                                <span>✕ Gagal Proses</span>
+                                    <div class="flex items-center gap-1.5 flex-wrap">
+                                        @if (!empty($email['is_daily_stock']))
+                                            <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-emerald-100 text-emerald-800 text-[10px] font-bold border border-emerald-200 shrink-0 shadow-2xs whitespace-nowrap" title="Sesuai pola Satoria Daily Stock">
+                                                <span class="w-1.5 h-1.5 rounded-full bg-emerald-600 animate-pulse"></span>
+                                                <span>Daily Stock</span>
                                             </span>
                                         @endif
-                                    @endif
+
+                                        @if (isset($emailLogs[$email['uid']]))
+                                            @php $log = $emailLogs[$email['uid']]; @endphp
+                                            @if ($log->status === 'success')
+                                                <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-700 text-[10px] font-bold border border-emerald-200 shrink-0 shadow-2xs whitespace-nowrap" title="Otomatis terproses: {{ $log->imported_rows }} baris masuk database">
+                                                    <svg width="10" height="10" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7"/></svg>
+                                                    <span>Auto-Imported ({{ $log->imported_rows }})</span>
+                                                </span>
+                                            @elseif ($log->status === 'partial_unmapped')
+                                                <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-amber-50 text-amber-800 text-[10px] font-bold border border-amber-300 shrink-0 shadow-2xs whitespace-nowrap" title="{{ $log->error_message ?: ($log->imported_rows . ' baris masuk, ' . $log->skipped_rows . ' item belum ter-mapping') }}">
+                                                    <span>⚠️ Auto: Sebagian ({{ $log->imported_rows }}/{{ $log->total_rows }})</span>
+                                                </span>
+                                            @elseif ($log->status === 'all_unmapped')
+                                                <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-amber-50 text-amber-800 text-[10px] font-bold border border-amber-300 shrink-0 shadow-2xs whitespace-nowrap" title="{{ $log->error_message ?: 'Seluruh produk belum ter-mapping ke NetSuite.' }}">
+                                                    <span>⚠️ Semua Belum Ter-mapping</span>
+                                                </span>
+                                            @elseif ($log->status === 'data_already_exists')
+                                                <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-rose-50 text-rose-700 text-[10px] font-bold border border-rose-200 shrink-0 shadow-2xs whitespace-nowrap" title="{{ $log->error_message ?: 'Data sudah ada. Silakan upload manual.' }}">
+                                                    <span>✕ Data Sudah Ada</span>
+                                                </span>
+                                            @elseif ($log->status === 'inactive_distributor')
+                                                <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-rose-50 text-rose-700 text-[10px] font-bold border border-rose-200 shrink-0 shadow-2xs whitespace-nowrap" title="{{ $log->error_message }}">
+                                                    <span>✕ Distributor Non-Aktif</span>
+                                                </span>
+                                            @elseif ($log->status === 'invalid_template')
+                                                <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-rose-50 text-rose-700 text-[10px] font-bold border border-rose-200 shrink-0 shadow-2xs whitespace-nowrap" title="{{ $log->error_message }}">
+                                                    <span>✕ Template Tidak Valid</span>
+                                                </span>
+                                            @elseif ($log->status === 'unauthorized_sender')
+                                                <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-rose-50 text-rose-700 text-[10px] font-bold border border-rose-200 shrink-0 shadow-2xs whitespace-nowrap" title="{{ $log->error_message }}">
+                                                    <span>✕ Pengirim Tidak Dikenal</span>
+                                                </span>
+                                            @elseif ($log->status === 'failed')
+                                                <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-rose-50 text-rose-700 text-[10px] font-bold border border-rose-200 shrink-0 shadow-2xs whitespace-nowrap" title="{{ $log->error_message }}">
+                                                    <span>✕ Gagal Proses</span>
+                                                </span>
+                                            @endif
+                                        @endif
+                                    </div>
                                 </div>
                             </td>
 
@@ -474,7 +479,7 @@
                 <!-- Banner Status Otomasi Email -->
                 @php $selectedLog = $emailLogs[$selectedEmail['uid']] ?? null; @endphp
                 @if ($selectedLog)
-                    <div class="px-6 py-3.5 border-b {{ $selectedLog->status === 'success' ? 'bg-emerald-50/80 border-emerald-200' : ($selectedLog->status === 'partial_unmapped' ? 'bg-amber-50/80 border-amber-200' : ($selectedLog->status === 'data_already_exists' ? 'bg-amber-50/90 border-amber-300' : 'bg-rose-50/80 border-rose-200')) }} shrink-0">
+                    <div class="px-6 py-3.5 border-b {{ $selectedLog->status === 'success' ? 'bg-emerald-50/80 border-emerald-200' : ($selectedLog->status === 'partial_unmapped' ? 'bg-amber-50/80 border-amber-200' : 'bg-rose-50/80 border-rose-200') }} shrink-0">
                         <div class="flex items-center justify-between text-xs">
                             <div class="flex items-center gap-2.5">
                                 @if ($selectedLog->status === 'success')
@@ -509,7 +514,37 @@
                                                 @if ($selectedLog->distributor_id)
                                                     <button type="button" wire:click="openMappingForLog({{ $selectedLog->id }})" wire:loading.attr="disabled"
                                                             class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold shadow-2xs transition cursor-pointer disabled:opacity-50">
-                                                        <span wire:loading.remove wire:target="openMappingForLog({{ $selectedLog->id }})">Mapping Item Distributor Ini Sekarang</span>
+                                                        <span wire:loading.remove wire:target="openMappingForLog({{ $selectedLog->id }})">Ajukan ke Antrean Mapping ({{ count($selectedLog->details['unique_skipped_names']) }} Item)</span>
+                                                        <span wire:loading wire:target="openMappingForLog({{ $selectedLog->id }})">Menyiapkan Antrean Mapping...</span>
+                                                        <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3"/></svg>
+                                                    </button>
+                                                @endif
+                                            </div>
+                                        @endif
+                                    </div>
+                                @elseif ($selectedLog->status === 'all_unmapped')
+                                    <span class="w-6 h-6 rounded-full bg-amber-600 text-white flex items-center justify-center font-bold text-xs shrink-0">!</span>
+                                    <div class="flex-1">
+                                        <div class="font-bold text-amber-950">Seluruh Produk Belum Ter-mapping ke NetSuite</div>
+                                        <div class="text-[11px] text-amber-800">
+                                            Tidak ada stok yang dapat disimpan (0 baris). Seluruh <b>{{ $selectedLog->skipped_rows }}</b> produk pada file ini harus dipetakan terlebih dahulu oleh Admin.
+                                        </div>
+                                        @if (! empty($selectedLog->details['unique_skipped_names']))
+                                            <div class="mt-2 pt-2 border-t border-amber-200/70">
+                                                <div class="text-[11px] font-bold text-amber-900 mb-1 flex items-center gap-1.5">
+                                                    <span>Daftar Item Belum Ter-mapping ({{ count($selectedLog->details['unique_skipped_names']) }} Item):</span>
+                                                </div>
+                                                <div class="flex flex-wrap gap-1.5 mb-2.5">
+                                                    @foreach ($selectedLog->details['unique_skipped_names'] as $unmappedName)
+                                                        <span class="inline-flex items-center px-2 py-0.5 rounded-md bg-amber-100 text-amber-900 border border-amber-300 font-mono text-[10px] font-medium shadow-2xs">
+                                                            {{ $unmappedName }}
+                                                        </span>
+                                                    @endforeach
+                                                </div>
+                                                @if ($selectedLog->distributor_id)
+                                                    <button type="button" wire:click="openMappingForLog({{ $selectedLog->id }})" wire:loading.attr="disabled"
+                                                            class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold shadow-2xs transition cursor-pointer disabled:opacity-50">
+                                                        <span wire:loading.remove wire:target="openMappingForLog({{ $selectedLog->id }})">Petakan di Antrean Mapping ({{ count($selectedLog->details['unique_skipped_names']) }} Item)</span>
                                                         <span wire:loading wire:target="openMappingForLog({{ $selectedLog->id }})">Menyiapkan Antrean Mapping...</span>
                                                         <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3"/></svg>
                                                     </button>
@@ -518,13 +553,13 @@
                                         @endif
                                     </div>
                                 @elseif ($selectedLog->status === 'data_already_exists')
-                                    <span class="w-6 h-6 rounded-full bg-amber-500 text-white flex items-center justify-center font-bold text-xs shrink-0">!</span>
+                                    <span class="w-6 h-6 rounded-full bg-rose-600 text-white flex items-center justify-center font-bold text-xs shrink-0">✕</span>
                                     <div class="flex-1">
-                                        <div class="font-bold text-amber-950 flex items-center gap-2">
-                                            <span>Ditolak: Data Sudah Ada</span>
-                                            <span class="px-2 py-0.5 rounded bg-amber-200 text-amber-900 text-[10px] font-bold uppercase tracking-wider">Silakan Upload Manual</span>
+                                        <div class="font-bold text-rose-950 flex items-center gap-2">
+                                            <span>Gagal Validasi: Data Sudah Ada</span>
+                                            <span class="px-2 py-0.5 rounded bg-rose-100 text-rose-800 border border-rose-200 text-[10px] font-bold uppercase tracking-wider">Silakan Upload Manual</span>
                                         </div>
-                                        <div class="text-[11px] text-amber-800 mt-0.5">{{ $selectedLog->error_message }}</div>
+                                        <div class="text-[11px] text-rose-700 mt-0.5">{{ $selectedLog->error_message }}</div>
                                         @if ($selectedLog->distributor_id && $selectedLog->tanggal_snapshot)
                                             <div class="mt-2.5">
                                                 <a href="{{ route('stock.upload', ['from_email_uid' => $selectedEmail['uid']]) }}"
@@ -729,7 +764,7 @@
                                                 @elseif ($log->status === 'inactive_distributor')
                                                     <span class="px-2 py-0.5 rounded-md bg-rose-100 text-rose-800 text-[10px] font-bold">NON-AKTIF</span>
                                                 @elseif ($log->status === 'data_already_exists')
-                                                    <span class="px-2 py-0.5 rounded-md bg-amber-100 text-amber-900 border border-amber-300 text-[10px] font-bold">DATA SUDAH ADA</span>
+                                                    <span class="px-2 py-0.5 rounded-md bg-rose-100 text-rose-800 text-[10px] font-bold">DATA SUDAH ADA</span>
                                                 @else
                                                     <span class="px-2 py-0.5 rounded-md bg-rose-100 text-rose-800 text-[10px] font-bold">{{ strtoupper($log->status) }}</span>
                                                 @endif
@@ -764,8 +799,8 @@
                                                     </div>
                                                 @elseif ($log->status === 'data_already_exists')
                                                     <div class="space-y-0.5">
-                                                        <div class="font-bold text-amber-900 text-[11px]">
-                                                            Data sudah ada. Silakan upload manual.
+                                                        <div class="font-bold text-rose-900 text-[11px]">
+                                                            Gagal Validasi: Data sudah ada. Silakan upload manual.
                                                         </div>
                                                         <div class="text-[10px] text-slate-500 truncate max-w-[240px]" title="{{ $log->error_message }}">
                                                             {{ $log->error_message }}

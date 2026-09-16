@@ -37,7 +37,8 @@ class StockUploadRequestMappingTest extends TestCase
                 ],
             ])
             ->call('submitRequestMapping')
-            ->assertDispatched('rows-loaded')
+            ->assertNotDispatched('rows-loaded')
+            ->assertCount('rows', 0)
             ->assertSet('skippedRowsData', [])
             ->assertSet('skippedItems', [])
             ->assertSet('showRequestModal', false);
@@ -75,7 +76,8 @@ class StockUploadRequestMappingTest extends TestCase
             ->set('requestItemName', $uniqueItemName)
             ->set('requestSatuan', 'BTL')
             ->call('submitSingleRequest')
-            ->assertDispatched('rows-loaded')
+            ->assertNotDispatched('rows-loaded')
+            ->assertCount('rows', 0)
             ->assertSet('showSingleRequestModal', false);
 
         $createdItem = DistributorItem::where('distributor_id', $distributor->id)
@@ -88,5 +90,51 @@ class StockUploadRequestMappingTest extends TestCase
 
         // Cleanup
         $createdItem->forceDelete();
+    }
+
+    public function test_unmapped_items_cannot_be_saved_to_stock_entries(): void
+    {
+        $user = User::where('email', 'logistik@satoriagroup.co.id')->first();
+        if (! $user) {
+            $user = User::factory()->create();
+            $user->syncRoles([User::ROLE_LOGISTIK]);
+        }
+
+        $distributor = Distributor::first();
+        $this->assertNotNull($distributor);
+
+        $unmappedItem = DistributorItem::create([
+            'distributor_id' => $distributor->id,
+            'item_name' => 'UNMAPPED TEST FOR SAVE '.uniqid(),
+            'satuan' => 'BTL',
+            'netsuite_item_id' => null,
+        ]);
+
+        $testDate = '2026-09-16';
+
+        Livewire::actingAs($user)
+            ->test(Upload::class)
+            ->set('distributorId', $distributor->id)
+            ->set('tanggal', $testDate)
+            ->call('saveRows', [
+                [
+                    'distributor_item_id' => $unmappedItem->id,
+                    'item_name' => $unmappedItem->item_name,
+                    'satuan' => 'BTL',
+                    'quantity' => 100,
+                    'expired_date' => '2027-12-31',
+                    'batch_no' => 'B-UNMAPPED-99',
+                ],
+            ]);
+
+        // Verify that StockEntry was NOT created because item is unmapped
+        $entry = \App\Models\StockEntry::where('distributor_id', $distributor->id)
+            ->where('distributor_item_id', $unmappedItem->id)
+            ->where('tanggal', $testDate)
+            ->first();
+
+        $this->assertNull($entry, 'Unmapped item must NOT be saved to stock_entries');
+
+        $unmappedItem->forceDelete();
     }
 }

@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Models\Distributor;
 use App\Models\DistributorItem;
+use App\Models\NetsuiteItem;
 use App\Models\StockEmailLog;
 use App\Models\StockEntry;
 use App\Services\ImapService;
@@ -66,10 +67,16 @@ class ProcessStockEmailsCommandTest extends TestCase
             'is_active' => true,
         ]);
 
+        $ns = NetsuiteItem::create([
+            'netsuite_id' => 'NS-CMD-OK',
+            'netsuite_name' => 'Paracetamol 500mg',
+        ]);
+
         $item = DistributorItem::create([
             'distributor_id' => $dist->id,
             'item_name' => 'Paracetamol 500mg Satoria',
             'satuan' => 'BTL',
+            'netsuite_item_id' => $ns->id,
         ]);
 
         $excelBytes = $this->createSampleExcel('DIST_CMD_OK', '14/09/2026', 'Paracetamol 500mg Satoria');
@@ -362,11 +369,17 @@ class ProcessStockEmailsCommandTest extends TestCase
             'is_active' => true,
         ]);
 
+        $nsKnown = NetsuiteItem::create([
+            'netsuite_id' => 'NS-AMOX-500',
+            'netsuite_name' => 'Amoxicillin 500mg',
+        ]);
+
         // Create 1 known item, leave 1 unknown item
         $knownItem = DistributorItem::create([
             'distributor_id' => $dist->id,
             'item_name' => 'Amoxicillin 500mg',
             'satuan' => 'BTL',
+            'netsuite_item_id' => $nsKnown->id,
         ]);
 
         // Create spreadsheet with 2 items: 1 mapped, 1 unmapped
@@ -527,5 +540,169 @@ class ProcessStockEmailsCommandTest extends TestCase
         $this->assertEquals(0, $log->imported_rows);
         $this->assertStringContainsString('Data sudah ada', $log->error_message);
         $this->assertStringContainsString('Silakan upload manual', $log->error_message);
+    }
+
+    public function test_command_merges_multiple_batches_for_same_item_on_email_import(): void
+    {
+        $code = 'DIST_MRG_' . uniqid();
+        $dist = Distributor::create([
+            'distributor_code' => $code,
+            'name' => 'Distributor Merge Test',
+            'sender_email' => 'merge@distributor.com',
+            'is_active' => true,
+        ]);
+
+        $ns = NetsuiteItem::create([
+            'netsuite_id' => 'NS_MRG_' . uniqid(),
+            'netsuite_name' => 'Produk Gabungan Test',
+        ]);
+
+        $item = DistributorItem::create([
+            'distributor_id' => $dist->id,
+            'item_name' => 'Produk Gabungan Test',
+            'satuan' => 'BTL',
+            'netsuite_item_id' => $ns->id,
+        ]);
+
+        // Excel with 2 rows for the SAME product, different batches and EDs
+        $spreadsheet = new Spreadsheet();
+        $sheet = $spreadsheet->getActiveSheet();
+        $sheet->setTitle('Template');
+        $headers = ['Tanggal', 'ID DISTRIBUTOR', 'Distributor Item Name', 'Quantity', 'Satuan', 'ED', 'Batch No'];
+        foreach ($headers as $colIdx => $h) {
+            $colLetter = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($colIdx + 1);
+            $sheet->setCellValue("{$colLetter}1", $h);
+        }
+
+        // Row 1: Batch 1 with 50 Qty, ED 2028-12-31
+        $sheet->setCellValue('A2', '16/09/2026');
+        $sheet->setCellValue('B2', $code);
+        $sheet->setCellValue('C2', 'Produk Gabungan Test');
+        $sheet->setCellValue('D2', 50);
+        $sheet->setCellValue('E2', 'BTL');
+        $sheet->setCellValue('F2', '31/12/2028');
+        $sheet->setCellValue('G2', 'BATCH-001');
+
+        // Row 2: Batch 2 with 30 Qty, ED 2027-06-30 (earlier)
+        $sheet->setCellValue('A3', '16/09/2026');
+        $sheet->setCellValue('B3', $code);
+        $sheet->setCellValue('C3', 'Produk Gabungan Test');
+        $sheet->setCellValue('D3', 30);
+        $sheet->setCellValue('E3', 'BTL');
+        $sheet->setCellValue('F3', '30/06/2027');
+        $sheet->setCellValue('G3', 'BATCH-002');
+
+        $writer = new Xlsx($spreadsheet);
+        $tempFile = tempnam(sys_get_temp_dir(), 'test_mrg_').'.xlsx';
+        $writer->save($tempFile);
+        $excelBytes = file_get_contents($tempFile);
+        @unlink($tempFile);
+
+        $mock = Mockery::mock(ImapService::class);
+        $mock->shouldReceive('isConfigured')->andReturn(true);
+        $mock->shouldReceive('getUnreadMessages')->andReturn([
+            [
+                'uid' => '9909',
+                'message_id' => '<merge@test.com>',
+                'from_name' => 'Merge Sender',
+                'from_email' => 'merge@distributor.com',
+                'subject' => 'Satoria Daily Stock - Multi Batch Test',
+                'date' => now(),
+                'is_daily_stock' => true,
+                'has_attachments' => true,
+            ],
+        ]);
+        $mock->shouldReceive('getExcelAttachment')->with('9909')->andReturn([
+            'filename' => 'multi_batch.xlsx',
+            'content' => $excelBytes,
+        ]);
+        $mock->shouldReceive('markAsRead')->with('9909')->once()->andReturn(true);
+
+        $this->app->instance(ImapService::class, $mock);
+
+        $this->artisan('stock:process-emails')
+            ->expectsOutputToContain("BERHASIL: Diimpor 1 baris untuk {$code}")
+            ->assertSuccessful();
+
+        // Verify single StockEntry with SUMMED quantity (50 + 30 = 80), MERGED batches, and EARLIEST ED (2027-06-30)
+        $entry = StockEntry::where('distributor_id', $dist->id)
+            ->where('tanggal', '2026-09-16')
+            ->where('distributor_item_id', $item->id)
+            ->first();
+
+        $this->assertNotNull($entry);
+        $this->assertEquals(80.0, (float) $entry->quantity);
+        $this->assertStringContainsString('BATCH-001', $entry->batch_no);
+        $this->assertStringContainsString('BATCH-002', $entry->batch_no);
+        $this->assertEquals('2027-06-30', $entry->expired_date->toDateString());
+    }
+
+    public function test_command_rejects_email_when_all_items_are_unmapped(): void
+    {
+        $code = 'DIST_ALL_UNM_' . uniqid();
+        $dist = Distributor::create([
+            'distributor_code' => $code,
+            'name' => 'Distributor All Unmapped Test',
+            'sender_email' => 'unmapped@distributor.com',
+            'is_active' => true,
+        ]);
+
+        $spreadsheet = new Spreadsheet();
+        $sheet = $spreadsheet->getActiveSheet();
+        $sheet->setTitle('Template');
+        $headers = ['Tanggal', 'ID DISTRIBUTOR', 'Distributor Item Name', 'Quantity', 'Satuan', 'ED', 'Batch No'];
+        foreach ($headers as $colIdx => $h) {
+            $colLetter = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($colIdx + 1);
+            $sheet->setCellValue("{$colLetter}1", $h);
+        }
+
+        $sheet->setCellValue('A2', '16/09/2026');
+        $sheet->setCellValue('B2', $code);
+        $sheet->setCellValue('C2', 'PRODUK BARU TIDAK DIKENAL 1');
+        $sheet->setCellValue('D2', 100);
+        $sheet->setCellValue('E2', 'BTL');
+        $sheet->setCellValue('F2', '31/12/2028');
+        $sheet->setCellValue('G2', 'BATCH-NEW-01');
+
+        $writer = new Xlsx($spreadsheet);
+        $tempFile = tempnam(sys_get_temp_dir(), 'test_all_unm_').'.xlsx';
+        $writer->save($tempFile);
+        $excelBytes = file_get_contents($tempFile);
+        @unlink($tempFile);
+
+        $mock = Mockery::mock(ImapService::class);
+        $mock->shouldReceive('isConfigured')->andReturn(true);
+        $mock->shouldReceive('getUnreadMessages')->andReturn([
+            [
+                'uid' => '9910',
+                'message_id' => '<allunmapped@test.com>',
+                'from_name' => 'Unmapped Sender',
+                'from_email' => 'unmapped@distributor.com',
+                'subject' => 'Satoria Daily Stock - All Unmapped Test',
+                'date' => now(),
+                'is_daily_stock' => true,
+                'has_attachments' => true,
+            ],
+        ]);
+        $mock->shouldReceive('getExcelAttachment')->with('9910')->andReturn([
+            'filename' => 'all_unmapped.xlsx',
+            'content' => $excelBytes,
+        ]);
+        $mock->shouldReceive('markAsRead')->with('9910')->once()->andReturn(true);
+
+        $this->app->instance(ImapService::class, $mock);
+
+        $this->artisan('stock:process-emails')
+            ->expectsOutputToContain('DITOLAK (all_unmapped)')
+            ->assertSuccessful();
+
+        $log = StockEmailLog::where('email_uid', '9910')->first();
+        $this->assertNotNull($log);
+        $this->assertEquals('all_unmapped', $log->status);
+        $this->assertEquals(0, $log->imported_rows);
+
+        // Ensure 0 entries in stock_entries
+        $count = StockEntry::where('distributor_id', $dist->id)->count();
+        $this->assertEquals(0, $count);
     }
 }

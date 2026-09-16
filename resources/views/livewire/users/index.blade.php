@@ -75,11 +75,33 @@
                     <input type="email" wire:model="email" class="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-[#0d6d5f]/25 focus:border-[#0d6d5f]">
                     @error('email') <p class="text-xs text-rose-600 mt-1">{{ $message }}</p> @enderror
                 </div>
-                <div>
+                <div x-data="{ showPass: false, capsLock: false }">
                     <label class="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1.5">
                         Password {{ $editingId ? '(kosongkan jika tidak diubah)' : '' }}
                     </label>
-                    <input type="password" wire:model="password" class="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-[#0d6d5f]/25 focus:border-[#0d6d5f]">
+                    <div class="relative">
+                        <input :type="showPass ? 'text' : 'password'" wire:model="password"
+                               @keydown="capsLock = $event.getModifierState && $event.getModifierState('CapsLock')"
+                               @keyup="capsLock = $event.getModifierState && $event.getModifierState('CapsLock')"
+                               class="w-full rounded-xl border border-slate-200 pl-3.5 pr-10 py-2.5 text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-[#0d6d5f]/25 focus:border-[#0d6d5f]">
+                        <button type="button" @click="showPass = !showPass"
+                                class="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-400 hover:text-slate-600 transition cursor-pointer"
+                                title="Lihat/Sembunyikan Password">
+                            <svg x-show="!showPass" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/>
+                            </svg>
+                            <svg x-show="showPass" x-cloak class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l18 18"/>
+                            </svg>
+                        </button>
+                    </div>
+                    <div x-show="capsLock" x-cloak class="mt-1.5 flex items-center gap-1.5 text-amber-700 text-[11px] font-semibold bg-amber-50 border border-amber-200/90 rounded-xl px-3 py-1">
+                        <svg class="w-3.5 h-3.5 shrink-0 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+                        </svg>
+                        <span>Peringatan: Caps Lock aktif</span>
+                    </div>
                     @error('password') <p class="text-xs text-rose-600 mt-1">{{ $message }}</p> @enderror
                 </div>
                 <div>

@@ -62,10 +62,16 @@ class StockUploadFromEmailTest extends TestCase
             'is_active' => true,
         ]);
 
+        $nsItem = \App\Models\NetsuiteItem::create([
+            'netsuite_id' => 'NS_' . uniqid(),
+            'netsuite_name' => 'Item Uji Coba NetSuite',
+        ]);
+
         $distItem = DistributorItem::create([
             'distributor_id' => $dist->id,
             'item_name' => 'Item Uji Coba Email',
             'satuan' => 'BTL',
+            'netsuite_item_id' => $nsItem->id,
         ]);
 
         $excelBytes = $this->createSampleExcelContent($code);

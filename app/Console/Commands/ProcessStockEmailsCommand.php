@@ -173,6 +173,12 @@ class ProcessStockEmailsCommand extends Command
                 $err = $result['error'] ?? 'Terjadi kesalahan tidak dikenal saat memproses Excel.';
                 if ($result['status'] === 'data_already_exists') {
                     $this->warn("DITOLAK (data_already_exists): {$err}");
+                } elseif ($result['status'] === 'all_unmapped') {
+                    $this->warn("DITOLAK (all_unmapped): {$err}");
+                    if (! empty($result['details']['unique_skipped_names'])) {
+                        $unmappedList = implode(', ', $result['details']['unique_skipped_names']);
+                        $this->warn("   -> Item belum ter-mapping: {$unmappedList}");
+                    }
                 } else {
                     $this->error("GAGAL ({$result['status']}): {$err}");
                 }
@@ -183,8 +189,12 @@ class ProcessStockEmailsCommand extends Command
                 }
 
                 $failedCount++;
-                $label = $result['status'] === 'data_already_exists' ? 'REJECTED (Data Sudah Ada)' : "FAILED ({$result['status']})";
-                $summaryTable[] = [$uid, $fromEmail, $subject, $label, 0, 0];
+                $label = match ($result['status']) {
+                    'data_already_exists' => 'REJECTED (Data Sudah Ada)',
+                    'all_unmapped' => 'REJECTED (Semua Belum Ter-mapping)',
+                    default => "FAILED ({$result['status']})",
+                };
+                $summaryTable[] = [$uid, $fromEmail, $subject, $label, 0, $result['skipped_rows'] ?? 0];
             }
         }
 

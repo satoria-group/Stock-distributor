@@ -271,19 +271,59 @@
                             <td class="text-right py-3.5 px-4 font-extrabold text-slate-900 tabular-nums text-sm whitespace-nowrap">
                                 {{ number_format((float) $s->total_quantity, 0, ',', '.') }}
                             </td>
-                            <td class="py-3.5 px-4 text-slate-600 truncate">
-                                {{ $s->uploader?->name ?? 'Sistem / Impor' }}
+                            <td class="py-3.5 px-4">
+                                @if ($s->is_automation)
+                                    @if ($s->is_reviewed)
+                                        <div class="flex items-center gap-1.5 whitespace-nowrap">
+                                            <span class="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold bg-slate-100 text-slate-700 border border-slate-200">
+                                                Auto
+                                            </span>
+                                            <span class="text-xs font-semibold text-slate-900" title="Telah direview oleh {{ $s->reviewer_name }}">
+                                                {{ $s->reviewer_name ?: 'Reviewer' }}
+                                            </span>
+                                        </div>
+                                    @else
+                                        <div class="flex flex-col items-start gap-1">
+                                            <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-800 border border-amber-300 shadow-2xs">
+                                                <svg class="w-2.5 h-2.5 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
+                                                </svg>
+                                                Otomasi Email
+                                            </span>
+                                            <span class="text-[10px] font-semibold text-amber-600 flex items-center gap-0.5">
+                                                ⚠️ Perlu Review
+                                            </span>
+                                        </div>
+                                    @endif
+                                @else
+                                    <span class="text-xs font-medium text-slate-700 block truncate max-w-[150px]" title="{{ $s->uploader_display }}">
+                                        {{ $s->uploader_display ?: ($s->uploader?->name ?? 'Sistem / Impor') }}
+                                    </span>
+                                @endif
                             </td>
                             <td class="py-3.5 px-4 text-[11px] text-slate-500 whitespace-nowrap">
                                 {{ \Carbon\Carbon::parse($s->last_updated_at)->translatedFormat('d M Y, H:i') }}
                             </td>
                             <td class="py-3.5 px-4 text-center">
                                 <div class="inline-flex items-center gap-1.5">
-                                    <!-- Tombol Detail -->
+                                    <!-- Tombol Tandai Sudah di-Review (hanya muncul jika Otomasi & Belum Review) -->
+                                    @if ($s->is_automation && ! $s->is_reviewed)
+                                        <button type="button"
+                                                wire:click="markAsReviewed('{{ $dateKey }}', {{ $s->distributor_id }})"
+                                                wire:loading.attr="disabled"
+                                                title="Tandai Sudah di-Review"
+                                                class="p-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white border border-emerald-600 transition cursor-pointer shadow-2xs hover:scale-105">
+                                            <svg width="15" height="15" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"/>
+                                            </svg>
+                                        </button>
+                                    @endif
+
+                                    <!-- Tombol Detail (Kuning jika Otomasi & Belum Review, Normal Emerald jika sudah review / manual) -->
                                     <button type="button"
                                             wire:click="viewDetail('{{ $dateKey }}', {{ $s->distributor_id }})"
-                                            title="Lihat Detail Snapshot"
-                                            class="p-1.5 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-[#0d6d5f] border border-emerald-200/80 transition cursor-pointer shadow-2xs hover:scale-105">
+                                            title="{{ ($s->is_automation && ! $s->is_reviewed) ? 'Lihat Detail (Otomasi - Perlu Review)' : 'Lihat Detail Snapshot' }}"
+                                            class="p-1.5 rounded-lg transition cursor-pointer shadow-2xs hover:scale-105 {{ ($s->is_automation && ! $s->is_reviewed) ? 'bg-amber-100 hover:bg-amber-200 text-amber-800 border border-amber-300 ring-2 ring-amber-400/40' : 'bg-emerald-50 hover:bg-emerald-100 text-[#0d6d5f] border border-emerald-200/80' }}">
                                         <svg width="15" height="15" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
                                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/>
@@ -379,6 +419,39 @@
                         </svg>
                     </button>
                 </div>
+
+                <!-- Status Otomasi & Review Banner di Modal -->
+                @if ($selectedSnapshot['is_automation'])
+                    @if (! $selectedSnapshot['is_reviewed'])
+                        <div class="px-7 py-3 bg-amber-50 border-b border-amber-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                            <div class="flex items-center gap-2.5 text-xs text-amber-900 font-medium">
+                                <span class="flex h-2.5 w-2.5 relative shrink-0">
+                                    <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
+                                    <span class="relative inline-flex rounded-full h-2.5 w-2.5 bg-amber-500"></span>
+                                </span>
+                                <span>Snapshot ini diimpor melalui <strong>Otomasi Email</strong> dan saat ini <strong>menunggu peninjauan (review)</strong>.</span>
+                            </div>
+                            <button type="button"
+                                    wire:click="markAsReviewed('{{ $selectedSnapshot['tanggal'] }}', {{ $selectedSnapshot['distributor_id'] }})"
+                                    class="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs transition cursor-pointer shadow-xs whitespace-nowrap">
+                                <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"/>
+                                </svg>
+                                Tandai Sudah di-Review
+                            </button>
+                        </div>
+                    @else
+                        <div class="px-7 py-2.5 bg-emerald-50/80 border-b border-emerald-100 flex items-center justify-between text-xs text-emerald-800">
+                            <div class="flex items-center gap-2 font-medium">
+                                <svg class="w-4 h-4 text-emerald-600 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                                </svg>
+                                <span>Hasil Otomasi Email ini telah diverifikasi & di-review oleh <strong>{{ $selectedSnapshot['reviewer_name'] ?: 'Reviewer' }}</strong>.</span>
+                            </div>
+                            <span class="text-[10px] font-bold uppercase tracking-wider text-emerald-600 bg-emerald-100/70 px-2 py-0.5 rounded-md">Verified</span>
+                        </div>
+                    @endif
+                @endif
 
                 <!-- 6 Mini KPI Boxes -->
                 <div class="p-5 bg-slate-50/80 border-b border-slate-100 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
@@ -543,11 +616,47 @@
                     </table>
                 </div>
 
+                <!-- Riwayat Aktivitas & Edit (Audit Trail) -->
+                @if (! empty($selectedSnapshot['activities']))
+                    <div class="px-6 py-3.5 bg-slate-50/70 border-t border-slate-200">
+                        <div class="text-[11px] font-bold uppercase tracking-wider text-slate-500 mb-2 flex items-center justify-between">
+                            <div class="flex items-center gap-1.5">
+                                <svg class="w-3.5 h-3.5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                                </svg>
+                                <span>Riwayat Pengedit & Aktivitas ({{ count($selectedSnapshot['activities']) }})</span>
+                            </div>
+                            <span class="text-[10px] text-slate-400 font-normal">Audit Trail</span>
+                        </div>
+                        <div class="space-y-1.5 max-h-32 overflow-y-auto pr-1">
+                            @foreach ($selectedSnapshot['activities'] as $act)
+                                <div class="flex items-center justify-between text-xs bg-white border border-slate-200/80 rounded-xl px-3 py-1.5 shadow-2xs">
+                                    <div class="flex items-center gap-2">
+                                        @if ($act['action'] === 'automation')
+                                            <span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-800 border border-amber-200 shrink-0">Otomasi</span>
+                                        @elseif ($act['action'] === 'review')
+                                            <span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-800 border border-emerald-200 shrink-0">Review</span>
+                                        @elseif ($act['action'] === 'edit')
+                                            <span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-50 text-blue-800 border border-blue-200 shrink-0">Koreksi</span>
+                                        @else
+                                            <span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-700 shrink-0">Upload</span>
+                                        @endif
+                                        <span class="text-slate-800 font-medium">{{ $act['description'] }}</span>
+                                    </div>
+                                    <div class="text-slate-400 text-[11px] font-mono whitespace-nowrap ml-2">
+                                        {{ $act['created_at'] }}
+                                    </div>
+                                </div>
+                            @endforeach
+                        </div>
+                    </div>
+                @endif
+
                 <!-- Footer Modal -->
                 <div class="px-6 py-4 bg-slate-50 border-t border-slate-100 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 text-xs">
                     <div class="text-slate-600 flex items-center gap-1.5">
                         <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"></path></svg>
-                        Diunggah oleh <strong class="text-slate-900">{{ $selectedSnapshot['uploader_name'] }}</strong>
+                        Pengunggah / Reviewer: <strong class="text-slate-900">{{ $selectedSnapshot['uploader_name'] }}</strong>
                         pada <span class="font-mono text-slate-700">{{ $selectedSnapshot['updated_at'] }}</span>
                     </div>
                     <div class="flex items-center gap-2">

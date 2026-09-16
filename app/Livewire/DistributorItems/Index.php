@@ -313,7 +313,15 @@ class Index extends Component
     {
         $items = DistributorItem::query()
             ->with(['distributor', 'netsuiteItem'])
-            ->when($this->search, fn ($q) => $q->where('item_name', 'ilike', "%{$this->search}%"))
+            ->when($this->search, function ($q) {
+                $q->where(function ($sub) {
+                    $sub->where('item_name', 'ilike', "%{$this->search}%")
+                        ->orWhereHas('netsuiteItem', function ($ns) {
+                            $ns->where('netsuite_name', 'ilike', "%{$this->search}%")
+                               ->orWhere('netsuite_id', 'ilike', "%{$this->search}%");
+                        });
+                });
+            })
             ->when($this->distributorFilter, fn ($q) => $q->where('distributor_id', $this->distributorFilter))
             ->when($this->mappingFilter === 'mapped', fn ($q) => $q->mapped())
             ->when($this->mappingFilter === 'unmapped', fn ($q) => $q->unmapped())

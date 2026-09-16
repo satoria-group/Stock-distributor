@@ -22,7 +22,15 @@ docker-compose.prod.yml
 docker-compose.dev-server.yml
 .vscode
 .idea
+.claude
 .agents
 scratch/
 README.md
 CHANGELOG.md
+dummy_stock_*
+*.xlsx
+*.xls
+*.csv
+*.zip
+.env.*
+!.env.example

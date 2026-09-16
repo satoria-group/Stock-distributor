@@ -34,3 +34,10 @@ services:
     # Port sengaja tidak didefinisikan ulang di sini. Compose menggabungkan
     # daftar ports antar file, jadi menambah entri baru justru membuat port
     # prod (80) ikut terpasang. Atur lewat WEB_PORT di .env.
+
+  scheduler:
+    container_name: stock_scheduler_dev
+    environment:
+      APP_ENV: dev
+      APP_DEBUG: "true"
+      RUN_MIGRATIONS: "false"

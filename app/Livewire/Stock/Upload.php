@@ -5,6 +5,7 @@ namespace App\Livewire\Stock;
 use App\Models\Distributor;
 use App\Models\DistributorItem;
 use App\Models\StockEntry;
+use App\Models\StockSnapshotActivity;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
@@ -348,6 +349,11 @@ class Upload extends Component
         }
 
         $tanggal = $this->parseExcelDate($rawTanggal);
+        if (! $tanggal) {
+            $this->addError('file', "Format tanggal snapshot pada berkas Excel tidak dikenali ('{$rawTanggal}'). Harap gunakan format tanggal yang valid (contoh: ".now()->format('d/m/Y').").");
+
+            return false;
+        }
 
         $knownItems = DistributorItem::where('distributor_id', $distributor->id)
             ->get()
@@ -373,13 +379,13 @@ class Upload extends Component
             $edFormatted = $ed ? \Carbon\Carbon::parse($ed)->format('d/m/Y') : null;
             $batch = isset($col['Batch No']) ? trim((string) ($r[$col['Batch No']] ?? '')) : null;
 
-            if (! $distItem) {
+            if (! $distItem || ! $distItem->isMapped()) {
                 $skipped[] = $itemName;
 
                 if (! isset($skippedRowsData[$key])) {
                     $skippedRowsData[$key] = [
                         'item_name' => $itemName,
-                        'satuan' => $satuan ?: 'PCS',
+                        'satuan' => $satuan ?: ($distItem?->satuan ?: 'PCS'),
                         'quantity' => $qty,
                         'expired_date' => $edFormatted,
                         'batch_no' => $batch ?: null,
@@ -470,6 +476,9 @@ class Upload extends Component
             $mergedRows = $pending['new_rows']; // keyed by distributor_item_id
 
             foreach ($existingEntries as $entry) {
+                if (! $entry->distributorItem?->isMapped()) {
+                    continue;
+                }
                 $itemId = $entry->distributor_item_id;
                 if (isset($mergedRows[$itemId])) {
                     $mergedRows[$itemId]['quantity'] += (float) $entry->quantity;
@@ -582,30 +591,7 @@ class Upload extends Component
                 }
 
                 if ($distItem) {
-                    $gridKey = null;
-                    foreach ($this->rows as $k => $r) {
-                        if ((int) ($r['distributor_item_id'] ?? 0) === $distItem->id) {
-                            $gridKey = $k;
-                            break;
-                        }
-                    }
-
-                    if ($gridKey !== null) {
-                        $this->rows[$gridKey]['quantity'] += (float) ($itemData['quantity'] ?? 0);
-                        $this->rows[$gridKey]['batch_no'] = $this->mergeBatchNumbers($this->rows[$gridKey]['batch_no'] ?? null, $itemData['batch_no'] ?? null);
-                        $this->rows[$gridKey]['expired_date'] = $this->mergeExpiredDates($this->rows[$gridKey]['expired_date'] ?? null, $itemData['expired_date'] ?? null);
-                    } else {
-                        $this->rows[] = [
-                            'distributor_item_id' => $distItem->id,
-                            'item_name' => $distItem->item_name,
-                            'satuan' => $itemData['satuan'] ?: $distItem->satuan,
-                            'quantity' => (float) ($itemData['quantity'] ?? 0),
-                            'expired_date' => $itemData['expired_date'] ?? null,
-                            'batch_no' => $itemData['batch_no'] ?? null,
-                            'mapped' => $distItem->isMapped(),
-                        ];
-                        $addedCount++;
-                    }
+                    $addedCount++;
                 }
             }
         });
@@ -614,9 +600,7 @@ class Upload extends Component
         $this->skippedRowsData = [];
         $this->showRequestModal = false;
 
-        $this->dispatch('rows-loaded', rows: $this->rows);
-
-        session()->flash('status', "{$addedCount} item berhasil diajukan ke Admin (status: Belum ter-mapping) dan telah dimuat ke grid stock.");
+        session()->flash('status', "{$addedCount} item berhasil diajukan ke antrean mapping. Silakan petakan item tersebut di Master Mapping sebelum data stoknya di-upload.");
     }
 
     public function openSingleRequestModal(): void
@@ -677,27 +661,11 @@ class Upload extends Component
             }
         }
 
-        if ($distItem) {
-            $alreadyInGrid = collect($this->rows)->firstWhere('distributor_item_id', $distItem->id);
-            if (! $alreadyInGrid) {
-                $this->rows[] = [
-                    'distributor_item_id' => $distItem->id,
-                    'item_name' => $distItem->item_name,
-                    'satuan' => $distItem->satuan,
-                    'quantity' => 0,
-                    'expired_date' => null,
-                    'batch_no' => null,
-                    'mapped' => $distItem->isMapped(),
-                ];
-                $this->dispatch('rows-loaded', rows: $this->rows);
-            }
-        }
-
         $this->showSingleRequestModal = false;
         $this->reset(['requestItemName', 'requestSatuan']);
 
         if ($distItem) {
-            session()->flash('status', "Item '{$distItem->item_name}' berhasil diajukan ke Admin dan ditambahkan ke grid stock.");
+            session()->flash('status', "Item '{$distItem->item_name}' berhasil diajukan ke antrean mapping. Silakan petakan item tersebut di Master Mapping.");
         }
     }
 
@@ -708,7 +676,7 @@ class Upload extends Component
         }
 
         $item = DistributorItem::find($this->addItemId);
-        if (! $item || $item->distributor_id !== $this->distributorId) {
+        if (! $item || $item->distributor_id !== $this->distributorId || ! $item->isMapped()) {
             return;
         }
 
@@ -790,9 +758,13 @@ class Upload extends Component
         $unmappedCount = 0;
         $deletedCount = 0;
 
+        $isExistingSnapshot = StockEntry::where('tanggal', $this->tanggal)
+            ->where('distributor_id', $this->distributorId)
+            ->exists();
+
         $savedItemIds = [];
 
-        DB::transaction(function () use ($rows, &$mappedCount, &$unmappedCount, &$deletedCount, &$savedItemIds) {
+        DB::transaction(function () use ($rows, $isExistingSnapshot, &$mappedCount, &$unmappedCount, &$deletedCount, &$savedItemIds) {
             foreach ($rows as $row) {
                 if (empty($row['distributor_item_id'])) {
                     continue;
@@ -800,6 +772,12 @@ class Upload extends Component
 
                 $item = DistributorItem::find($row['distributor_item_id']);
                 if (! $item || $item->distributor_id !== $this->distributorId) {
+                    continue;
+                }
+
+                // Proteksi: Item yang belum ter-mapping TIDAK BISA disimpan ke stock_entries
+                if (! $item->isMapped()) {
+                    $unmappedCount++;
                     continue;
                 }
 
@@ -844,6 +822,27 @@ class Upload extends Component
                     $deletedCount++;
                 }
             }
+
+            if ($mappedCount > 0 || $deletedCount > 0) {
+                $userName = Auth::user()?->name ?? 'User';
+                $actionType = $isExistingSnapshot ? 'edit' : 'upload';
+                $desc = $isExistingSnapshot
+                    ? "Koreksi/Update snapshot oleh {$userName} ({$mappedCount} SKU tersimpan" . ($deletedCount > 0 ? ", {$deletedCount} baris dihapus" : "") . ")"
+                    : "Upload snapshot baru oleh {$userName} ({$mappedCount} SKU)";
+
+                StockSnapshotActivity::create([
+                    'tanggal' => $this->tanggal,
+                    'distributor_id' => $this->distributorId,
+                    'user_id' => Auth::id(),
+                    'action' => $actionType,
+                    'description' => $desc,
+                    'metadata' => [
+                        'mapped_count' => $mappedCount,
+                        'unmapped_count' => $unmappedCount,
+                        'deleted_count' => $deletedCount,
+                    ],
+                ]);
+            }
         });
 
         $dist = Distributor::find($this->distributorId);
@@ -851,14 +850,17 @@ class Upload extends Component
             'tanggal' => $this->tanggal,
             'distributor_name' => $dist?->name ?? '—',
             'distributor_code' => $dist?->distributor_code ?? '—',
-            'total' => $mappedCount + $unmappedCount,
+            'total' => $mappedCount,
             'mapped' => $mappedCount,
             'unmapped' => $unmappedCount,
             'deleted' => $deletedCount,
         ];
         $this->showSuccessModal = true;
 
-        $status = "Tersimpan: {$mappedCount} item ter-mapping, {$unmappedCount} item belum ter-mapping (tetap tersimpan sebagai snapshot {$this->tanggal}).";
+        $status = "Tersimpan: {$mappedCount} item ter-mapping ke database.";
+        if ($unmappedCount > 0) {
+            $status .= " ({$unmappedCount} item belum ter-mapping dilewati dan tidak disimpan).";
+        }
         if ($deletedCount > 0) {
             $status .= " {$deletedCount} baris dihapus dari snapshot.";
         }
@@ -1221,19 +1223,24 @@ class Upload extends Component
         $d1 = ! empty($ed1) ? trim((string) $ed1) : null;
         $d2 = ! empty($ed2) ? trim((string) $ed2) : null;
 
-        if (! $d1) {
-            return $d2 ? ($this->parseExcelDate($d2) ? \Carbon\Carbon::parse($this->parseExcelDate($d2))->format('d/m/Y') : $d2) : null;
+        $iso1 = $d1 ? $this->parseExcelDate($d1) : null;
+        $iso2 = $d2 ? $this->parseExcelDate($d2) : null;
+
+        if ($iso1 && $iso2) {
+            $earliestIso = ($iso1 <= $iso2) ? $iso1 : $iso2;
+
+            return \Carbon\Carbon::createFromFormat('Y-m-d', $earliestIso)->format('d/m/Y');
         }
-        if (! $d2) {
-            return $d1 ? ($this->parseExcelDate($d1) ? \Carbon\Carbon::parse($this->parseExcelDate($d1))->format('d/m/Y') : $d1) : null;
+
+        if ($iso1) {
+            return \Carbon\Carbon::createFromFormat('Y-m-d', $iso1)->format('d/m/Y');
         }
 
-        $iso1 = $this->parseExcelDate($d1) ?? $d1;
-        $iso2 = $this->parseExcelDate($d2) ?? $d2;
+        if ($iso2) {
+            return \Carbon\Carbon::createFromFormat('Y-m-d', $iso2)->format('d/m/Y');
+        }
 
-        $earliest = ($iso1 <= $iso2) ? $iso1 : $iso2;
-
-        return \Carbon\Carbon::parse($earliest)->format('d/m/Y');
+        return $d1 ?: $d2;
     }
 
     public function render()
@@ -1241,7 +1248,8 @@ class Upload extends Component
         return view('livewire.stock.upload', [
             'distributors' => Distributor::where('is_active', true)->orderBy('name')->get(),
             'availableItems' => $this->distributorId
-                ? DistributorItem::where('distributor_id', $this->distributorId)
+                ? DistributorItem::mapped()
+                    ->where('distributor_id', $this->distributorId)
                     ->whereNotIn('id', collect($this->rows)->pluck('distributor_item_id')->all() ?: [0])
                     ->orderBy('item_name')
                     ->get()

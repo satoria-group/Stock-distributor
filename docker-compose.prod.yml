@@ -55,6 +55,8 @@ services:
       # Karena itu port dibuat variabel — atur lewat WEB_PORT di .env, jangan
       # menambahkan entri ports baru di file override.
       - "${WEB_PORT:-80}:80"
+    volumes:
+      - storage_data:/var/www/html/storage:ro
     depends_on:
       app:
         condition: service_healthy
@@ -69,6 +71,26 @@ services:
       timeout: 15s
       retries: 5
       start_period: 60s
+
+  scheduler:
+    image: stock-distributor-app:latest
+    container_name: stock_scheduler_prod
+    restart: always
+    working_dir: /var/www/html
+    env_file:
+      - .env
+    environment:
+      APP_ENV: production
+      APP_DEBUG: "false"
+      RUN_MIGRATIONS: "false"
+    volumes:
+      - storage_data:/var/www/html/storage
+    command: ["php", "artisan", "schedule:work"]
+    depends_on:
+      app:
+        condition: service_healthy
+    networks:
+      - stock_network
 
 volumes:
   storage_data:

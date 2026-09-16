@@ -5,6 +5,7 @@ namespace App\Livewire\Stock;
 use App\Livewire\Dashboard;
 use App\Models\Distributor;
 use App\Models\StockEntry;
+use App\Models\StockSnapshotActivity;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
@@ -171,6 +172,23 @@ class History extends Component
 
         $latestEntry = $entries->sortByDesc('updated_at')->first();
 
+        $activities = StockSnapshotActivity::with('user')
+            ->where('tanggal', $tanggal)
+            ->where('distributor_id', $distributorId)
+            ->orderBy('created_at', 'asc')
+            ->get();
+
+        $hasAutomation = $activities->contains(fn ($a) => $a->action === 'automation')
+            || $entries->contains(fn ($e) => $e->uploaded_by === null);
+
+        $reviewAct = $activities->where('action', 'review')->last();
+        $isReviewed = ! is_null($reviewAct);
+        $reviewerName = $reviewAct?->user?->name;
+
+        $uploaderDisplay = $hasAutomation
+            ? ($isReviewed ? 'Auto: ' . ($reviewerName ?: 'Reviewer') : 'Otomasi Email')
+            : ($latestEntry?->uploader?->name ?? 'Sistem / Impor');
+
         $this->selectedSnapshot = [
             'tanggal' => $tanggal,
             'tanggal_formatted' => Carbon::parse($tanggal)->translatedFormat('d M Y'),
@@ -186,12 +204,67 @@ class History extends Component
             'mapped_count' => $mappedCount,
             'unmapped_count' => $unmappedCount,
             'expiring_count' => $expiringCount,
-            'uploader_name' => $latestEntry?->uploader?->name ?? 'Sistem / Impor',
+            'is_automation' => $hasAutomation,
+            'is_reviewed' => $isReviewed,
+            'reviewer_name' => $reviewerName,
+            'uploader_name' => $uploaderDisplay,
             'updated_at' => $latestEntry?->updated_at?->translatedFormat('d M Y, H:i') ?? '—',
             'items' => $items,
+            'activities' => $activities->map(function ($act) {
+                return [
+                    'id' => $act->id,
+                    'action' => $act->action,
+                    'user_name' => $act->user?->name ?? ($act->action === 'automation' ? 'Otomasi Sistem' : 'Sistem'),
+                    'description' => $act->description,
+                    'created_at' => $act->created_at ? $act->created_at->translatedFormat('d M Y, H:i') : '—',
+                ];
+            })->all(),
         ];
 
         $this->showDetailModal = true;
+    }
+
+    public function markAsReviewed(string $tanggal, int $distributorId): void
+    {
+        Gate::authorize('viewAny', StockEntry::class);
+
+        $distributor = Distributor::find($distributorId);
+        if (! $distributor) {
+            return;
+        }
+
+        $exists = StockEntry::where('tanggal', $tanggal)
+            ->where('distributor_id', $distributorId)
+            ->exists();
+
+        if (! $exists) {
+            return;
+        }
+
+        $user = \Illuminate\Support\Facades\Auth::user();
+        $userName = $user?->name ?? 'Reviewer';
+
+        StockSnapshotActivity::create([
+            'tanggal' => $tanggal,
+            'distributor_id' => $distributorId,
+            'user_id' => \Illuminate\Support\Facades\Auth::id(),
+            'action' => 'review',
+            'description' => "Ditinjau dan disetujui oleh {$userName}",
+            'metadata' => [
+                'reviewer_id' => \Illuminate\Support\Facades\Auth::id(),
+                'reviewer_name' => $userName,
+                'reviewed_at' => now()->toIso8601String(),
+            ],
+        ]);
+
+        if ($this->showDetailModal && $this->selectedSnapshot &&
+            $this->selectedSnapshot['tanggal'] === $tanggal &&
+            $this->selectedSnapshot['distributor_id'] === $distributorId) {
+            $this->viewDetail($tanggal, $distributorId);
+        }
+
+        $tanggalFormatted = Carbon::parse($tanggal)->translatedFormat('d M Y');
+        session()->flash('status', "Snapshot {$distributor->name} tanggal {$tanggalFormatted} berhasil ditandai telah di-review oleh {$userName}.");
     }
 
     public function closeDetailModal(): void
@@ -373,8 +446,59 @@ class History extends Component
         )
             ->with(['distributor', 'uploader'])
             ->orderBy('tanggal', 'desc')
-            ->orderBy('distributor_id', 'asc')
+            ->orderBy(DB::raw('MAX(updated_at)'), 'desc')
             ->paginate($this->perPage);
+
+        // 2.1 Enrich snapshot collection dengan data audit aktivitas & status review
+        $pairs = $snapshots->getCollection()->map(function ($s) {
+            return [
+                'tanggal' => $s->tanggal->format('Y-m-d'),
+                'distributor_id' => (int) $s->distributor_id,
+            ];
+        });
+
+        $allActivities = collect();
+        if ($pairs->isNotEmpty()) {
+            $allActivities = StockSnapshotActivity::with('user')
+                ->where(function ($q) use ($pairs) {
+                    foreach ($pairs as $p) {
+                        $q->orWhere(function ($sub) use ($p) {
+                            $sub->where('tanggal', $p['tanggal'])
+                                ->where('distributor_id', $p['distributor_id']);
+                        });
+                    }
+                })
+                ->orderBy('created_at', 'asc')
+                ->get()
+                ->groupBy(fn ($a) => $a->tanggal->format('Y-m-d') . '_' . $a->distributor_id);
+        }
+
+        foreach ($snapshots->getCollection() as $s) {
+            $key = $s->tanggal->format('Y-m-d') . '_' . $s->distributor_id;
+            $acts = $allActivities->get($key, collect());
+
+            $isAutomation = $acts->contains(fn ($a) => $a->action === 'automation') || ($s->uploaded_by === null);
+            $reviewAct = $acts->where('action', 'review')->last();
+            $isReviewed = ! is_null($reviewAct);
+            $reviewerName = $reviewAct?->user?->name;
+
+            if ($isAutomation) {
+                $uploaderDisplay = $isReviewed ? ('Auto: ' . ($reviewerName ?: 'Reviewer')) : 'Otomasi Email';
+            } else {
+                $editors = $acts->whereIn('action', ['upload', 'edit', 'merge'])->map(fn ($a) => $a->user?->name)->filter()->unique()->values();
+                if ($editors->count() > 1) {
+                    $uploaderDisplay = $editors->first() . ' (Edit: ' . $editors->last() . ')';
+                } else {
+                    $uploaderDisplay = $s->uploader?->name ?? 'Sistem / Impor';
+                }
+            }
+
+            $s->is_automation = $isAutomation;
+            $s->is_reviewed = $isReviewed;
+            $s->reviewer_name = $reviewerName;
+            $s->uploader_display = $uploaderDisplay;
+            $s->activity_count = $acts->count();
+        }
 
         // 3. Statistik memakai filter YANG SAMA dengan tabel.
         //

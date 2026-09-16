@@ -5,7 +5,8 @@ cd /var/www/html
 
 # storage/ biasanya dipasang sebagai named volume yang awalnya kosong, jadi
 # struktur direktorinya perlu dibangun ulang setiap container start.
-mkdir -p storage/app/private/livewire-tmp \
+mkdir -p storage/app/livewire-tmp \
+         storage/app/private/livewire-tmp \
          storage/app/public \
          storage/framework/cache/data \
          storage/framework/sessions \
@@ -17,6 +18,11 @@ mkdir -p storage/app/private/livewire-tmp \
 # Jangan biarkan `set -e` mematikan container hanya karena itu.
 chown -R www-data:www-data storage bootstrap/cache 2>/dev/null || true
 chmod -R 775 storage bootstrap/cache 2>/dev/null || true
+
+# Buat symbolic link public/storage jika belum ada
+if [ ! -L public/storage ]; then
+    php artisan storage:link 2>/dev/null || true
+fi
 
 # Hanya terjadi di development: bind mount dari host belum punya vendor/.
 # Image production sudah membawa vendor/ hasil build, jadi blok ini dilewati.
@@ -30,16 +36,32 @@ if [ "${APP_ENV}" = "production" ]; then
     php artisan config:cache
     php artisan route:cache
     php artisan view:cache
-
-    # Migrasi TIDAK otomatis. Menjalankan migrate di setiap container start
-    # berbahaya saat ada lebih dari satu replika. Aktifkan secara sadar.
-    if [ "${RUN_MIGRATIONS:-false}" = "true" ]; then
-        echo "[entrypoint] Menjalankan migrasi database..."
-        php artisan migrate --force
-    fi
 else
     # Development: pastikan tidak ada cache basi yang menutupi perubahan .env
     php artisan config:clear >/dev/null 2>&1 || true
+fi
+
+# Migrasi database jika diaktifkan secara eksplisit via RUN_MIGRATIONS=true
+if [ "${RUN_MIGRATIONS:-false}" = "true" ]; then
+    if [ -n "${DB_HOST}" ]; then
+        echo "[entrypoint] Menunggu database ${DB_HOST}:${DB_PORT:-5432} siap..."
+        _count=0
+        while ! nc -z "${DB_HOST}" "${DB_PORT:-5432}" 2>/dev/null; do
+            _count=$((_count + 1))
+            if [ "$_count" -ge 30 ]; then
+                echo "[entrypoint] Timeout 30 detik: database belum siap. Melewati migrasi."
+                break
+            fi
+            sleep 1
+        done
+        if [ "$_count" -lt 30 ]; then
+            echo "[entrypoint] Menjalankan migrasi database..."
+            php artisan migrate --force
+        fi
+    else
+        echo "[entrypoint] Menjalankan migrasi database..."
+        php artisan migrate --force
+    fi
 fi
 
 exec "$@"

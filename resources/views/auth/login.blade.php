@@ -52,9 +52,32 @@
 
                 <div>
                     <label class="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1.5">Password</label>
-                    <input type="password" name="password" required
-                           placeholder="••••••••"
-                           class="w-full rounded-xl border border-slate-200 px-4 py-2.5 text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#0d6d5f]/25 focus:border-[#0d6d5f] transition shadow-2xs">
+                    <div class="relative">
+                        <input type="password" id="passwordInput" name="password" required
+                               placeholder="••••••••"
+                               class="w-full rounded-xl border border-slate-200 pl-4 pr-11 py-2.5 text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#0d6d5f]/25 focus:border-[#0d6d5f] transition shadow-2xs">
+                        <button type="button" id="togglePasswordBtn"
+                                class="absolute inset-y-0 right-0 pr-3.5 flex items-center text-slate-400 hover:text-slate-600 transition cursor-pointer"
+                                title="Lihat/Sembunyikan Password"
+                                aria-label="Lihat Password">
+                            <!-- Eye Open -->
+                            <svg id="eyeOpenIcon" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/>
+                            </svg>
+                            <!-- Eye Closed -->
+                            <svg id="eyeClosedIcon" class="w-4 h-4 hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l18 18"/>
+                            </svg>
+                        </button>
+                    </div>
+                    <!-- Caps Lock Warning Badge -->
+                    <div id="capsLockAlert" class="hidden mt-2 items-center gap-1.5 px-3 py-1.5 bg-amber-50 border border-amber-200/90 rounded-xl text-amber-700 text-[11px] font-semibold">
+                        <svg class="w-3.5 h-3.5 shrink-0 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+                        </svg>
+                        <span>Peringatan: <strong>Caps Lock</strong> Anda sedang aktif</span>
+                    </div>
                 </div>
 
                 <div class="flex items-center justify-between pt-1">
@@ -85,5 +108,51 @@
             &copy; {{ date('Y') }} PT Satoria Agro Industri / Satoria Logistics Hub
         </p>
     </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const passwordInput = document.getElementById('passwordInput');
+            const toggleBtn = document.getElementById('togglePasswordBtn');
+            const eyeOpen = document.getElementById('eyeOpenIcon');
+            const eyeClosed = document.getElementById('eyeClosedIcon');
+            const capsAlert = document.getElementById('capsLockAlert');
+
+            if (toggleBtn && passwordInput) {
+                toggleBtn.addEventListener('click', () => {
+                    const isPassword = passwordInput.type === 'password';
+                    passwordInput.type = isPassword ? 'text' : 'password';
+                    if (isPassword) {
+                        eyeOpen.classList.add('hidden');
+                        eyeClosed.classList.remove('hidden');
+                        toggleBtn.setAttribute('title', 'Sembunyikan Password');
+                    } else {
+                        eyeOpen.classList.remove('hidden');
+                        eyeClosed.classList.add('hidden');
+                        toggleBtn.setAttribute('title', 'Lihat Password');
+                    }
+                });
+            }
+
+            if (passwordInput && capsAlert) {
+                const checkCapsLock = (e) => {
+                    if (e.getModifierState && e.getModifierState('CapsLock')) {
+                        capsAlert.classList.remove('hidden');
+                        capsAlert.classList.add('flex');
+                    } else {
+                        capsAlert.classList.add('hidden');
+                        capsAlert.classList.remove('flex');
+                    }
+                };
+
+                passwordInput.addEventListener('keydown', checkCapsLock);
+                passwordInput.addEventListener('keyup', checkCapsLock);
+                passwordInput.addEventListener('focus', checkCapsLock);
+                passwordInput.addEventListener('blur', () => {
+                    capsAlert.classList.add('hidden');
+                    capsAlert.classList.remove('flex');
+                });
+            }
+        });
+    </script>
 </body>
 </html>

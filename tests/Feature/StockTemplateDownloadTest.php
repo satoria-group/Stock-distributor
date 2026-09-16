@@ -94,13 +94,24 @@ class StockTemplateDownloadTest extends TestCase
         $distributor = \App\Models\Distributor::first();
         $this->assertNotNull($distributor);
 
+        $ns = \App\Models\NetsuiteItem::firstOrCreate([
+            'netsuite_id' => 'NS-REAL-01',
+        ], [
+            'netsuite_name' => 'REAL PRODUCT NS 1',
+            'default_satuan' => 'BOTOL',
+        ]);
+
         // Create or get distributor item
         $distItem = \App\Models\DistributorItem::firstOrCreate([
             'distributor_id' => $distributor->id,
             'item_name' => 'REAL PRODUCT TEST 1',
         ], [
             'satuan' => 'BOTOL',
+            'netsuite_item_id' => $ns->id,
         ]);
+        if (! $distItem->netsuite_item_id) {
+            $distItem->update(['netsuite_item_id' => $ns->id]);
+        }
 
         $spreadsheet = new \PhpOffice\PhpSpreadsheet\Spreadsheet();
         $sheet = $spreadsheet->getActiveSheet();
@@ -111,8 +122,11 @@ class StockTemplateDownloadTest extends TestCase
         // Row 2-3: Placeholders with DD/MM/YYYY
         $sheet->fromArray(['DD/MM/YYYY', 'xxxx', 'xxxxx xxxx', 'xxx', '', 'DD/MM/YYYY', 'xxx'], null, 'A2');
         $sheet->fromArray(['', '', 'xxxxx xxxx', 'xxx', '', 'DD/MM/YYYY', 'xxx'], null, 'A3');
+        $testDate = '13/09/2029';
+        \App\Models\StockEntry::where('distributor_id', $distributor->id)->where('tanggal', '2029-09-13')->delete();
+
         // Row 4: Real data with DD/MM/YYYY date
-        $sheet->fromArray(['13/09/2026', $distributor->distributor_code, 'REAL PRODUCT TEST 1', 50, 'BOTOL', '31/12/2027', 'BATCH001'], null, 'A4');
+        $sheet->fromArray([$testDate, $distributor->distributor_code, 'REAL PRODUCT TEST 1', 50, 'BOTOL', '31/12/2027', 'BATCH001'], null, 'A4');
 
         $writer = new \PhpOffice\PhpSpreadsheet\Writer\Xlsx($spreadsheet);
         $tempFile = tempnam(sys_get_temp_dir(), 'tpl_real_') . '.xlsx';

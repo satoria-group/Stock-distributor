@@ -17,6 +17,8 @@ services:
     container_name: stock_app
     restart: unless-stopped
     working_dir: /var/www/html
+    env_file:
+      - .env
     environment:
       APP_ENV: local
     volumes:
@@ -40,7 +42,7 @@ services:
     container_name: stock_nginx
     restart: unless-stopped
     ports:
-      - "8080:80"
+      - "${WEB_PORT:-8080}:80"
     volumes:
       - .:/var/www/html
       - ./docker/nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
@@ -59,6 +61,29 @@ services:
       timeout: 20s
       retries: 5
       start_period: 120s
+
+  scheduler:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: development
+    container_name: stock_scheduler_dev
+    restart: unless-stopped
+    working_dir: /var/www/html
+    env_file:
+      - .env
+    environment:
+      APP_ENV: local
+      RUN_MIGRATIONS: "false"
+    volumes:
+      - .:/var/www/html
+      - /var/www/html/node_modules
+    command: ["php", "artisan", "schedule:work"]
+    depends_on:
+      app:
+        condition: service_healthy
+    networks:
+      - stock_network
 
 networks:
   stock_network:

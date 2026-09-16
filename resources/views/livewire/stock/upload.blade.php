@@ -196,11 +196,11 @@
                         </svg>
                     </div>
                     <div>
-                        <h4 class="font-bold text-gray-900 text-sm">
-                            {{ count($skippedItems) }} Nama Item Tidak Dikenali di Master Distributor
+                        <h4 class="font-bold text-amber-950 text-sm">
+                            {{ count($skippedItems) }} Nama Item Belum Ter-mapping ke NetSuite
                         </h4>
-                        <p class="text-xs text-gray-600 mt-0.5">
-                            Item berikut terdeteksi dari file Excel namun belum terdaftar di Master Mapping. Klik <b>"Ajukan Semua Item Ini ke Admin"</b> agar otomatis didaftarkan (status: <i>Belum ter-mapping</i>) dan langsung dimuat ke grid stock tanpa perlu input manual.
+                        <p class="text-xs text-amber-800 mt-0.5">
+                            Item berikut terdeteksi dari file Excel namun belum ter-mapping ke Master NetSuite sehingga <b>tidak dimasukkan ke grid stok</b>. Klik <b>"Ajukan ke Antrean Mapping"</b> agar didaftarkan ke Master Mapping untuk segera dipetakan oleh Admin.
                         </p>
                     </div>
                 </div>
@@ -230,7 +230,7 @@
                                     <td class="px-3 py-2 font-mono text-gray-600">{{ $item['satuan'] ?? 'PCS' }}</td>
                                     <td class="px-3 py-2 text-right font-mono font-semibold text-gray-900">{{ number_format($item['quantity'] ?? 0, 0, ',', '.') }}</td>
                                     <td class="px-3 py-2 font-mono text-gray-500">
-                                        {{ !empty($item['expired_date']) ? \Carbon\Carbon::parse($item['expired_date'])->translatedFormat('d M Y') : '—' }}
+                                        {{ !empty($item['expired_date']) ? $item['expired_date'] : '—' }}
                                         @if(! empty($item['batch_no']))
                                             <span class="text-[10px] text-gray-400">({{ $item['batch_no'] }})</span>
                                         @endif
@@ -244,7 +244,7 @@
                 <!-- Tombol Ajukan Langsung -->
                 <div class="flex flex-wrap items-center justify-between gap-3 pt-1">
                     <span class="text-xs text-amber-900 font-medium">
-                        Total item yang akan diajukan: <b>{{ count($skippedItems) }} item</b>
+                        Total item yang belum ter-mapping: <b>{{ count($skippedItems) }} item</b>
                     </span>
                     <button type="button" wire:click="submitRequestMapping" wire:loading.attr="disabled"
                             class="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg bg-brand hover:bg-brand-dark text-white font-medium text-xs shadow transition cursor-pointer"
@@ -257,10 +257,10 @@
                             <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path>
                         </svg>
                         <span wire:loading.remove wire:target="submitRequestMapping">
-                            Ajukan Semua Item Ini ke Admin & Masukkan ke Grid ({{ count($skippedItems) }} Item)
+                            Ajukan ke Antrean Mapping ({{ count($skippedItems) }} Item)
                         </span>
                         <span wire:loading wire:target="submitRequestMapping">
-                            Sedang Memproses & Memuat ke Grid...
+                            Sedang Mendaftarkan ke Antrean Mapping...
                         </span>
                     </button>
                 </div>
@@ -404,8 +404,8 @@
                         ✓ {{ $saveSummary['mapped'] ?? 0 }} Ter-mapping
                     </span>
                     @if (($saveSummary['unmapped'] ?? 0) > 0)
-                    <span class="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-mono bg-amber-100 text-amber-800">
-                        ⚠ {{ $saveSummary['unmapped'] ?? 0 }} Belum ter-mapping
+                    <span class="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-mono bg-amber-100 text-amber-800" title="Item ini dilewati dan tidak disimpan ke database karena belum dipetakan ke Master NetSuite">
+                        ⚠ {{ $saveSummary['unmapped'] ?? 0 }} Belum ter-mapping (Dilewati)
                     </span>
                     @endif
                     @if (($saveSummary['deleted'] ?? 0) > 0)

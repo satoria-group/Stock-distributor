@@ -6,6 +6,7 @@ use App\Models\Distributor;
 use App\Models\DistributorItem;
 use App\Models\StockEmailLog;
 use App\Models\StockEntry;
+use App\Models\StockSnapshotActivity;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -63,6 +64,42 @@ class StockImportService
         }
 
         return null;
+    }
+
+    public function mergeBatchNumbers(?string $batch1, ?string $batch2): ?string
+    {
+        $b1 = trim((string) $batch1);
+        $b2 = trim((string) $batch2);
+
+        if ($b1 === '' && $b2 === '') {
+            return null;
+        }
+        if ($b1 === '') {
+            return $b2;
+        }
+        if ($b2 === '') {
+            return $b1;
+        }
+
+        $parts = preg_split('/\s*,\s*/', $b1.','.$b2, -1, PREG_SPLIT_NO_EMPTY);
+        $unique = array_unique(array_filter(array_map('trim', $parts)));
+
+        return implode(', ', $unique);
+    }
+
+    public function mergeExpiredDates(?string $ed1, ?string $ed2): ?string
+    {
+        $d1 = ! empty($ed1) ? trim((string) $ed1) : null;
+        $d2 = ! empty($ed2) ? trim((string) $ed2) : null;
+
+        $iso1 = $d1 ? $this->parseExcelDate($d1) : null;
+        $iso2 = $d2 ? $this->parseExcelDate($d2) : null;
+
+        if ($iso1 && $iso2) {
+            return ($iso1 <= $iso2) ? $iso1 : $iso2;
+        }
+
+        return $iso1 ?: ($iso2 ?: ($d1 ?: $d2));
     }
 
     /**
@@ -416,10 +453,10 @@ class StockImportService
             $ed = isset($col['ED']) ? $this->parseExcelDate($r[$col['ED']] ?? null) : null;
             $batch = isset($col['Batch No']) ? trim((string) ($r[$col['Batch No']] ?? '')) : null;
 
-            if (! $distItem) {
+            if (! $distItem || ! $distItem->isMapped()) {
                 $skippedItems[] = [
                     'item_name' => $itemName,
-                    'satuan' => $satuan ?: 'PCS',
+                    'satuan' => $satuan ?: ($distItem?->satuan ?: 'PCS'),
                     'quantity' => $qty,
                     'expired_date' => $ed,
                     'batch_no' => $batch ?: null,
@@ -427,13 +464,20 @@ class StockImportService
                 continue;
             }
 
-            $validRowsToSave[] = [
-                'distributor_item_id' => $distItem->id,
-                'quantity' => $qty,
-                'satuan' => $satuan ?: $distItem->satuan,
-                'expired_date' => $ed,
-                'batch_no' => $batch,
-            ];
+            $itemId = $distItem->id;
+            if (isset($validRowsToSave[$itemId])) {
+                $validRowsToSave[$itemId]['quantity'] += $qty;
+                $validRowsToSave[$itemId]['batch_no'] = $this->mergeBatchNumbers($validRowsToSave[$itemId]['batch_no'] ?? null, $batch);
+                $validRowsToSave[$itemId]['expired_date'] = $this->mergeExpiredDates($validRowsToSave[$itemId]['expired_date'] ?? null, $ed);
+            } else {
+                $validRowsToSave[$itemId] = [
+                    'distributor_item_id' => $itemId,
+                    'quantity' => $qty,
+                    'satuan' => $satuan ?: $distItem->satuan,
+                    'expired_date' => $ed,
+                    'batch_no' => $batch ?: null,
+                ];
+            }
         }
 
         if ($totalValidDataRows === 0) {
@@ -456,7 +500,7 @@ class StockImportService
         $importedCount = 0;
 
         if (! $dryRun && count($validRowsToSave) > 0) {
-            DB::transaction(function () use ($validRowsToSave, $distributor, $tanggal, $uploadedBy, &$importedCount) {
+            DB::transaction(function () use ($validRowsToSave, $distributor, $tanggal, $uploadedBy, $skippedItems, &$importedCount) {
                 foreach ($validRowsToSave as $row) {
                     StockEntry::updateOrCreate(
                         [
@@ -474,13 +518,38 @@ class StockImportService
                     );
                     $importedCount++;
                 }
+
+                StockSnapshotActivity::create([
+                    'tanggal' => $tanggal,
+                    'distributor_id' => $distributor->id,
+                    'user_id' => $uploadedBy,
+                    'action' => $uploadedBy ? 'upload' : 'automation',
+                    'description' => $uploadedBy
+                        ? "Upload dari email oleh " . (\App\Models\User::find($uploadedBy)?->name ?? 'User') . " ({$importedCount} SKU)"
+                        : "Import otomatis via Email ({$importedCount} SKU)",
+                    'metadata' => [
+                        'sku_count' => $importedCount,
+                        'source' => 'email',
+                        'skipped_count' => count($skippedItems),
+                    ],
+                ]);
             });
         } elseif ($dryRun) {
             $importedCount = count($validRowsToSave);
         }
 
-        $status = count($skippedItems) > 0 ? 'partial_unmapped' : 'success';
         $uniqueSkippedNames = array_values(array_unique(array_column($skippedItems, 'item_name')));
+
+        if (count($validRowsToSave) === 0 && count($skippedItems) > 0) {
+            $status = 'all_unmapped';
+            $isSuccess = false;
+        } elseif (count($skippedItems) > 0) {
+            $status = 'partial_unmapped';
+            $isSuccess = true;
+        } else {
+            $status = 'success';
+            $isSuccess = true;
+        }
 
         $unmappedError = null;
         if (count($skippedItems) > 0) {
@@ -524,7 +593,7 @@ class StockImportService
         }
 
         return [
-            'success' => true,
+            'success' => $isSuccess,
             'status' => $status,
             'distributor' => $distributor,
             'distributor_code' => $distributorCode,
@@ -534,7 +603,9 @@ class StockImportService
             'imported_rows' => $importedCount,
             'skipped_rows' => count($skippedItems),
             'skipped_items' => $skippedItems,
-            'error' => $unmappedError,
+            'error' => $status === 'all_unmapped'
+                ? "Seluruh item (".count($uniqueSkippedNames)." item) belum ter-mapping ke NetSuite. 0 baris disimpan ke database. Harap petakan item terlebih dahulu di Master Mapping."
+                : $unmappedError,
             'details' => [
                 'imported_count' => $importedCount,
                 'skipped_count' => count($skippedItems),

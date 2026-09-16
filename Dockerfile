@@ -50,7 +50,19 @@ RUN { \
         echo 'post_max_size = 50M'; \
         echo 'memory_limit = 512M'; \
         echo 'max_execution_time = 300'; \
+        echo 'date.timezone = Asia/Jakarta'; \
     } > /usr/local/etc/php/conf.d/docker-php-uploads.ini
+
+# Konfigurasi OPcache untuk performa PHP
+RUN { \
+        echo 'opcache.enable = 1'; \
+        echo 'opcache.enable_cli = 0'; \
+        echo 'opcache.memory_consumption = 256'; \
+        echo 'opcache.interned_strings_buffer = 16'; \
+        echo 'opcache.max_accelerated_files = 20000'; \
+        echo 'opcache.revalidate_freq = 2'; \
+        echo 'opcache.save_comments = 1'; \
+    } > /usr/local/etc/php/conf.d/docker-php-opcache.ini
 
 COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
 
@@ -114,7 +126,8 @@ COPY . .
 COPY --from=builder /var/www/html/vendor ./vendor
 COPY --from=builder /var/www/html/public/build ./public/build
 
-RUN chown -R www-data:www-data storage bootstrap/cache
+RUN ln -sf /var/www/html/storage/app/public /var/www/html/public/storage \
+    && chown -R www-data:www-data storage bootstrap/cache
 
 # =============================================================================
 # web — nginx untuk production.
