@@ -26,6 +26,36 @@ class Index extends Component
 
     public bool $isLoadingDetail = false;
 
+    public bool $showLogsModal = false;
+
+    public function openLogsModal(): void
+    {
+        $this->showLogsModal = true;
+    }
+
+    public function closeLogsModal(): void
+    {
+        $this->showLogsModal = false;
+    }
+
+    public function runAutomationNow(ImapService $imapService): void
+    {
+        if (! $imapService->isConfigured()) {
+            session()->flash('error', 'Koneksi mail server belum dikonfigurasi pada file .env.');
+
+            return;
+        }
+
+        try {
+            \Illuminate\Support\Facades\Artisan::call('stock:process-emails', ['--limit' => 10]);
+            $imapService->clearCache();
+            $this->page = 1;
+            session()->flash('status', 'Otomasi pembacaan email berhasil dijalankan! Data lampiran yang valid telah diproses.');
+        } catch (\Throwable $e) {
+            session()->flash('error', 'Gagal menjalankan otomasi: '.$e->getMessage());
+        }
+    }
+
     public function mount(): void
     {
         $user = Auth::user();
@@ -146,9 +176,25 @@ class Index extends Component
             });
         }
 
+        $uids = $emails->pluck('uid')->map(fn ($u) => (string) $u)->all();
+        $emailLogs = \App\Models\StockEmailLog::whereIn('email_uid', $uids)->get()->keyBy('email_uid');
+
+        $logsQuery = \App\Models\StockEmailLog::query();
+        $automationStats = [
+            'total_processed' => $logsQuery->count(),
+            'success_count' => (clone $logsQuery)->where('status', 'success')->count(),
+            'partial_count' => (clone $logsQuery)->where('status', 'partial_unmapped')->count(),
+            'failed_count' => (clone $logsQuery)->whereIn('status', ['failed', 'invalid_template', 'unauthorized_sender'])->count(),
+            'last_run' => $logsQuery->latest()->first()?->created_at,
+        ];
+        $recentLogs = $this->showLogsModal ? \App\Models\StockEmailLog::latest()->take(50)->get() : collect();
+
         return view('livewire.emails.index', [
             'isConfigured' => $isConfigured,
             'emails' => $emails->values(),
+            'emailLogs' => $emailLogs,
+            'automationStats' => $automationStats,
+            'recentLogs' => $recentLogs,
             'total' => $inboxResult['total'] ?? 0,
             'currentPage' => $inboxResult['current_page'] ?? 1,
             'lastPage' => $inboxResult['last_page'] ?? 1,

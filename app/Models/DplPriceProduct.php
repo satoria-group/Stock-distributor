@@ -4,7 +4,6 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class DplPriceProduct extends Model
 {
@@ -33,9 +32,4 @@ class DplPriceProduct extends Model
         'price_reguler' => 'integer',
         'id_price_region' => 'integer',
     ];
-
-    public function netsuiteItem(): BelongsTo
-    {
-        return $this->belongsTo(NetsuiteItem::class, 'netsuite_item_id');
-    }
 }

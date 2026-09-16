@@ -10,6 +10,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Validation\Rule;
 use Livewire\Attributes\Layout;
+use Livewire\Attributes\Url;
 use Livewire\Component;
 use Livewire\WithPagination;
 
@@ -20,9 +21,11 @@ class Index extends Component
 
     public string $search = '';
 
+    #[Url]
     public string $distributorFilter = '';
 
     /** all | mapped | unmapped */
+    #[Url]
     public string $mappingFilter = 'all';
 
     public bool $showModal = false;

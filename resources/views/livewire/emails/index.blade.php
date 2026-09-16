@@ -98,6 +98,78 @@
         </div>
     @endif
 
+    <!-- Kartu Kontrol & Status Otomasi Email Background Worker -->
+    <div class="bg-white rounded-2xl border border-slate-200/80 p-5 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div class="flex items-center gap-3.5">
+            <div class="w-10 h-10 rounded-xl flex items-center justify-center text-white shadow-xs shrink-0" style="background: #0d6d5f;">
+                <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z"/>
+                </svg>
+            </div>
+            <div>
+                <div class="flex items-center gap-2">
+                    <h3 class="text-sm font-bold text-slate-900 tracking-tight">Otomasi Email Laporan Stok (Background Worker)</h3>
+                    <span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[10px] font-bold border border-emerald-200 shadow-2xs">
+                        <span class="w-1.5 h-1.5 rounded-full bg-emerald-600 animate-pulse"></span>
+                        <span>Aktif (Interval 1 Menit)</span>
+                    </span>
+                </div>
+                <p class="text-xs text-slate-500 mt-0.5">
+                    Sistem otomatis membaca email ber-subjek <i>"Satoria Daily Stock"</i>, mengekstrak Excel, memvalidasi keamanan, dan menginput ke database.
+                </p>
+                <!-- Quick Stats Badges -->
+                <div class="flex flex-wrap items-center gap-2 mt-2 text-[11px]">
+                    <span class="px-2 py-0.5 rounded-md bg-slate-100 text-slate-700 font-mono">
+                        Total Diproses: <b>{{ $automationStats['total_processed'] }}</b>
+                    </span>
+                    <span class="px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-700 border border-emerald-200 font-mono">
+                        Sukses Masuk DB: <b>{{ $automationStats['success_count'] }}</b>
+                    </span>
+                    @if ($automationStats['partial_count'] > 0)
+                        <span class="px-2 py-0.5 rounded-md bg-amber-50 text-amber-800 border border-amber-200 font-mono">
+                            Perlu Mapping: <b>{{ $automationStats['partial_count'] }}</b>
+                        </span>
+                    @endif
+                    @if ($automationStats['failed_count'] > 0)
+                        <span class="px-2 py-0.5 rounded-md bg-rose-50 text-rose-700 border border-rose-200 font-mono">
+                            Gagal Validasi: <b>{{ $automationStats['failed_count'] }}</b>
+                        </span>
+                    @endif
+                    @if ($automationStats['last_run'])
+                        <span class="text-slate-400">
+                            Terakhir: {{ $automationStats['last_run']->diffForHumans() }}
+                        </span>
+                    @endif
+                </div>
+            </div>
+        </div>
+
+        <div class="flex items-center gap-2 shrink-0">
+            <button type="button" wire:click="openLogsModal"
+                    class="px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-700 text-xs font-bold transition shadow-2xs cursor-pointer flex items-center gap-1.5">
+                <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/></svg>
+                <span>Lihat Riwayat Log ({{ $automationStats['total_processed'] }})</span>
+            </button>
+
+            <button type="button" wire:click="runAutomationNow"
+                    wire:loading.attr="disabled"
+                    class="px-3.5 py-2 rounded-xl text-white text-xs font-bold shadow-xs transition hover:brightness-110 cursor-pointer flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
+                    style="background: #0d6d5f;"
+                    title="Jalankan pengecekan dan pemrosesan email masuk sekarang tanpa menunggu scheduler 1 menit">
+                <svg wire:loading.remove wire:target="runAutomationNow" width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"/>
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                </svg>
+                <svg wire:loading wire:target="runAutomationNow" class="animate-spin text-white" width="14" height="14" fill="none" viewBox="0 0 24 24">
+                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path>
+                </svg>
+                <span wire:loading.remove wire:target="runAutomationNow">Jalankan Otomasi Sekarang</span>
+                <span wire:loading wire:target="runAutomationNow">Memproses Email...</span>
+            </button>
+        </div>
+    </div>
+
     <!-- Toolbar: Filter & Pencarian -->
     <div class="bg-white rounded-2xl border border-slate-200/80 p-4 shadow-xs flex flex-col lg:flex-row lg:items-center justify-between gap-3">
         <div class="flex-1 relative">
@@ -202,6 +274,43 @@
                                             <span class="w-1.5 h-1.5 rounded-full bg-emerald-600 animate-pulse"></span>
                                             <span>Daily Stock</span>
                                         </span>
+                                    @endif
+
+                                    @if (isset($emailLogs[$email['uid']]))
+                                        @php $log = $emailLogs[$email['uid']]; @endphp
+                                        @if ($log->status === 'success')
+                                            <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-700 text-[10px] font-bold border border-emerald-200 shrink-0 shadow-2xs" title="Otomatis terproses: {{ $log->imported_rows }} baris masuk database">
+                                                <svg width="10" height="10" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7"/></svg>
+                                                <span>Auto-Imported ({{ $log->imported_rows }})</span>
+                                            </span>
+                                        @elseif ($log->status === 'partial_unmapped')
+                                            <div class="inline-flex items-center gap-1.5 flex-wrap">
+                                                <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-amber-50 text-amber-700 text-[10px] font-bold border border-amber-200 shrink-0 shadow-2xs" title="{{ $log->error_message ?: ($log->imported_rows . ' baris masuk, ' . $log->skipped_rows . ' item belum ter-mapping') }}">
+                                                    <span>⚠️ Auto: Sebagian ({{ $log->imported_rows }}/{{ $log->total_rows }})</span>
+                                                </span>
+                                                @if (! empty($log->details['unique_skipped_names']))
+                                                    <span class="text-[10px] text-amber-800 bg-amber-100/80 border border-amber-300/70 rounded px-1.5 py-0.5 font-mono truncate max-w-[180px]" title="Item belum di-mapping: {{ implode(', ', $log->details['unique_skipped_names']) }}">
+                                                        Unmapped: {{ implode(', ', array_slice($log->details['unique_skipped_names'], 0, 2)) }}{{ count($log->details['unique_skipped_names']) > 2 ? ' +' . (count($log->details['unique_skipped_names']) - 2) : '' }}
+                                                    </span>
+                                                @endif
+                                            </div>
+                                        @elseif ($log->status === 'inactive_distributor')
+                                            <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-rose-50 text-rose-700 text-[10px] font-bold border border-rose-200 shrink-0 shadow-2xs" title="{{ $log->error_message }}">
+                                                <span>✕ Distributor Non-Aktif</span>
+                                            </span>
+                                        @elseif ($log->status === 'invalid_template')
+                                            <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-rose-50 text-rose-700 text-[10px] font-bold border border-rose-200 shrink-0 shadow-2xs" title="{{ $log->error_message }}">
+                                                <span>✕ Template Tidak Valid</span>
+                                            </span>
+                                        @elseif ($log->status === 'unauthorized_sender')
+                                            <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-rose-50 text-rose-700 text-[10px] font-bold border border-rose-200 shrink-0 shadow-2xs" title="{{ $log->error_message }}">
+                                                <span>✕ Pengirim Tidak Dikenal</span>
+                                            </span>
+                                        @elseif ($log->status === 'failed')
+                                            <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-rose-50 text-rose-700 text-[10px] font-bold border border-rose-200 shrink-0 shadow-2xs" title="{{ $log->error_message }}">
+                                                <span>✕ Gagal Proses</span>
+                                            </span>
+                                        @endif
                                     @endif
                                 </div>
                             </td>
@@ -363,6 +472,70 @@
                     @endif
                 </div>
 
+                <!-- Banner Status Otomasi Email -->
+                @php $selectedLog = $emailLogs[$selectedEmail['uid']] ?? null; @endphp
+                @if ($selectedLog)
+                    <div class="px-6 py-3.5 border-b {{ $selectedLog->status === 'success' ? 'bg-emerald-50/80 border-emerald-200' : ($selectedLog->status === 'partial_unmapped' ? 'bg-amber-50/80 border-amber-200' : 'bg-rose-50/80 border-rose-200') }} shrink-0">
+                        <div class="flex items-center justify-between text-xs">
+                            <div class="flex items-center gap-2.5">
+                                @if ($selectedLog->status === 'success')
+                                    <span class="w-6 h-6 rounded-full bg-emerald-600 text-white flex items-center justify-center font-bold text-xs shrink-0">✓</span>
+                                    <div>
+                                        <div class="font-bold text-emerald-950">Berhasil Diimpor Otomatis oleh Sistem</div>
+                                        <div class="text-[11px] text-emerald-700">
+                                            Distributor: <b>{{ $selectedLog->distributor_code }}</b> &bull;
+                                            Snapshot: <b>{{ $selectedLog->tanggal_snapshot ? $selectedLog->tanggal_snapshot->format('d M Y') : '-' }}</b> &bull;
+                                            <b>{{ $selectedLog->imported_rows }} baris</b> tersimpan ke database.
+                                        </div>
+                                    </div>
+                                @elseif ($selectedLog->status === 'partial_unmapped')
+                                    <span class="w-6 h-6 rounded-full bg-amber-500 text-white flex items-center justify-center font-bold text-xs shrink-0">!</span>
+                                    <div class="flex-1">
+                                        <div class="font-bold text-amber-950">Terimpor Sebagian (Ada Produk Belum Terpetakan ke NetSuite)</div>
+                                        <div class="text-[11px] text-amber-800">
+                                            <b>{{ $selectedLog->imported_rows }}</b> baris masuk database, <b>{{ $selectedLog->skipped_rows }}</b> baris dilewati karena item belum di-mapping.
+                                        </div>
+                                        @if (! empty($selectedLog->details['unique_skipped_names']))
+                                            <div class="mt-2 pt-2 border-t border-amber-200/70">
+                                                <div class="text-[11px] font-bold text-amber-900 mb-1 flex items-center gap-1.5">
+                                                    <span>Daftar Item Belum Ter-mapping ({{ count($selectedLog->details['unique_skipped_names']) }} Item):</span>
+                                                </div>
+                                                <div class="flex flex-wrap gap-1.5 mb-2.5">
+                                                    @foreach ($selectedLog->details['unique_skipped_names'] as $unmappedName)
+                                                        <span class="inline-flex items-center px-2 py-0.5 rounded-md bg-amber-100 text-amber-900 border border-amber-300 font-mono text-[10px] font-medium shadow-2xs">
+                                                            {{ $unmappedName }}
+                                                        </span>
+                                                    @endforeach
+                                                </div>
+                                                @if ($selectedLog->distributor_id)
+                                                    <a href="{{ route('distributor-items.index', ['distributorFilter' => $selectedLog->distributor_id, 'mappingFilter' => 'unmapped']) }}"
+                                                       class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold shadow-2xs transition">
+                                                        <span>Mapping Item Distributor Ini Sekarang</span>
+                                                        <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3"/></svg>
+                                                    </a>
+                                                @endif
+                                            </div>
+                                        @endif
+                                    </div>
+                                @elseif ($selectedLog->status === 'inactive_distributor')
+                                    <span class="w-6 h-6 rounded-full bg-rose-600 text-white flex items-center justify-center font-bold text-xs shrink-0">✕</span>
+                                    <div>
+                                        <div class="font-bold text-rose-950">Gagal Diimpor: Distributor Non-Aktif</div>
+                                        <div class="text-[11px] text-rose-700">{{ $selectedLog->error_message }}</div>
+                                    </div>
+                                @else
+                                    <span class="w-6 h-6 rounded-full bg-rose-600 text-white flex items-center justify-center font-bold text-xs shrink-0">✕</span>
+                                    <div>
+                                        <div class="font-bold text-rose-950">Gagal Diimpor Otomatis: {{ ucfirst(str_replace('_', ' ', $selectedLog->status)) }}</div>
+                                        <div class="text-[11px] text-rose-700">{{ $selectedLog->error_message }}</div>
+                                    </div>
+                                @endif
+                            </div>
+                            <span class="text-[10px] text-slate-500 font-mono shrink-0">Diproses: {{ $selectedLog->created_at->format('d/m/Y H:i') }}</span>
+                        </div>
+                    </div>
+                @endif
+
                 <!-- Section Lampiran (Excel / Files) -->
                 @if (! empty($selectedEmail['attachments']))
                     <div class="px-6 py-3.5 bg-emerald-50/40 border-b border-emerald-200/60 shrink-0">
@@ -466,6 +639,128 @@
                             </a>
                         @endif
                     </div>
+                </div>
+            </div>
+        </div>
+    @endif
+
+    <!-- MODAL RIWAYAT LOG OTOMASI EMAIL -->
+    @if ($showLogsModal)
+        <div class="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center z-50 p-4 animate-in fade-in duration-200"
+             wire:click.self="closeLogsModal">
+            <div class="bg-white rounded-2xl shadow-2xl w-full max-w-5xl max-h-[85vh] flex flex-col border border-slate-200 overflow-hidden">
+                <!-- Modal Header -->
+                <div class="px-6 py-4 border-b border-slate-200 flex items-center justify-between bg-slate-50/80 shrink-0">
+                    <div class="flex items-center gap-2.5">
+                        <div class="w-8 h-8 rounded-lg flex items-center justify-center text-white shadow-xs" style="background: #0d6d5f;">
+                            <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/></svg>
+                        </div>
+                        <div>
+                            <h3 class="text-sm font-bold text-slate-900">Riwayat Log Eksekusi Otomasi Email</h3>
+                            <p class="text-[11px] text-slate-500">Histori pemrosesan berkas laporan stok dari background worker</p>
+                        </div>
+                    </div>
+                    <button type="button" wire:click="closeLogsModal" class="w-8 h-8 rounded-xl bg-white border border-slate-200 text-slate-400 hover:text-slate-700 flex items-center justify-center transition cursor-pointer">✕</button>
+                </div>
+
+                <!-- Modal Body: Table -->
+                <div class="flex-1 overflow-y-auto p-6">
+                    @if ($recentLogs->isEmpty())
+                        <div class="text-center py-12 text-slate-400">
+                            <div class="text-3xl mb-2">📋</div>
+                            <div class="font-bold text-slate-700 text-sm">Belum ada riwayat eksekusi otomasi</div>
+                            <div class="text-xs text-slate-400 mt-0.5">Riwayat akan otomatis terisi setiap kali background worker memproses email laporan stok.</div>
+                        </div>
+                    @else
+                        <div class="border border-slate-200 rounded-xl overflow-hidden text-xs">
+                            <table class="w-full text-left">
+                                <thead class="bg-slate-50 border-b border-slate-200 text-slate-500 font-bold uppercase text-[10px]">
+                                    <tr>
+                                        <th class="py-2.5 px-3">Waktu Eksekusi</th>
+                                        <th class="py-2.5 px-3">Pengirim</th>
+                                        <th class="py-2.5 px-3">Distributor & Tgl</th>
+                                        <th class="py-2.5 px-3">Nama File</th>
+                                        <th class="py-2.5 px-3 text-center">Status</th>
+                                        <th class="py-2.5 px-3 text-right">Baris Sukses</th>
+                                        <th class="py-2.5 px-3">Catatan / Error</th>
+                                    </tr>
+                                </thead>
+                                <tbody class="divide-y divide-slate-100 bg-white">
+                                    @foreach ($recentLogs as $log)
+                                        <tr class="hover:bg-slate-50 transition">
+                                            <td class="py-2.5 px-3 font-mono text-[11px] text-slate-500 whitespace-nowrap">
+                                                {{ $log->created_at->format('d/m/Y H:i') }}
+                                            </td>
+                                            <td class="py-2.5 px-3 font-medium text-slate-800">
+                                                <div class="truncate max-w-[180px]" title="{{ $log->from_email }}">{{ $log->from_email }}</div>
+                                            </td>
+                                            <td class="py-2.5 px-3 font-medium text-slate-900 whitespace-nowrap">
+                                                <b>{{ $log->distributor_code ?: '-' }}</b>
+                                                @if ($log->tanggal_snapshot)
+                                                    <span class="text-slate-400 font-mono text-[10px]">({{ $log->tanggal_snapshot->format('d/m/Y') }})</span>
+                                                @endif
+                                            </td>
+                                            <td class="py-2.5 px-3 text-slate-600 truncate max-w-[140px]" title="{{ $log->filename }}">
+                                                {{ $log->filename ?: '-' }}
+                                            </td>
+                                            <td class="py-2.5 px-3 text-center whitespace-nowrap">
+                                                @if ($log->status === 'success')
+                                                    <span class="px-2 py-0.5 rounded-md bg-emerald-100 text-emerald-800 text-[10px] font-bold">SUKSES</span>
+                                                @elseif ($log->status === 'partial_unmapped')
+                                                    <span class="px-2 py-0.5 rounded-md bg-amber-100 text-amber-800 text-[10px] font-bold">SEBAGIAN</span>
+                                                @elseif ($log->status === 'inactive_distributor')
+                                                    <span class="px-2 py-0.5 rounded-md bg-rose-100 text-rose-800 text-[10px] font-bold">NON-AKTIF</span>
+                                                @else
+                                                    <span class="px-2 py-0.5 rounded-md bg-rose-100 text-rose-800 text-[10px] font-bold">{{ strtoupper($log->status) }}</span>
+                                                @endif
+                                            </td>
+                                            <td class="py-2.5 px-3 text-right font-mono font-bold text-slate-800">
+                                                {{ number_format($log->imported_rows) }}
+                                            </td>
+                                            <td class="py-2.5 px-3 text-slate-500 text-[11px]">
+                                                @if ($log->status === 'partial_unmapped' && ! empty($log->details['unique_skipped_names']))
+                                                    <div class="space-y-1">
+                                                        <div class="font-semibold text-amber-900 text-[11px]">
+                                                            {{ count($log->details['unique_skipped_names']) }} Item Belum Ter-mapping:
+                                                        </div>
+                                                        <div class="flex flex-wrap gap-1 max-w-[280px]">
+                                                            @foreach (array_slice($log->details['unique_skipped_names'], 0, 3) as $unmappedItem)
+                                                                <span class="px-1.5 py-0.5 rounded bg-amber-50 text-amber-900 border border-amber-200 text-[10px] font-mono truncate max-w-[130px]" title="{{ $unmappedItem }}">
+                                                                    {{ $unmappedItem }}
+                                                                </span>
+                                                            @endforeach
+                                                            @if (count($log->details['unique_skipped_names']) > 3)
+                                                                <span class="text-[10px] text-amber-700 font-bold self-center">
+                                                                    +{{ count($log->details['unique_skipped_names']) - 3 }} lainnya
+                                                                </span>
+                                                            @endif
+                                                        </div>
+                                                        @if ($log->distributor_id)
+                                                            <a href="{{ route('distributor-items.index', ['distributorFilter' => $log->distributor_id, 'mappingFilter' => 'unmapped']) }}"
+                                                               class="inline-block text-[10px] text-emerald-700 hover:underline font-bold mt-0.5">
+                                                                &rarr; Buka Form Mapping Item
+                                                            </a>
+                                                        @endif
+                                                    </div>
+                                                @else
+                                                    <div class="truncate max-w-[220px]" title="{{ $log->error_message }}">
+                                                        {{ $log->error_message ?: '-' }}
+                                                    </div>
+                                                @endif
+                                            </td>
+                                        </tr>
+                                    @endforeach
+                                </tbody>
+                            </table>
+                        </div>
+                    @endif
+                </div>
+
+                <!-- Modal Footer -->
+                <div class="px-6 py-3 bg-slate-50 border-t border-slate-200 flex justify-end shrink-0">
+                    <button type="button" wire:click="closeLogsModal" class="px-4 py-1.5 rounded-xl border border-slate-200 bg-white text-slate-700 text-xs font-semibold hover:bg-slate-100 cursor-pointer">
+                        Tutup
+                    </button>
                 </div>
             </div>
         </div>

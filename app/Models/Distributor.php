@@ -4,7 +4,6 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
 class Distributor extends Model
@@ -14,6 +13,7 @@ class Distributor extends Model
     protected $fillable = [
         'distributor_code',
         'name',
+        'sender_email',
         'is_active',
     ];
 
@@ -24,13 +24,8 @@ class Distributor extends Model
         ];
     }
 
-    public function items(): HasMany
+    public function stockEmailLogs(): \Illuminate\Database\Eloquent\Relations\HasMany
     {
-        return $this->hasMany(DistributorItem::class);
-    }
-
-    public function stockEntries(): HasMany
-    {
-        return $this->hasMany(StockEntry::class);
+        return $this->hasMany(StockEmailLog::class);
     }
 }

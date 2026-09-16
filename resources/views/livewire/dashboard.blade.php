@@ -177,7 +177,8 @@
          data-top='@json($chartTopProducts)'
          data-donut='@json($chartDonut)'
          data-trend='@json($chartTrend)'
-         data-fefo='@json($chartFefoHorizon)'>
+         data-fefo='@json($chartFefoHorizon)'
+         data-compliance='@json($chartComplianceTrend)'>
     </div>
 
     <!-- Grafik Trend Stock On Hand (Snapshot Historis per Satuan) -->
@@ -258,52 +259,6 @@
             </div>
         </div>
 
-        <!-- Quick Summary Stats -->
-        <div class="grid grid-cols-2 md:grid-cols-4 gap-3 py-3 px-4 my-4 bg-slate-50/70 rounded-xl border border-slate-100">
-            <div>
-                <span class="text-[10px] font-bold uppercase tracking-wider text-slate-400">Stok Posisi Terkini</span>
-                <div class="text-base font-extrabold text-slate-900 tabular-nums font-mono mt-0.5">
-                    {{ $chartTrend['latest_qty'] !== null ? number_format($chartTrend['latest_qty'], 0, ',', '.') : '-' }}
-                    <span class="text-xs font-normal text-slate-500">{{ $chartTrend['unit'] }}</span>
-                </div>
-            </div>
-            <div>
-                <span class="text-[10px] font-bold uppercase tracking-wider text-slate-400">Stok Awal Periode</span>
-                <div class="text-base font-extrabold text-slate-900 tabular-nums font-mono mt-0.5">
-                    {{ $chartTrend['first_qty'] !== null ? number_format($chartTrend['first_qty'], 0, ',', '.') : '-' }}
-                    <span class="text-xs font-normal text-slate-500">{{ $chartTrend['unit'] }}</span>
-                </div>
-            </div>
-            <div>
-                <span class="text-[10px] font-bold uppercase tracking-wider text-slate-400">Perubahan (&Delta; Delta)</span>
-                <div class="text-base font-extrabold tabular-nums font-mono mt-0.5 flex items-center gap-1.5">
-                    @if ($chartTrend['delta'] !== null)
-                        @if ($chartTrend['delta'] > 0)
-                            <span class="text-emerald-700">
-                                +{{ number_format($chartTrend['delta'], 0, ',', '.') }}
-                                <span class="text-xs font-semibold">({{ $chartTrend['delta_pct'] > 0 ? '+' : '' }}{{ $chartTrend['delta_pct'] }}%)</span>
-                            </span>
-                        @elseif ($chartTrend['delta'] < 0)
-                            <span class="text-rose-600">
-                                {{ number_format($chartTrend['delta'], 0, ',', '.') }}
-                                <span class="text-xs font-semibold">({{ $chartTrend['delta_pct'] }}%)</span>
-                            </span>
-                        @else
-                            <span class="text-slate-600">0 <span class="text-xs font-semibold">(0%)</span></span>
-                        @endif
-                    @else
-                        <span class="text-slate-400">-</span>
-                    @endif
-                </div>
-            </div>
-            <div>
-                <span class="text-[10px] font-bold uppercase tracking-wider text-slate-400">Kelengkapan Snapshot</span>
-                <div class="text-base font-extrabold text-slate-700 tabular-nums font-mono mt-0.5">
-                    {{ $chartTrend['active_days'] }} <span class="text-xs font-normal text-slate-500">/ {{ $chartTrend['total_period_days'] }} Hari Terisi</span>
-                </div>
-            </div>
-        </div>
-
         <!-- Canvas Grafik Line -->
         <div class="relative" style="height: 300px;">
             <!-- Loading Indicator Overlay saat ganti unit/periode grafik -->
@@ -338,57 +293,138 @@
     </div>
 
     <!-- Dua Grafik Utama: Top 10 Produk & Distribusi Stok -->
+    <!-- Dua Grafik Utama: Top 10 Produk & Distribusi Stok -->
     <div class="grid grid-cols-1 lg:grid-cols-3 gap-5 mb-7">
         <!-- Grafik Kiri (Col-span-2): Top 10 Produk Berdasarkan Kuantitas -->
-        <div class="lg:col-span-2 bg-white rounded-2xl border border-slate-200/80 p-6 shadow-xs">
-            <div class="flex items-center justify-between mb-4">
-                <div>
-                    <h3 class="text-sm font-bold text-slate-900 tracking-tight">Top 10 Produk Berdasarkan Kuantitas</h3>
-                    <p class="text-xs text-slate-500 mt-0.5">
-                        @if ($selectedGroup === 'ALL' && ! $selectedBranchId)
-                            Akumulasi volume kuantitas produk secara nasional dengan breakdown grup distributor
-                        @else
-                            Akumulasi kuantitas produk pada {{ $selectedBranchId ? $availableBranches->firstWhere('id', $selectedBranchId)?->name : ($selectedGroup === 'OTHER' ? 'Distributor Lainnya' : $selectedGroup) }}
-                        @endif
-                    </p>
+        <div class="lg:col-span-2 bg-white rounded-2xl border border-slate-200/80 p-6 shadow-xs flex flex-col justify-between">
+            <div>
+                <div class="flex items-center justify-between mb-3">
+                    <div>
+                        <h3 class="text-sm font-bold text-slate-900 tracking-tight">Top 10 Produk Berdasarkan Kuantitas</h3>
+                        <p class="text-xs text-slate-500 mt-0.5">
+                            @if ($selectedGroup === 'ALL' && ! $selectedBranchId)
+                                Akumulasi volume kuantitas produk secara nasional dengan breakdown grup distributor
+                            @else
+                                Akumulasi kuantitas produk pada {{ $selectedBranchId ? $availableBranches->firstWhere('id', $selectedBranchId)?->name : ($selectedGroup === 'OTHER' ? 'Distributor Lainnya' : $selectedGroup) }}
+                            @endif
+                        </p>
+                    </div>
                 </div>
-            </div>
-            <div wire:ignore class="relative" style="height: 320px;">
-                <canvas id="chart-top-products"></canvas>
-                <div id="no-data-top" class="absolute inset-0 flex flex-col items-center justify-center text-slate-400 text-xs hidden">
-                    <div class="text-3xl mb-1">📊</div>
-                    <span class="font-medium text-slate-500">Belum ada data stok produk untuk grup ini.</span>
-                    <span class="text-[11px] text-slate-400">Silakan pilih distributor lain atau unggah data stok harian.</span>
+                <div wire:ignore class="relative" style="height: 385px;">
+                    <canvas id="chart-top-products"></canvas>
+                    <div id="no-data-top" class="absolute inset-0 flex flex-col items-center justify-center text-slate-400 text-xs hidden">
+                        <div class="text-3xl mb-1">📊</div>
+                        <span class="font-medium text-slate-500">Belum ada data stok produk untuk grup ini.</span>
+                        <span class="text-[11px] text-slate-400">Silakan pilih distributor lain atau unggah data stok harian.</span>
+                    </div>
                 </div>
             </div>
         </div>
 
-        <!-- Grafik Kanan (Col-span-1): Distribusi Stok per Distributor (Donut) -->
+        <!-- Grafik Kanan (Col-span-1): Distribusi Stok per Distributor (Donut) & Top 5 Cabang -->
         <div class="bg-white rounded-2xl border border-slate-200/80 p-6 shadow-xs flex flex-col justify-between">
             <div>
-                <div class="flex items-center justify-between mb-3">
+                <!-- Header & Metric Toggle (Nilai Rp vs Fisik Unit) -->
+                <div class="flex items-center justify-between gap-2 mb-2">
                     <div>
                         <h3 class="text-sm font-bold text-slate-900 tracking-tight">
                             @if ($selectedGroup === 'ALL' && ! $selectedBranchId)
-                                Distribusi Stok per Distributor
+                                Distribusi Alokasi Stok
                             @else
                                 Komposisi Sediaan ({{ $selectedBranchId ? $availableBranches->firstWhere('id', $selectedBranchId)?->name : ($selectedGroup === 'OTHER' ? 'Distributor Lainnya' : $selectedGroup) }})
                             @endif
                         </h3>
-                        <p class="text-xs text-slate-500 mt-0.5">Porsi persentase volume fisik stok</p>
+                        <p class="text-xs text-slate-500 mt-0.5">
+                            Porsi {{ $donutMetric === 'value' ? 'alokasi nilai modal (Rp)' : 'volume fisik stok' }}
+                        </p>
+                    </div>
+
+                    <!-- Metric Toggle Button (Nilai vs Fisik) -->
+                    <div class="inline-flex p-0.5 bg-slate-100 rounded-xl border border-slate-200 text-[11px] shadow-2xs shrink-0">
+                        <button type="button" wire:click="setDonutMetric('value')"
+                                class="px-2.5 py-1 rounded-lg cursor-pointer transition font-bold {{ $donutMetric === 'value' ? 'bg-[#0d6d5f] text-white shadow-2xs' : 'text-slate-600 hover:text-slate-900' }}"
+                                title="Lihat persentase berdasarkan nilai rupiah (DPL)">
+                            Nilai (Rp)
+                        </button>
+                        <button type="button" wire:click="setDonutMetric('qty')"
+                                class="px-2.5 py-1 rounded-lg cursor-pointer transition font-bold {{ $donutMetric === 'qty' ? 'bg-[#0d6d5f] text-white shadow-2xs' : 'text-slate-600 hover:text-slate-900' }}"
+                                title="Lihat persentase berdasarkan jumlah fisik unit">
+                            Fisik
+                        </button>
                     </div>
                 </div>
-                <div wire:ignore class="relative flex items-center justify-center" style="height: 250px;">
+
+                <!-- Donut Chart Canvas -->
+                <div wire:ignore class="relative flex items-center justify-center" style="height: 165px;">
                     <canvas id="chart-donut-dist"></canvas>
                     <div id="no-data-donut" class="absolute inset-0 flex flex-col items-center justify-center text-slate-400 text-xs hidden">
                         <div class="text-3xl mb-1">🍩</div>
                         <span class="font-medium text-slate-500">Belum ada data stok.</span>
                     </div>
                 </div>
+
+                <!-- Top 5 Cabang Terbesar (Branch Capital Allocation) -->
+                <div class="mt-3.5 pt-3 border-t border-slate-100">
+                    <div class="flex items-center justify-between mb-2">
+                        <span class="text-[11px] font-bold uppercase tracking-wider text-slate-600 flex items-center gap-1.5">
+                            <svg class="w-3.5 h-3.5 text-amber-500" fill="currentColor" viewBox="0 0 20 20">
+                                <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z"/>
+                            </svg>
+                            Top 5 Cabang ({{ $donutMetric === 'value' ? 'Aset Modal' : 'Volume Fisik' }})
+                        </span>
+                        <span class="text-[10px] text-slate-400 font-mono font-medium">Porsi</span>
+                    </div>
+
+                    @if (count($topBranches) > 0)
+                        <div class="space-y-2">
+                            @foreach ($topBranches as $idx => $b)
+                                <div>
+                                    <div class="flex items-center justify-between text-xs mb-1">
+                                        <div class="flex items-center gap-1.5 min-w-0 pr-2">
+                                            <span class="w-4 h-4 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0 {{ $idx === 0 ? 'bg-amber-100 text-amber-800 border border-amber-300 font-bold' : 'bg-slate-100 text-slate-600 font-medium' }}">
+                                                {{ $idx + 1 }}
+                                            </span>
+                                            <span class="font-semibold text-slate-800 truncate text-[11.5px]" title="{{ $b->name }}">
+                                                {{ $b->short_name }}
+                                            </span>
+                                        </div>
+                                        <div class="text-right shrink-0">
+                                            <span class="font-bold font-mono text-slate-900 text-xs">
+                                                @if ($donutMetric === 'value')
+                                                    Rp {{ number_format($b->total_value, 0, ',', '.') }}
+                                                @else
+                                                    {{ number_format($b->total_qty, 0, ',', '.') }}
+                                                @endif
+                                            </span>
+                                            <span class="text-[10px] font-mono text-slate-400 ml-1">({{ $b->pct }}%)</span>
+                                        </div>
+                                    </div>
+                                    <!-- Mini Progress Bar dengan warna grup distributor -->
+                                    <div class="w-full bg-slate-100 rounded-full h-1.5 overflow-hidden">
+                                        <div class="h-1.5 rounded-full transition-all duration-300"
+                                             style="width: {{ min(100, max(3, $b->pct)) }}%; background-color: {{ $b->color }};"></div>
+                                    </div>
+                                </div>
+                            @endforeach
+                        </div>
+                    @else
+                        <div class="text-center py-4 text-xs text-slate-400">
+                            Belum ada data cabang.
+                        </div>
+                    @endif
+                </div>
             </div>
-            <div class="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500 font-mono">
-                <span>Total Volume Fisik</span>
-                <span class="font-bold text-slate-900">{{ number_format($kpi['total_btl'] + $kpi['total_amp'] + $kpi['total_pcs'], 0, ',', '.') }} unit</span>
+
+            <!-- Bottom Total Summary -->
+            <div class="mt-3 pt-2.5 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500 font-mono">
+                <span>Total {{ $donutMetric === 'value' ? 'Valuasi Stok' : 'Volume Fisik' }}</span>
+                <span class="font-bold text-slate-900">
+                    @if ($donutMetric === 'value')
+                        Rp {{ number_format($chartDonut['total'] ?? 0, 0, ',', '.') }}
+                    @else
+                        {{ number_format($chartDonut['total'] ?? 0, 0, ',', '.') }} unit
+                    @endif
+                </span>
             </div>
         </div>
     </div>
@@ -840,199 +876,9 @@
         </div>
     </div>
 
-    <!-- Section Early Warning: Batch Kadaluarsa Kritis -->
-    @if ($expiryAlerts->isNotEmpty())
-        <div class="border border-rose-200/80 rounded-2xl p-6 shadow-xs mb-7"
-             style="background: #fff8f8;">
-            <div class="flex items-center gap-3 mb-4">
-                <div class="w-8 h-8 rounded-xl bg-rose-100 text-rose-700 flex items-center justify-center shrink-0 border border-rose-200">
-                    <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path>
-                    </svg>
-                </div>
-                <div>
-                    <h3 class="text-sm font-bold text-slate-900 tracking-tight">Perhatian Logistik: Batch Mendekati / Lewat Kadaluarsa</h3>
-                    <p class="text-xs text-slate-500 mt-0.5">Prioritaskan pengeluaran stok (FEFO) atau koordinasikan penarikan sebelum retur kedaluwarsa</p>
-                </div>
-            </div>
-
-            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
-                @foreach ($expiryAlerts as $alert)
-                    @php
-                        $days = $alert->daysToExpiry();
-                        $status = $alert->expiryStatus();
-                    @endphp
-                    <div class="p-4 rounded-xl border {{ $status === 'critical' ? 'border-rose-200 bg-white' : 'border-amber-200 bg-white' }} text-xs shadow-2xs hover:shadow-sm transition">
-                        <div class="font-bold text-slate-900 truncate text-xs">{{ $alert->distributorItem?->item_name }}</div>
-                        <div class="text-slate-500 truncate text-[11px] mt-0.5">{{ $alert->distributor?->name }}</div>
-                        <div class="flex items-center justify-between mt-2.5 pt-2 border-t border-slate-100 font-mono">
-                            <span class="text-slate-600">Qty: <b class="text-slate-900">{{ number_format($alert->quantity, 0, ',', '.') }}</b></span>
-                            <span class="font-bold {{ $status === 'critical' ? 'text-rose-700' : 'text-amber-800' }}">
-                                {{ $days < 0 ? 'Lewat '.abs($days).'h' : $days.' hari lagi' }}
-                            </span>
-                        </div>
-                    </div>
-                @endforeach
-            </div>
-        </div>
-    @endif
     @elseif ($activeTab === 'expiry')
     <!-- TAB 2: MONITORING KEDALUWARSA (FEFO WATCHLIST) -->
     <div class="space-y-6 mb-7">
-        <!-- 4 Summary Cards FEFO (Static Sans-serif without jumpy hover) -->
-        <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
-            <div wire:click="$set('expiryRiskFilter', 'critical')" class="bg-white border {{ $expiryRiskFilter === 'critical' ? 'border-rose-500 ring-2 ring-rose-200 shadow-sm' : 'border-slate-200/80' }} rounded-2xl p-5 shadow-xs cursor-pointer flex flex-col justify-between">
-                <div class="flex items-center justify-between">
-                    <span class="text-[11px] uppercase text-rose-700 font-bold">🔴 Kritis (&lt; 3 Bulan)</span>
-                    <span class="text-[10px] px-2.5 py-0.5 rounded-full bg-rose-100 text-rose-800 font-bold">FEFO Prioritas</span>
-                </div>
-                <div class="text-3xl font-extrabold mt-3 text-rose-700 tabular-nums tracking-tight">
-                    {{ $fefoSummary['critical'] }} <span class="text-xs font-normal text-slate-500">batch</span>
-                </div>
-                <div class="text-[11px] text-slate-500 mt-2 pt-2 border-t border-slate-100">Berisiko tinggi ditolak RS / Apotek</div>
-            </div>
-
-            <div wire:click="$set('expiryRiskFilter', 'warning')" class="bg-white border {{ $expiryRiskFilter === 'warning' ? 'border-amber-500 ring-2 ring-amber-200 shadow-sm' : 'border-slate-200/80' }} rounded-2xl p-5 shadow-xs cursor-pointer flex flex-col justify-between">
-                <div class="flex items-center justify-between">
-                    <span class="text-[11px] uppercase text-amber-700 font-bold">🟡 Waspada (3 - 6 Bulan)</span>
-                    <span class="text-[10px] px-2.5 py-0.5 rounded-full bg-amber-100 text-amber-800 font-bold">Near-ED</span>
-                </div>
-                <div class="text-3xl font-extrabold mt-3 text-amber-700 tabular-nums tracking-tight">
-                    {{ $fefoSummary['warning'] }} <span class="text-xs font-normal text-slate-500">batch</span>
-                </div>
-                <div class="text-[11px] text-slate-500 mt-2 pt-2 border-t border-slate-100">Akselerasi penjualan ke cabang</div>
-            </div>
-
-            <div wire:click="$set('expiryRiskFilter', 'expired')" class="bg-white border {{ $expiryRiskFilter === 'expired' ? 'border-red-600 ring-2 ring-red-200 shadow-sm' : 'border-slate-200/80' }} rounded-2xl p-5 shadow-xs cursor-pointer flex flex-col justify-between">
-                <div class="flex items-center justify-between">
-                    <span class="text-[11px] uppercase text-red-700 font-bold">⛔ Sudah Expired</span>
-                    <span class="text-[10px] px-2.5 py-0.5 rounded-full bg-red-100 text-red-800 font-bold">Karantina</span>
-                </div>
-                <div class="text-3xl font-extrabold mt-3 text-red-700 tabular-nums tracking-tight">
-                    {{ $fefoSummary['expired'] }} <span class="text-xs font-normal text-slate-500">batch</span>
-                </div>
-                <div class="text-[11px] text-slate-500 mt-2 pt-2 border-t border-slate-100">Wajib ditarik & isolasi retur</div>
-            </div>
-
-            <div class="bg-white border border-slate-200/80 rounded-2xl p-5 shadow-xs flex flex-col justify-between">
-                <div class="flex items-center justify-between">
-                    <span class="text-[11px] uppercase text-slate-600 font-bold">📦 Total Qty Berisiko ED</span>
-                    <span class="text-[10px] px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-700 font-semibold">Fisik</span>
-                </div>
-                <div class="text-3xl font-extrabold mt-3 text-slate-900 tabular-nums tracking-tight">
-                    {{ number_format($fefoSummary['total_qty_at_risk'], 0, ',', '.') }}
-                </div>
-                <div class="text-[11px] text-slate-400 mt-2 pt-2 border-t border-slate-100">Total unit batch expired &lt;6 bulan</div>
-            </div>
-        </div>
-
-        <!-- Grafik Horizon Kedaluwarsa Makro (Macro Expiry Horizon Breakdown) -->
-        <div class="bg-white rounded-2xl border border-slate-200/80 p-6 shadow-xs">
-            <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-4 pb-4 border-b border-slate-100">
-                <div>
-                    <div class="flex items-center gap-2.5">
-                        <div class="w-8 h-8 rounded-lg flex items-center justify-center text-white shadow-xs shrink-0 bg-rose-600">
-                            <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/>
-                            </svg>
-                        </div>
-                        <div>
-                            <h3 class="text-sm font-bold text-slate-900 tracking-tight">Distribusi Horizon Kedaluwarsa Makro</h3>
-                            <p class="text-xs text-slate-500 mt-0.5">
-                                Sebaran umur simpan stok fisik (<span class="font-medium text-slate-700">{{ $chartFefoHorizon['unit_label'] }}</span>) lintas 5 zona kedaluwarsa & distributor
-                                @if ($fefoBranchId)
-                                    &bull; <span class="text-rose-700 font-medium">{{ $availableBranches->firstWhere('id', $fefoBranchId)?->name }}</span>
-                                @elseif ($selectedBranchId)
-                                    &bull; <span class="text-rose-700 font-medium">{{ $availableBranches->firstWhere('id', $selectedBranchId)?->name }}</span>
-                                @elseif ($selectedGroup !== 'ALL')
-                                    &bull; <span class="text-rose-700 font-medium">{{ $selectedGroup === 'OTHER' ? 'Distributor Lainnya' : $selectedGroup }}</span>
-                                @endif
-                            </p>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Unit Selector (BTL, AMP, PCS) -->
-                <div class="flex items-center bg-slate-100/90 p-1 rounded-xl border border-slate-200/70 text-xs shrink-0">
-                    <button type="button"
-                            wire:click="setFefoChartUnit('BTL')"
-                            wire:loading.attr="disabled"
-                            wire:target="setFefoChartUnit"
-                            class="px-2.5 py-1.5 rounded-lg transition-all cursor-pointer {{ $fefoChartUnit === 'BTL' ? 'bg-white font-bold text-rose-700 shadow-xs' : 'text-slate-600 hover:text-slate-900 font-medium' }}">
-                        Botol (BTL)
-                    </button>
-                    <button type="button"
-                            wire:click="setFefoChartUnit('AMP')"
-                            wire:loading.attr="disabled"
-                            wire:target="setFefoChartUnit"
-                            class="px-2.5 py-1.5 rounded-lg transition-all cursor-pointer {{ $fefoChartUnit === 'AMP' ? 'bg-white font-bold text-rose-700 shadow-xs' : 'text-slate-600 hover:text-slate-900 font-medium' }}">
-                        Ampul (AMP)
-                    </button>
-                    <button type="button"
-                            wire:click="setFefoChartUnit('PCS')"
-                            wire:loading.attr="disabled"
-                            wire:target="setFefoChartUnit"
-                            class="px-2.5 py-1.5 rounded-lg transition-all cursor-pointer {{ $fefoChartUnit === 'PCS' ? 'bg-white font-bold text-rose-700 shadow-xs' : 'text-slate-600 hover:text-slate-900 font-medium' }}">
-                        Pcs / Box (PCS)
-                    </button>
-                </div>
-            </div>
-
-            <!-- Mini Agregat Horizon Bar (Top Progress Bar) & Legend Chips -->
-            <div class="my-5 p-4 rounded-xl bg-slate-50 border border-slate-200/60 relative">
-                <!-- Loading Indicator Overlay saat ganti unit FEFO Horizon -->
-                <div wire:loading wire:target="setFefoChartUnit"
-                     class="absolute inset-0 bg-white/75 backdrop-blur-[1.5px] flex items-center justify-center z-20 rounded-xl transition-all">
-                    <div class="inline-flex items-center gap-2.5 px-3.5 py-2 rounded-xl bg-slate-900/90 text-white text-xs font-semibold shadow-lg backdrop-blur-md">
-                        <svg class="animate-spin h-3.5 w-3.5 text-rose-400 shrink-0" fill="none" viewBox="0 0 24 24">
-                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path>
-                        </svg>
-                        <span>Memperbarui horizon...</span>
-                    </div>
-                </div>
-                <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-2.5">
-                    <span class="text-xs font-bold text-slate-700">Komposisi Umur Simpan Stok Agregat:</span>
-                    <span class="text-xs text-slate-500 font-mono font-medium">
-                        Total Volume: <b class="text-slate-900">{{ number_format($chartFefoHorizon['total_qty'], 0, ',', '.') }}</b> {{ $chartFefoHorizon['unit'] }} ({{ number_format($chartFefoHorizon['total_batches'], 0, ',', '.') }} batch)
-                    </span>
-                </div>
-
-                <!-- Multi-segment horizontal bar -->
-                <div class="h-4 w-full flex overflow-hidden rounded-lg bg-slate-200/80 p-0.5 gap-0.5 shadow-inner">
-                    @if ($chartFefoHorizon['total_qty'] > 0)
-                        @foreach ($chartFefoHorizon['national'] as $tierKey => $tier)
-                            @if ($tier['pct'] > 0)
-                                <div style="width: {{ $tier['pct'] }}%; background-color: {{ $tier['color'] }};"
-                                     class="h-full first:rounded-l-md last:rounded-r-md transition-all duration-300 relative group cursor-pointer"
-                                     title="{{ $tier['label'] }}: {{ number_format($tier['qty'], 0, ',', '.') }} {{ $chartFefoHorizon['unit'] }} ({{ $tier['pct'] }}%)">
-                                </div>
-                            @endif
-                        @endforeach
-                    @else
-                        <div class="w-full h-full rounded-md bg-slate-300 flex items-center justify-center text-[10px] text-slate-500 font-medium">
-                            Tidak ada stok fisik berkedaluwarsa
-                        </div>
-                    @endif
-                </div>
-
-                <!-- 5 Legend Chips -->
-                <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2.5 mt-3 pt-3 border-t border-slate-200/60 text-xs">
-                    @foreach ($chartFefoHorizon['national'] as $tierKey => $tier)
-                        <div class="flex items-center gap-2 p-1.5 rounded-lg bg-white border border-slate-200/60">
-                            <span class="w-3 h-3 rounded-full shrink-0" style="background-color: {{ $tier['color'] }};"></span>
-                            <div class="min-w-0 flex-1">
-                                <div class="text-[11px] font-semibold text-slate-700 truncate" title="{{ $tier['label'] }}">{{ $tier['label'] }}</div>
-                                <div class="font-mono text-[11px] text-slate-500 flex items-center justify-between mt-0.5">
-                                    <span>{{ number_format($tier['qty'], 0, ',', '.') }}</span>
-                                    <span class="font-bold text-slate-800 ml-1">({{ $tier['pct'] }}%)</span>
-                                </div>
-                            </div>
-                        </div>
-                    @endforeach
-                </div>
-            </div>
-        </div>
 
         <!-- Tabel FEFO & Filter Toolbar -->
         <div class="bg-white rounded-2xl border border-slate-200/80 p-6 shadow-xs">
@@ -1094,12 +940,6 @@
                         </button>
                     </div>
 
-                    @if (($fefoSummary['total_risk_value'] ?? 0) > 0)
-                        <div class="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-rose-50 text-rose-800 border border-rose-200 text-xs font-bold shadow-2xs shrink-0">
-                            <span>⚠️ Potensi Kerugian ED Kritis: <b>Rp {{ number_format($fefoSummary['total_risk_value'], 0, ',', '.') }}</b></span>
-                        </div>
-                    @endif
-
                     <!-- Filter Controls FEFO: Cabang, Satuan, Search & Reset -->
                     <div class="flex flex-wrap items-center gap-2.5">
                         <!-- Filter Cabang FEFO -->
@@ -1118,9 +958,9 @@
                             <select wire:model.live="fefoSatuanFilter"
                                     class="w-full text-xs rounded-xl border border-slate-200 bg-slate-50/70 px-3 py-2 text-slate-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#0d6d5f]/20 focus:border-[#0d6d5f] transition">
                                 <option value="">Semua Satuan</option>
-                                <option value="BTL">Botol (Btl)</option>
-                                <option value="AMP">Ampul (Amp)</option>
-                                <option value="PCS">Pcs / Box (Alkes)</option>
+                                <option value="BTL">Botol (BTL)</option>
+                                <option value="AMP">Ampul (AMP)</option>
+                                <option value="PCS">Pcs / Box (PCS)</option>
                             </select>
                         </div>
 
@@ -1135,6 +975,146 @@
                                    placeholder="Cari produk / batch..."
                                    class="w-full text-xs rounded-xl border border-slate-200 bg-slate-50/70 pl-9 pr-3 py-2 text-slate-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#0d6d5f]/20 focus:border-[#0d6d5f] transition">
                         </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 4 Summary Cards FEFO (Static Sans-serif without jumpy hover) -->
+            <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                <div wire:click="$set('expiryRiskFilter', 'critical')" class="bg-white border {{ $expiryRiskFilter === 'critical' ? 'border-rose-500 ring-2 ring-rose-200 shadow-sm' : 'border-slate-200/80' }} rounded-2xl p-5 shadow-xs cursor-pointer flex flex-col justify-between">
+                    <div class="flex items-center justify-between">
+                        <span class="text-[11px] uppercase text-rose-700 font-bold">🔴 Kritis (&lt; 3 Bulan)</span>
+                        <span class="text-[10px] px-2.5 py-0.5 rounded-full bg-rose-100 text-rose-800 font-bold">FEFO Prioritas</span>
+                    </div>
+                    <div class="text-3xl font-extrabold mt-3 text-rose-700 tabular-nums tracking-tight">
+                        {{ $fefoSummary['critical'] }} <span class="text-xs font-normal text-slate-500">batch</span>
+                    </div>
+                    <div class="text-[11px] text-slate-500 mt-2 pt-2 border-t border-slate-100">Berisiko tinggi ditolak RS / Apotek</div>
+                </div>
+
+                <div wire:click="$set('expiryRiskFilter', 'warning')" class="bg-white border {{ $expiryRiskFilter === 'warning' ? 'border-amber-500 ring-2 ring-amber-200 shadow-sm' : 'border-slate-200/80' }} rounded-2xl p-5 shadow-xs cursor-pointer flex flex-col justify-between">
+                    <div class="flex items-center justify-between">
+                        <span class="text-[11px] uppercase text-amber-700 font-bold">🟡 Waspada (3 - 6 Bulan)</span>
+                        <span class="text-[10px] px-2.5 py-0.5 rounded-full bg-amber-100 text-amber-800 font-bold">Near-ED</span>
+                    </div>
+                    <div class="text-3xl font-extrabold mt-3 text-amber-700 tabular-nums tracking-tight">
+                        {{ $fefoSummary['warning'] }} <span class="text-xs font-normal text-slate-500">batch</span>
+                    </div>
+                    <div class="text-[11px] text-slate-500 mt-2 pt-2 border-t border-slate-100">Akselerasi penjualan ke cabang</div>
+                </div>
+
+                <div wire:click="$set('expiryRiskFilter', 'expired')" class="bg-white border {{ $expiryRiskFilter === 'expired' ? 'border-red-600 ring-2 ring-red-200 shadow-sm' : 'border-slate-200/80' }} rounded-2xl p-5 shadow-xs cursor-pointer flex flex-col justify-between">
+                    <div class="flex items-center justify-between">
+                        <span class="text-[11px] uppercase text-red-700 font-bold">⛔ Sudah Expired</span>
+                        <span class="text-[10px] px-2.5 py-0.5 rounded-full bg-red-100 text-red-800 font-bold">Karantina</span>
+                    </div>
+                    <div class="text-3xl font-extrabold mt-3 text-red-700 tabular-nums tracking-tight">
+                        {{ $fefoSummary['expired'] }} <span class="text-xs font-normal text-slate-500">batch</span>
+                    </div>
+                    <div class="text-[11px] text-slate-500 mt-2 pt-2 border-t border-slate-100">Wajib ditarik & isolasi retur</div>
+                </div>
+
+                <div class="bg-white border border-slate-200/80 rounded-2xl p-5 shadow-xs flex flex-col justify-between">
+                    <div class="flex items-center justify-between">
+                        <span class="text-[11px] uppercase text-slate-600 font-bold">📦 Total Qty Berisiko ED</span>
+                        <span class="text-[10px] px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-700 font-semibold">Fisik</span>
+                    </div>
+                    <div class="text-3xl font-extrabold mt-3 text-slate-900 tabular-nums tracking-tight">
+                        {{ number_format($fefoSummary['total_qty_at_risk'], 0, ',', '.') }}
+                    </div>
+                    <div class="text-[11px] text-slate-500 mt-2 pt-2 border-t border-slate-100 flex items-center justify-between">
+                        <span>Total unit batch expired &lt;6 bulan</span>
+                        @if (($fefoSummary['total_risk_value'] ?? 0) > 0)
+                            <span class="text-rose-700 font-semibold" title="Estimasi kerugian batch kritis">Potensi Kerugian ED Kritis: Rp {{ number_format($fefoSummary['total_risk_value'], 0, ',', '.') }}</span>
+                        @endif
+                    </div>
+                </div>
+            </div>
+
+            <!-- Grafik Horizon Kedaluwarsa Makro (Macro Expiry Horizon Breakdown) -->
+            <div class="bg-white rounded-2xl border border-slate-200/80 p-6 py-4 shadow-xs">
+                <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100">
+                    <div>
+                        <div class="flex items-center gap-2.5">
+                            <div class="w-8 h-8 rounded-lg flex items-center justify-center text-white shadow-xs shrink-0 bg-rose-600">
+                                <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/>
+                                </svg>
+                            </div>
+                            <div>
+                                <h3 class="text-sm font-bold text-slate-900 tracking-tight">Distribusi Horizon Kedaluwarsa Makro</h3>
+                                <p class="text-xs text-slate-500 mt-0.5">
+                                    Sebaran umur simpan stok fisik (<span class="font-medium text-slate-700">{{ $chartFefoHorizon['unit_label'] }}</span>) lintas 5 zona kedaluwarsa & distributor
+                                    @if ($fefoBranchId)
+                                        &bull; <span class="text-rose-700 font-medium">{{ $availableBranches->firstWhere('id', $fefoBranchId)?->name }}</span>
+                                    @elseif ($selectedBranchId)
+                                        &bull; <span class="text-rose-700 font-medium">{{ $availableBranches->firstWhere('id', $selectedBranchId)?->name }}</span>
+                                    @elseif ($selectedGroup !== 'ALL')
+                                        &bull; <span class="text-rose-700 font-medium">{{ $selectedGroup === 'OTHER' ? 'Distributor Lainnya' : $selectedGroup }}</span>
+                                    @endif
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-50 border border-slate-200 text-xs font-semibold text-slate-700 shrink-0">
+                        <span class="w-2 h-2 rounded-full bg-rose-500"></span>
+                        <span>Satuan: <b class="text-rose-800">{{ $chartFefoHorizon['unit_label'] }}</b></span>
+                    </div>
+                </div>
+
+                <!-- Mini Agregat Horizon Bar (Top Progress Bar) & Legend Chips -->
+                <div class="my-5 p-4 rounded-xl bg-slate-50 border border-slate-200/60 relative">
+                    <!-- Loading Indicator Overlay saat ganti filter FEFO Horizon -->
+                    <div wire:loading wire:target="setFefoChartUnit,fefoSatuanFilter,fefoBranchId"
+                        class="absolute inset-0 bg-white/75 backdrop-blur-[1.5px] flex items-center justify-center z-20 rounded-xl transition-all">
+                        <div class="inline-flex items-center gap-2.5 px-3.5 py-2 rounded-xl bg-slate-900/90 text-white text-xs font-semibold shadow-lg backdrop-blur-md">
+                            <svg class="animate-spin h-3.5 w-3.5 text-rose-400 shrink-0" fill="none" viewBox="0 0 24 24">
+                                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path>
+                            </svg>
+                            <span>Memperbarui horizon...</span>
+                        </div>
+                    </div>
+                    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-2.5">
+                        <span class="text-xs font-bold text-slate-700">Komposisi Umur Simpan Stok Agregat:</span>
+                        <span class="text-xs text-slate-500 font-mono font-medium">
+                            Total Volume: <b class="text-slate-900">{{ number_format($chartFefoHorizon['total_qty'], 0, ',', '.') }}</b> {{ $chartFefoHorizon['unit'] }} ({{ number_format($chartFefoHorizon['total_batches'], 0, ',', '.') }} batch)
+                        </span>
+                    </div>
+
+                    <!-- Multi-segment horizontal bar -->
+                    <div class="h-4 w-full flex overflow-hidden rounded-lg bg-slate-200/80 p-0.5 gap-0.5 shadow-inner">
+                        @if ($chartFefoHorizon['total_qty'] > 0)
+                            @foreach ($chartFefoHorizon['national'] as $tierKey => $tier)
+                                @if ($tier['pct'] > 0)
+                                    <div style="width: {{ $tier['pct'] }}%; background-color: {{ $tier['color'] }};"
+                                        class="h-full first:rounded-l-md last:rounded-r-md transition-all duration-300 relative group cursor-pointer"
+                                        title="{{ $tier['label'] }}: {{ number_format($tier['qty'], 0, ',', '.') }} {{ $chartFefoHorizon['unit'] }} ({{ $tier['pct'] }}%)">
+                                    </div>
+                                @endif
+                            @endforeach
+                        @else
+                            <div class="w-full h-full rounded-md bg-slate-300 flex items-center justify-center text-[10px] text-slate-500 font-medium">
+                                Tidak ada stok fisik berkedaluwarsa
+                            </div>
+                        @endif
+                    </div>
+
+                    <!-- 5 Legend Chips -->
+                    <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2.5 mt-3 pt-3 border-t border-slate-200/60 text-xs">
+                        @foreach ($chartFefoHorizon['national'] as $tierKey => $tier)
+                            <div class="flex items-center gap-2 p-1.5 rounded-lg bg-white border border-slate-200/60">
+                                <span class="w-3 h-3 rounded-full shrink-0" style="background-color: {{ $tier['color'] }};"></span>
+                                <div class="min-w-0 flex-1">
+                                    <div class="text-[11px] font-semibold text-slate-700 truncate" title="{{ $tier['label'] }}">{{ $tier['label'] }}</div>
+                                    <div class="font-mono text-[11px] text-slate-500 flex items-center justify-between mt-0.5">
+                                        <span>{{ number_format($tier['qty'], 0, ',', '.') }}</span>
+                                        <span class="font-bold text-slate-800 ml-1">({{ $tier['pct'] }}%)</span>
+                                    </div>
+                                </div>
+                            </div>
+                        @endforeach
                     </div>
                 </div>
             </div>
@@ -1433,57 +1413,6 @@
     @elseif ($activeTab === 'compliance')
     <!-- TAB 3: KEPATUHAN UPLOAD CABANG (COMPLIANCE TRACKER) -->
     <div class="space-y-6 mb-7">
-        <!-- 4 Summary Cards Kepatuhan (Static Sans-serif without jumpy hover) -->
-        <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
-            <div class="bg-white border border-slate-200/80 rounded-2xl p-5 shadow-xs flex flex-col justify-between">
-                <div class="text-[11px] uppercase text-slate-500 font-bold">TOTAL CABANG AKTIF</div>
-                <div class="text-3xl font-extrabold mt-3 text-slate-900 tabular-nums tracking-tight">
-                    {{ $complianceSummary['total_branches'] }} <span class="text-xs font-normal text-slate-500">gudang</span>
-                </div>
-                <div class="text-[11px] text-slate-400 mt-2 pt-2 border-t border-slate-100">Seluruh cabang terdaftar</div>
-            </div>
-
-            <div wire:click="$set('complianceStatus', 'submitted')" class="bg-white border {{ $complianceStatus === 'submitted' ? 'border-emerald-500 ring-2 ring-emerald-200 shadow-sm' : 'border-slate-200/80' }} rounded-2xl p-5 shadow-xs cursor-pointer flex flex-col justify-between">
-                <div class="flex items-center justify-between">
-                    <span class="text-[11px] uppercase text-emerald-700 font-bold">✅ Sudah Lapor</span>
-                    <span class="text-[10px] px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 font-bold">Tepat Waktu</span>
-                </div>
-                <div class="text-3xl font-extrabold mt-3 text-emerald-700 tabular-nums tracking-tight">
-                    {{ $complianceSummary['total_submitted'] }} <span class="text-xs font-normal text-slate-500">cabang</span>
-                </div>
-                <div class="text-[11px] text-slate-500 mt-2 pt-2 border-t border-slate-100">Data stok terekam di tanggal acuan</div>
-            </div>
-
-            <div wire:click="$set('complianceStatus', 'missing')" class="bg-white border {{ $complianceStatus === 'missing' ? 'border-rose-500 ring-2 ring-rose-200 shadow-sm' : 'border-slate-200/80' }} rounded-2xl p-5 shadow-xs cursor-pointer flex flex-col justify-between">
-                <div class="flex items-center justify-between">
-                    <span class="text-[11px] uppercase text-rose-700 font-bold">⚠️ Belum Lapor</span>
-                    <span class="text-[10px] px-2.5 py-0.5 rounded-full bg-rose-100 text-rose-800 font-bold">Follow-up</span>
-                </div>
-                <div class="text-3xl font-extrabold mt-3 text-rose-700 tabular-nums tracking-tight">
-                    {{ $complianceSummary['total_missing'] }} <span class="text-xs font-normal text-slate-500">cabang</span>
-                </div>
-                <div class="text-[11px] text-slate-500 mt-2 pt-2 border-t border-slate-100">Belum setor snapshot stok</div>
-            </div>
-
-            <div class="bg-white border border-slate-200/80 rounded-2xl p-5 shadow-xs flex flex-col justify-between">
-                <div class="flex items-center justify-between">
-                    <span class="text-[11px] uppercase text-slate-600 font-bold">TINGKAT KEPATUHAN</span>
-                    <span class="text-xs font-bold {{ $complianceSummary['compliance_rate'] >= 80 ? 'text-emerald-700' : 'text-amber-700' }}">
-                        {{ $complianceSummary['compliance_rate'] }}%
-                    </span>
-                </div>
-                <!-- Progress Bar -->
-                <div class="w-full bg-slate-100 rounded-full h-2.5 mt-3 overflow-hidden">
-                    <div class="h-2.5 rounded-full transition-all duration-500"
-                         style="width: {{ min(100, $complianceSummary['compliance_rate']) }}%; background: linear-gradient(90deg, #10b981 0%, #0d6d5f 100%);"></div>
-                </div>
-                <div class="text-[10px] text-slate-400 mt-2 pt-2 border-t border-slate-100 flex justify-between">
-                    <span>Target: 100%</span>
-                    <span>Acuan: <strong class="text-slate-600">{{ \Illuminate\Support\Carbon::parse($complianceSummary['target_date'])->translatedFormat('d M Y') }}</strong></span>
-                </div>
-            </div>
-        </div>
-
         <!-- Tabel Kepatuhan & Filter Toolbar -->
         <div class="bg-white rounded-2xl border border-slate-200/80 p-6 shadow-xs">
             <div class="pb-5 border-b border-slate-100 mb-5 space-y-3.5">
@@ -1540,8 +1469,141 @@
                 </div>
             </div>
 
+            <!-- 4 Summary Cards Kepatuhan (Static Sans-serif without jumpy hover) -->
+            <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                <div class="bg-white border border-slate-200/80 rounded-2xl p-5 shadow-xs flex flex-col justify-between">
+                    <div class="text-[11px] uppercase text-slate-500 font-bold">TOTAL CABANG AKTIF</div>
+                    <div class="text-3xl font-extrabold mt-3 text-slate-900 tabular-nums tracking-tight">
+                        {{ $complianceSummary['total_branches'] }} <span class="text-xs font-normal text-slate-500">gudang</span>
+                    </div>
+                    <div class="text-[11px] text-slate-400 mt-2 pt-2 border-t border-slate-100">Seluruh cabang terdaftar</div>
+                </div>
+
+                <div wire:click="$set('complianceStatus', 'submitted')" class="bg-white border {{ $complianceStatus === 'submitted' ? 'border-emerald-500 ring-2 ring-emerald-200 shadow-sm' : 'border-slate-200/80' }} rounded-2xl p-5 shadow-xs cursor-pointer flex flex-col justify-between">
+                    <div class="flex items-center justify-between">
+                        <span class="text-[11px] uppercase text-emerald-700 font-bold">✅ Sudah Lapor</span>
+                        <span class="text-[10px] px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 font-bold">Tepat Waktu</span>
+                    </div>
+                    <div class="text-3xl font-extrabold mt-3 text-emerald-700 tabular-nums tracking-tight">
+                        {{ $complianceSummary['total_submitted'] }} <span class="text-xs font-normal text-slate-500">cabang</span>
+                    </div>
+                    <div class="text-[11px] text-slate-500 mt-2 pt-2 border-t border-slate-100">Data stok terekam di tanggal acuan</div>
+                </div>
+
+                <div wire:click="$set('complianceStatus', 'missing')" class="bg-white border {{ $complianceStatus === 'missing' ? 'border-rose-500 ring-2 ring-rose-200 shadow-sm' : 'border-slate-200/80' }} rounded-2xl p-5 shadow-xs cursor-pointer flex flex-col justify-between">
+                    <div class="flex items-center justify-between">
+                        <span class="text-[11px] uppercase text-rose-700 font-bold">⚠️ Belum Lapor</span>
+                        <span class="text-[10px] px-2.5 py-0.5 rounded-full bg-rose-100 text-rose-800 font-bold">Follow-up</span>
+                    </div>
+                    <div class="text-3xl font-extrabold mt-3 text-rose-700 tabular-nums tracking-tight">
+                        {{ $complianceSummary['total_missing'] }} <span class="text-xs font-normal text-slate-500">cabang</span>
+                    </div>
+                    <div class="text-[11px] text-slate-500 mt-2 pt-2 border-t border-slate-100">Belum setor snapshot stok</div>
+                </div>
+
+                <div class="bg-white border border-slate-200/80 rounded-2xl p-5 shadow-xs flex flex-col justify-between">
+                    <div class="flex items-center justify-between">
+                        <span class="text-[11px] uppercase text-slate-600 font-bold">TINGKAT KEPATUHAN</span>
+                        <span class="text-xs font-bold {{ $complianceSummary['compliance_rate'] >= 80 ? 'text-emerald-700' : 'text-amber-700' }}">
+                            {{ $complianceSummary['compliance_rate'] }}%
+                        </span>
+                    </div>
+                    <!-- Progress Bar -->
+                    <div class="w-full bg-slate-100 rounded-full h-2.5 mt-3 overflow-hidden">
+                        <div class="h-2.5 rounded-full transition-all duration-500"
+                            style="width: {{ min(100, $complianceSummary['compliance_rate']) }}%; background: linear-gradient(90deg, #10b981 0%, #0d6d5f 100%);"></div>
+                    </div>
+                    <div class="text-[10px] text-slate-400 mt-2 pt-2 border-t border-slate-100 flex justify-between">
+                        <span>Target: 100%</span>
+                        <span>Acuan: <strong class="text-slate-600">{{ \Illuminate\Support\Carbon::parse($complianceSummary['target_date'])->translatedFormat('d M Y') }}</strong></span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Grafik Tren Kepatuhan Laporan Harian -->
+            <div class="mt-6 pt-6 border-t border-slate-100">
+                <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4">
+                    <div>
+                        <div class="flex items-center gap-2.5">
+                            <div class="w-8 h-8 rounded-lg flex items-center justify-center text-white shadow-xs shrink-0" style="background: #0d6d5f;">
+                                <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/>
+                                </svg>
+                            </div>
+                            <div>
+                                <h3 class="text-sm font-bold text-slate-900 tracking-tight flex items-center gap-2">
+                                    <span>Tren Kepatuhan Laporan Harian</span>
+                                    <span class="text-[11px] font-semibold text-slate-400 font-mono">({{ $chartComplianceTrend['period'] }} Hari Terakhir)</span>
+                                </h3>
+                                <p class="text-xs text-slate-500 mt-0.5">Histori jumlah cabang yang mengunggah snapshot stok harian menuju tanggal acuan</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="flex flex-wrap items-center gap-2.5">
+                        <!-- Indikator Rata-rata Kepatuhan -->
+                        <div class="flex items-center gap-2 px-3 py-1.5 bg-slate-50 rounded-xl border border-slate-200/80 text-xs">
+                            <span class="text-slate-500 font-medium">Rata-rata:</span>
+                            <span class="font-bold font-mono {{ $chartComplianceTrend['avg_rate'] >= 80 ? 'text-emerald-700' : 'text-amber-700' }}">
+                                {{ $chartComplianceTrend['avg_rate'] }}%
+                            </span>
+                        </div>
+
+                        <!-- Pill Selector Periode -->
+                        <div class="inline-flex p-1 bg-slate-100 rounded-xl border border-slate-200 gap-1 text-xs shadow-2xs">
+                            <button type="button" wire:click="setComplianceTrendPeriod(7)"
+                                    class="px-2.5 py-1 rounded-lg cursor-pointer transition font-bold {{ $complianceTrendPeriod === 7 ? 'bg-white text-slate-900 shadow-2xs' : 'text-slate-600 hover:text-slate-900' }}">
+                                7 Hari
+                            </button>
+                            <button type="button" wire:click="setComplianceTrendPeriod(14)"
+                                    class="px-2.5 py-1 rounded-lg cursor-pointer transition font-bold {{ $complianceTrendPeriod === 14 ? 'bg-white text-slate-900 shadow-2xs' : 'text-slate-600 hover:text-slate-900' }}">
+                                14 Hari
+                            </button>
+                            <button type="button" wire:click="setComplianceTrendPeriod(30)"
+                                    class="px-2.5 py-1 rounded-lg cursor-pointer transition font-bold {{ $complianceTrendPeriod === 30 ? 'bg-white text-slate-900 shadow-2xs' : 'text-slate-600 hover:text-slate-900' }}">
+                                30 Hari
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Canvas Chart Container -->
+                <div class="relative w-full mt-2" style="height: 270px;">
+                    <canvas id="chart-compliance-trend" class="w-full h-full"></canvas>
+                    <div id="no-data-compliance" class="hidden absolute inset-0 flex flex-col items-center justify-center text-slate-400 bg-white/90">
+                        <svg class="w-10 h-10 mb-2 text-slate-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+                        </svg>
+                        <span class="text-xs font-semibold text-slate-600">Tidak ada riwayat laporan pada periode ini</span>
+                        <span class="text-[11px] text-slate-400 mt-0.5">Pilih rentang hari lain atau ganti tanggal acuan</span>
+                    </div>
+                </div>
+
+                <!-- Legend & Summary Info Footer -->
+                <div class="mt-4 pt-3 border-t border-slate-100 flex flex-wrap items-center justify-between gap-3 text-[11px] text-slate-500">
+                    <div class="flex items-center gap-4">
+                        <div class="flex items-center gap-1.5">
+                            <span class="w-3 h-3 rounded-xs bg-[#10b981] inline-block"></span>
+                            <span>Sudah Lapor (Cabang)</span>
+                        </div>
+                        <div class="flex items-center gap-1.5">
+                            <span class="w-3 h-3 rounded-xs bg-[#fecdd3] inline-block border border-rose-200"></span>
+                            <span>Belum Lapor (Cabang)</span>
+                        </div>
+                        <div class="flex items-center gap-1.5">
+                            <span class="w-4 h-0.5 bg-[#0d6d5f] inline-block"></span>
+                            <span class="w-2 h-2 rounded-full border border-[#0d6d5f] bg-white inline-block -ml-2"></span>
+                            <span>Tingkat Kepatuhan (%)</span>
+                        </div>
+                    </div>
+                    <div class="text-slate-400 font-mono">
+                        Periode: <strong class="text-slate-600">{{ $chartComplianceTrend['start_date_formatted'] }}</strong> — <strong class="text-slate-600">{{ $chartComplianceTrend['end_date_formatted'] }}</strong>
+                    </div>
+                </div>
+            </div>
+
             <!-- Tabel Data Kepatuhan -->
-            <div class="border border-slate-200/80 rounded-2xl overflow-x-auto text-xs">
+            <div class="mt-6 border border-slate-200/80 rounded-2xl overflow-x-auto text-xs">
                 <table class="w-full text-left">
                     <thead style="background: #f8faf9;" class="text-[11px] font-bold uppercase tracking-wider text-slate-500 border-b border-slate-200">
                         <tr>
@@ -2030,8 +2092,9 @@
         let chartDonutInstance = null;
         let chartTrendInstance = null;
         let chartFefoInstance = null;
+        let chartComplianceInstance = null;
 
-        function updateChartData(topData, donutData, trendData, fefoData) {
+        function updateChartData(topData, donutData, trendData, fefoData, complianceData) {
             const canvasTop = document.getElementById('chart-top-products');
             const noDataTop = document.getElementById('no-data-top');
             const canvasDonut = document.getElementById('chart-donut-dist');
@@ -2161,19 +2224,34 @@
                             indexAxis: 'y',
                             responsive: true,
                             maintainAspectRatio: false,
+                            layout: {
+                                padding: {
+                                    left: 10,
+                                    right: 15,
+                                    top: 4,
+                                    bottom: 4
+                                }
+                            },
                             plugins: {
                                 legend: {
                                     display: isStacked,
                                     position: 'top',
                                     labels: {
                                         boxWidth: 12,
-                                        font: { size: 11, family: 'Plus Jakarta Sans' }
+                                        boxHeight: 12,
+                                        useBorderRadius: true,
+                                        borderRadius: 3,
+                                        font: { size: 11, family: 'Plus Jakarta Sans', weight: '500' },
+                                        padding: 12
                                     }
                                 },
                                 tooltip: {
                                     callbacks: {
+                                        title: function(items) {
+                                            return items[0]?.label || '';
+                                        },
                                         label: function(ctx) {
-                                            return ctx.dataset.label + ': ' + Number(ctx.raw || 0).toLocaleString('id-ID');
+                                            return ctx.dataset.label + ': ' + Number(ctx.raw || 0).toLocaleString('id-ID') + ' unit';
                                         }
                                     }
                                 }
@@ -2191,7 +2269,13 @@
                                     stacked: isStacked,
                                     grid: { display: false },
                                     ticks: {
-                                        font: { size: 11, family: 'Plus Jakarta Sans' }
+                                        font: { size: 11, family: 'Plus Jakarta Sans', weight: '500' },
+                                        color: '#334155',
+                                        autoSkip: false,
+                                        callback: function(val) {
+                                            const l = this.getLabelForValue(val) || '';
+                                            return l.length > 38 ? l.substring(0, 36) + '...' : l;
+                                        }
                                     }
                                 }
                             }
@@ -2226,7 +2310,7 @@
                                 backgroundColor: donutData.colors,
                                 borderWidth: 2,
                                 borderColor: '#ffffff',
-                                hoverOffset: 6
+                                hoverOffset: 5
                             }]
                         },
                         options: {
@@ -2236,8 +2320,12 @@
                                 legend: {
                                     position: 'bottom',
                                     labels: {
-                                        boxWidth: 12,
-                                        font: { size: 11, family: 'Plus Jakarta Sans' }
+                                        boxWidth: 10,
+                                        boxHeight: 10,
+                                        useBorderRadius: true,
+                                        borderRadius: 2,
+                                        font: { size: 10.5, family: 'Plus Jakarta Sans', weight: '500' },
+                                        padding: 8
                                     }
                                 },
                                 tooltip: {
@@ -2246,12 +2334,14 @@
                                             const total = ctx.dataset.data.reduce((a, b) => a + b, 0);
                                             const val = ctx.raw || 0;
                                             const pct = total > 0 ? ((val / total) * 100).toFixed(1) : 0;
-                                            return ctx.label + ': ' + Number(val).toLocaleString('id-ID') + ' (' + pct + '%)';
+                                            const isVal = (donutData && donutData.metric === 'value');
+                                            const formatted = isVal ? 'Rp ' + Number(val).toLocaleString('id-ID') : Number(val).toLocaleString('id-ID') + ' unit';
+                                            return ctx.label + ': ' + formatted + ' (' + pct + '%)';
                                         }
                                     }
                                 }
                             },
-                            cutout: '65%'
+                            cutout: '70%'
                         }
                     });
                 }
@@ -2335,6 +2425,167 @@
                     });
                 }
             }
+
+            // 5. Combo Chart (Tren Kepatuhan Upload Cabang Harian)
+            const canvasCompliance = document.getElementById('chart-compliance-trend');
+            const noDataCompliance = document.getElementById('no-data-compliance');
+
+            if (!canvasCompliance && chartComplianceInstance) {
+                chartComplianceInstance.destroy();
+                chartComplianceInstance = null;
+            }
+
+            if (canvasCompliance && window.Chart) {
+                if (chartComplianceInstance) {
+                    chartComplianceInstance.destroy();
+                    chartComplianceInstance = null;
+                }
+
+                const hasComplianceData = complianceData && complianceData.labels && complianceData.labels.length > 0 && complianceData.has_data;
+
+                if (!hasComplianceData) {
+                    canvasCompliance.style.display = 'none';
+                    if (noDataCompliance) noDataCompliance.classList.remove('hidden');
+                } else {
+                    canvasCompliance.style.display = 'block';
+                    if (noDataCompliance) noDataCompliance.classList.add('hidden');
+
+                    const totalBranches = complianceData.total_branches || 10;
+
+                    chartComplianceInstance = new window.Chart(canvasCompliance, {
+                        type: 'bar',
+                        data: {
+                            labels: complianceData.labels,
+                            datasets: [
+                                {
+                                    type: 'line',
+                                    label: 'Tingkat Kepatuhan (%)',
+                                    data: complianceData.rates,
+                                    borderColor: '#0d6d5f',
+                                    backgroundColor: '#0d6d5f',
+                                    borderWidth: 2.5,
+                                    tension: 0.35,
+                                    pointRadius: 3.5,
+                                    pointHoverRadius: 6,
+                                    pointBackgroundColor: '#ffffff',
+                                    pointBorderColor: '#0d6d5f',
+                                    pointBorderWidth: 2,
+                                    yAxisID: 'yRate',
+                                    order: 1
+                                },
+                                {
+                                    type: 'bar',
+                                    label: 'Sudah Lapor (Cabang)',
+                                    data: complianceData.submitted,
+                                    backgroundColor: '#10b981',
+                                    hoverBackgroundColor: '#059669',
+                                    borderRadius: 4,
+                                    stack: 'branches',
+                                    yAxisID: 'y',
+                                    order: 2
+                                },
+                                {
+                                    type: 'bar',
+                                    label: 'Belum Lapor (Cabang)',
+                                    data: complianceData.missing,
+                                    backgroundColor: '#fecdd3',
+                                    hoverBackgroundColor: '#fda4af',
+                                    borderRadius: 4,
+                                    stack: 'branches',
+                                    yAxisID: 'y',
+                                    order: 3
+                                }
+                            ]
+                        },
+                        options: {
+                            responsive: true,
+                            maintainAspectRatio: false,
+                            interaction: {
+                                mode: 'index',
+                                intersect: false
+                            },
+                            plugins: {
+                                legend: {
+                                    display: false
+                                },
+                                tooltip: {
+                                    backgroundColor: 'rgba(15, 23, 42, 0.95)',
+                                    titleFont: { size: 12, family: 'Plus Jakarta Sans', weight: 'bold' },
+                                    bodyFont: { size: 12, family: 'JetBrains Mono' },
+                                    padding: 10,
+                                    cornerRadius: 8,
+                                    callbacks: {
+                                        title: function(items) {
+                                            if (!items.length) return '';
+                                            const idx = items[0].dataIndex;
+                                            const fDates = complianceData.full_dates;
+                                            return (fDates && fDates[idx]) ? fDates[idx] : items[0].label;
+                                        },
+                                        label: function(ctx) {
+                                            const val = ctx.raw !== null && ctx.raw !== undefined ? ctx.raw : 0;
+                                            if (ctx.dataset.type === 'line') {
+                                                return 'Tingkat Kepatuhan: ' + Number(val).toFixed(1) + '%';
+                                            } else if (ctx.dataset.label.includes('Sudah Lapor')) {
+                                                const rate = complianceData.rates ? complianceData.rates[ctx.dataIndex] : 0;
+                                                return 'Sudah Lapor: ' + val + ' cabang (' + rate + '%)';
+                                            } else {
+                                                return 'Belum Lapor: ' + val + ' cabang';
+                                            }
+                                        }
+                                    }
+                                }
+                            },
+                            scales: {
+                                x: {
+                                    stacked: true,
+                                    grid: { color: '#f1f5f9' },
+                                    ticks: {
+                                        font: { size: 11, family: 'JetBrains Mono' },
+                                        maxRotation: 0,
+                                        autoSkip: true,
+                                        maxTicksLimit: 15
+                                    }
+                                },
+                                y: {
+                                    stacked: true,
+                                    position: 'left',
+                                    title: {
+                                        display: true,
+                                        text: 'Jumlah Cabang',
+                                        font: { size: 10, family: 'Plus Jakarta Sans', weight: '600' },
+                                        color: '#64748b'
+                                    },
+                                    suggestedMin: 0,
+                                    suggestedMax: totalBranches,
+                                    grid: { color: '#f1f5f9' },
+                                    ticks: {
+                                        stepSize: 1,
+                                        precision: 0,
+                                        font: { size: 10, family: 'JetBrains Mono' }
+                                    }
+                                },
+                                yRate: {
+                                    position: 'right',
+                                    title: {
+                                        display: true,
+                                        text: 'Kepatuhan (%)',
+                                        font: { size: 10, family: 'Plus Jakarta Sans', weight: '600' },
+                                        color: '#0d6d5f'
+                                    },
+                                    min: 0,
+                                    max: 100,
+                                    grid: { display: false },
+                                    ticks: {
+                                        stepSize: 20,
+                                        font: { size: 10, family: 'JetBrains Mono' },
+                                        callback: val => val + '%'
+                                    }
+                                }
+                            }
+                        }
+                    });
+                }
+            }
         }
 
         // 1. Initial Render from DOM data holder
@@ -2346,7 +2597,8 @@
                     const donut = JSON.parse(holder.getAttribute('data-donut') || '{}');
                     const trend = JSON.parse(holder.getAttribute('data-trend') || '{}');
                     const fefo = JSON.parse(holder.getAttribute('data-fefo') || '{}');
-                    updateChartData(top, donut, trend, fefo);
+                    const compliance = JSON.parse(holder.getAttribute('data-compliance') || '{}');
+                    updateChartData(top, donut, trend, fefo, compliance);
                 } catch(e) {
                     console.error('Error parsing chart data:', e);
                 }
@@ -2362,7 +2614,7 @@
             lastChartEventTime = Date.now();
             const data = Array.isArray(payload) ? payload[0] : payload;
             if (data) {
-                updateChartData(data.top, data.donut, data.trend, data.fefo);
+                updateChartData(data.top, data.donut, data.trend, data.fefo, data.compliance);
             }
         });
 

@@ -26,6 +26,8 @@ class Index extends Component
 
     public string $name = '';
 
+    public ?string $sender_email = null;
+
     public bool $is_active = true;
 
     public function mount(): void
@@ -53,6 +55,7 @@ class Index extends Component
         $this->editingId = $distributor->id;
         $this->distributor_code = $distributor->distributor_code;
         $this->name = $distributor->name;
+        $this->sender_email = $distributor->sender_email;
         $this->is_active = $distributor->is_active;
         $this->showModal = true;
     }
@@ -62,6 +65,28 @@ class Index extends Component
         $data = $this->validate([
             'distributor_code' => ['required', 'string', 'max:50', Rule::unique('distributors', 'distributor_code')->ignore($this->editingId)],
             'name' => ['required', 'string', 'max:255'],
+            'sender_email' => [
+                'nullable',
+                'string',
+                'max:500',
+                function ($attribute, $value, $fail) {
+                    if (! empty($value)) {
+                        $emails = array_filter(array_map('trim', explode(',', $value)));
+                        foreach ($emails as $email) {
+                            if (str_starts_with($email, '@')) {
+                                $domain = substr($email, 1);
+                                if (! filter_var('test@' . $domain, FILTER_VALIDATE_EMAIL)) {
+                                    $fail("Format domain wildcard '{$email}' tidak valid.");
+                                }
+                            } else {
+                                if (! filter_var($email, FILTER_VALIDATE_EMAIL)) {
+                                    $fail("Format email '{$email}' tidak valid.");
+                                }
+                            }
+                        }
+                    }
+                },
+            ],
             'is_active' => ['boolean'],
         ]);
 
@@ -100,6 +125,7 @@ class Index extends Component
         $this->editingId = null;
         $this->distributor_code = '';
         $this->name = '';
+        $this->sender_email = null;
         $this->is_active = true;
         $this->resetErrorBag();
     }
@@ -109,7 +135,8 @@ class Index extends Component
         $distributors = Distributor::query()
             ->when($this->search, fn ($q) => $q->where(function ($sub) {
                 $sub->where('name', 'ilike', "%{$this->search}%")
-                    ->orWhere('distributor_code', 'ilike', "%{$this->search}%");
+                    ->orWhere('distributor_code', 'ilike', "%{$this->search}%")
+                    ->orWhere('sender_email', 'ilike', "%{$this->search}%");
             }))
             ->orderBy('name')
             ->paginate(15);

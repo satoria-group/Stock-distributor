@@ -350,4 +350,95 @@ class DashboardPricingIntegrationTest extends TestCase
             ->call('sortByColumn', 'price')
             ->assertSet('sortDirection', 'asc');
     }
+
+    public function test_dashboard_donut_metric_and_top_branches_ranking(): void
+    {
+        $user = $this->getLogistikUser();
+
+        $distA = Distributor::create([
+            'distributor_code' => 'KFTD_DONUT_01',
+            'name' => 'KFTD Cabang Utama Donut',
+            'is_active' => true,
+        ]);
+
+        $distB = Distributor::create([
+            'distributor_code' => 'SDL_DONUT_02',
+            'name' => 'SDL Cabang Sekunder Donut',
+            'is_active' => true,
+        ]);
+
+        $nsA = NetsuiteItem::create([
+            'netsuite_id' => 'NS_DONUT_01',
+            'netsuite_name' => 'Produk Aset Tinggi',
+            'default_satuan' => 'BTL',
+        ]);
+        DB::table('dpl_price_product')->insert([
+            'id_product' => 'NS_DONUT_01',
+            'id_price_region' => 1,
+            'price' => 100000.0,
+            'price_reguler' => 100000,
+            'netsuite_id' => 'NS_DONUT_01',
+            'netsuite_item_id' => $nsA->id,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $dItemA = DistributorItem::create([
+            'distributor_id' => $distA->id,
+            'source_item_id' => 'ITEM_D_01',
+            'item_name' => 'Item Aset Donut A',
+            'satuan' => 'BTL',
+            'netsuite_item_id' => $nsA->id,
+        ]);
+
+        $dItemB = DistributorItem::create([
+            'distributor_id' => $distB->id,
+            'source_item_id' => 'ITEM_D_02',
+            'item_name' => 'Item Aset Donut B',
+            'satuan' => 'BTL',
+            'netsuite_item_id' => $nsA->id,
+        ]);
+
+        $today = Carbon::today()->toDateString();
+
+        // distA: 50,000 units @ 100,000 = 5,000,000,000 (guarantees Top 5 presence)
+        StockEntry::create([
+            'distributor_id' => $distA->id,
+            'distributor_item_id' => $dItemA->id,
+            'tanggal' => $today,
+            'quantity' => 50000,
+            'satuan' => 'BTL',
+            'batch_no' => 'B_DONUT_01',
+        ]);
+
+        // distB: 25,000 units @ 100,000 = 2,500,000,000
+        StockEntry::create([
+            'distributor_id' => $distB->id,
+            'distributor_item_id' => $dItemB->id,
+            'tanggal' => $today,
+            'quantity' => 25000,
+            'satuan' => 'BTL',
+            'batch_no' => 'B_DONUT_02',
+        ]);
+
+        $comp = Livewire::actingAs($user)
+            ->test(Dashboard::class)
+            ->assertSet('donutMetric', 'value')
+            ->assertSee('Top 5 Cabang')
+            ->assertSee('KFTD Cabang Utama Donut')
+            ->assertSee('SDL Cabang Sekunder Donut')
+            ->call('setDonutMetric', 'qty')
+            ->assertSet('donutMetric', 'qty')
+            ->call('setDonutMetric', 'value')
+            ->assertSet('donutMetric', 'value');
+
+        // Check topBranches passed to view
+        $viewData = $comp->viewData('topBranches');
+        $this->assertNotEmpty($viewData);
+        $names = collect($viewData)->pluck('name')->all();
+        $this->assertContains('KFTD Cabang Utama Donut', $names);
+        if (count($viewData) > 1) {
+            $this->assertGreaterThanOrEqual($viewData[1]->metric_val, $viewData[0]->metric_val);
+        }
+    }
 }

@@ -42,8 +42,6 @@ class DashboardStockTrendTest extends TestCase
             ->assertSee('7 Hari')
             ->assertSee('30 Hari')
             ->assertSee('90 Hari')
-            ->assertSee('Stok Posisi Terkini')
-            ->assertSee('Stok Awal Periode')
             ->assertSee('chart-stock-trend')
             ->assertDispatched('charts-updated');
     }

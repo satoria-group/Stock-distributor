@@ -5,7 +5,6 @@ namespace App\Livewire\Stock;
 use App\Livewire\Dashboard;
 use App\Models\Distributor;
 use App\Models\StockEntry;
-use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;

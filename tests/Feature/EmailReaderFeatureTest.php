@@ -18,11 +18,11 @@ class EmailReaderFeatureTest extends TestCase
 
     public function test_authenticated_user_can_view_email_inbox_page(): void
     {
-        $user = User::where('email', 'admin@satoriagroup.co.id')->first() ?? User::first();
-        if (! $user) {
-            $user = User::factory()->create();
-            $user->syncRoles([User::ROLE_ADMIN]);
-        }
+        $user = User::firstOrCreate(
+            ['email' => 'admin@satoriagroup.co.id'],
+            ['name' => 'Admin Satoria', 'password' => bcrypt('password')]
+        );
+        $user->syncRoles([User::ROLE_ADMIN]);
 
         $response = $this->actingAs($user)->get(route('emails.index'));
 
@@ -37,11 +37,11 @@ class EmailReaderFeatureTest extends TestCase
             'imap.username' => null,
         ]);
 
-        $user = User::where('email', 'admin@satoriagroup.co.id')->first() ?? User::first();
-        if (! $user) {
-            $user = User::factory()->create();
-            $user->syncRoles([User::ROLE_ADMIN]);
-        }
+        $user = User::firstOrCreate(
+            ['email' => 'admin@satoriagroup.co.id'],
+            ['name' => 'Admin Satoria', 'password' => bcrypt('password')]
+        );
+        $user->syncRoles([User::ROLE_ADMIN]);
 
         $response = $this->actingAs($user)->get(route('emails.index'));
 

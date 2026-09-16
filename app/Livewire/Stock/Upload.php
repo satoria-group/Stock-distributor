@@ -10,7 +10,6 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 use Livewire\Attributes\Layout;
 use Livewire\Component;
-use Livewire\Features\SupportFileUploads\TemporaryUploadedFile;
 use Livewire\WithFileUploads;
 use PhpOffice\PhpSpreadsheet\IOFactory;
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
@@ -127,8 +126,16 @@ class Upload extends Component
 
         file_put_contents($tempClean, $att['content']);
 
+        $senderEmail = null;
         try {
-            $success = $this->processSpreadsheetPath($tempClean, "Lampiran Email ({$filename})");
+            $msgDetails = $imapService->getMessageDetails($emailUid);
+            $senderEmail = $msgDetails['from_email'] ?? null;
+        } catch (\Throwable) {
+            // fallback jika koneksi mock atau tidak tersedia
+        }
+
+        try {
+            $success = $this->processSpreadsheetPath($tempClean, "Lampiran Email ({$filename})", $senderEmail);
             if ($success) {
                 // Tandai email sebagai terbaca setelah berhasil diproses
                 $imapService->markAsRead($emailUid);
@@ -149,6 +156,13 @@ class Upload extends Component
 
         if (! $this->tanggal || ! $this->distributorId) {
             $this->addError('load', 'Pilih tanggal dan distributor dulu.');
+
+            return;
+        }
+
+        $dist = Distributor::find($this->distributorId);
+        if (! $dist || ! $dist->is_active) {
+            $this->addError('load', "Distributor berstatus NON-AKTIF di Master Data. Data stok tidak dapat diakses.");
 
             return;
         }
@@ -221,7 +235,7 @@ class Upload extends Component
         }
     }
 
-    protected function processSpreadsheetPath(string $filePath, string $sourceDescription = 'File Excel'): bool
+    protected function processSpreadsheetPath(string $filePath, string $sourceDescription = 'File Excel', ?string $fromEmail = null): bool
     {
         try {
             $spreadsheet = IOFactory::load($filePath);
@@ -284,6 +298,46 @@ class Upload extends Component
             $this->addError('file', "Distributor dengan kode '{$distributorCode}' belum ada di Master Distributor. Minta Admin menambahkan dulu.");
 
             return false;
+        }
+
+        if (! $distributor->is_active) {
+            $this->addError('file', "Distributor '{$distributor->name}' ({$distributorCode}) berstatus NON-AKTIF di Master Data. Seluruh pengunggahan data stok ditolak.");
+
+            return false;
+        }
+
+        if ($fromEmail) {
+            $senderEmailConfig = trim((string) ($distributor->sender_email ?? ''));
+
+            if ($senderEmailConfig === '') {
+                $this->addError('file', "Distributor '{$distributor->name}' ({$distributorCode}) belum mendaftarkan email whitelist resmi di Master Distributor. Pengunggahan dari email '{$fromEmail}' ditolak demi keamanan data.");
+
+                return false;
+            }
+
+            $allowedEmails = array_map('trim', explode(',', strtolower($senderEmailConfig)));
+            $cleanFromEmail = strtolower(trim($fromEmail));
+            $isMatch = false;
+
+            foreach ($allowedEmails as $allowed) {
+                if ($allowed === '') {
+                    continue;
+                }
+                if ($allowed === $cleanFromEmail) {
+                    $isMatch = true;
+                    break;
+                }
+                if (str_starts_with($allowed, '@') && str_ends_with($cleanFromEmail, $allowed)) {
+                    $isMatch = true;
+                    break;
+                }
+            }
+
+            if (! $isMatch) {
+                $this->addError('file', "Pengirim email ('{$fromEmail}') tidak terdaftar pada whitelist resmi distributor '{$distributor->name}' ({$distributorCode}).");
+
+                return false;
+            }
         }
 
         $rawTanggal = $firstDataRow[$col['Tanggal']];
@@ -721,6 +775,13 @@ class Upload extends Component
 
         if (! $this->tanggal || ! $this->distributorId) {
             $this->addError('save', 'Tanggal dan distributor wajib dipilih sebelum menyimpan.');
+
+            return;
+        }
+
+        $dist = Distributor::find($this->distributorId);
+        if (! $dist || ! $dist->is_active) {
+            $this->addError('save', "Distributor berstatus NON-AKTIF di Master Data. Penyimpanan stok ditolak.");
 
             return;
         }
@@ -1178,7 +1239,7 @@ class Upload extends Component
     public function render()
     {
         return view('livewire.stock.upload', [
-            'distributors' => Distributor::orderBy('name')->get(),
+            'distributors' => Distributor::where('is_active', true)->orderBy('name')->get(),
             'availableItems' => $this->distributorId
                 ? DistributorItem::where('distributor_id', $this->distributorId)
                     ->whereNotIn('id', collect($this->rows)->pluck('distributor_item_id')->all() ?: [0])

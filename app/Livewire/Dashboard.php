@@ -3,7 +3,6 @@
 namespace App\Livewire;
 
 use App\Models\Distributor;
-use App\Models\DistributorItem;
 use App\Models\StockEntry;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Carbon;
@@ -80,6 +79,9 @@ class Dashboard extends Component
 
     public string $fefoChartUnit = 'BTL'; // 'BTL', 'AMP', 'PCS'
 
+    // Donut Chart Metric (Nilai Finansial Rp vs Volume Fisik)
+    public string $donutMetric = 'value'; // 'value', 'qty'
+
     // Trend Stock On Hand Line Chart
     public string $trendUnit = 'BTL'; // 'BTL', 'AMP', 'PCS'
 
@@ -91,6 +93,8 @@ class Dashboard extends Component
     public string $complianceStatus = 'all'; // 'all', 'submitted', 'missing'
 
     public string $complianceSearch = '';
+
+    public int $complianceTrendPeriod = 14; // 7, 14, 30
 
     // Tab 4: Stok Macet & Slow-Moving (Dead Stock Alert)
     public int $stagnantPeriod = 30; // 14, 30, 60
@@ -139,6 +143,11 @@ class Dashboard extends Component
 
     public function updatedFefoSatuanFilter(): void
     {
+        if (in_array($this->fefoSatuanFilter, ['BTL', 'AMP', 'PCS'])) {
+            $this->fefoChartUnit = $this->fefoSatuanFilter;
+        } else {
+            $this->fefoChartUnit = 'BTL';
+        }
         $this->resetPage();
     }
 
@@ -217,16 +226,6 @@ class Dashboard extends Component
         }
     }
 
-    public function resetFilters(): void
-    {
-        $this->selectedBranchId = null;
-        $this->satuanFilter = '';
-        $this->search = '';
-        $this->sortBy = 'item_name';
-        $this->sortDir = 'asc';
-        $this->resetPage();
-    }
-
     public function setFefoChartUnit(string $unit): void
     {
         if (in_array($unit, ['BTL', 'AMP', 'PCS'])) {
@@ -234,16 +233,47 @@ class Dashboard extends Component
         }
     }
 
+    public function resetFilters(): void
+    {
+        $this->selectedBranchId = null;
+        $this->satuanFilter = '';
+        $this->search = '';
+        $this->resetPage();
+    }
+
     public function resetFefoFilters(): void
     {
         $this->fefoBranchId = null;
         $this->fefoSatuanFilter = '';
+        $this->fefoChartUnit = 'BTL';
         $this->expiryRiskFilter = 'all';
         $this->expirySearch = '';
         $this->fefoSortBy = 'days';
         $this->fefoSortDir = 'asc';
-        $this->fefoChartUnit = 'BTL';
         $this->resetPage();
+    }
+
+    public function resetComplianceFilters(): void
+    {
+        $this->complianceStatus = 'all';
+        $this->complianceSearch = '';
+        $this->complianceDate = '';
+        $this->complianceTrendPeriod = 14;
+        $this->resetPage();
+    }
+
+    public function setComplianceTrendPeriod(int $period): void
+    {
+        if (in_array($period, [7, 14, 30], true)) {
+            $this->complianceTrendPeriod = $period;
+        }
+    }
+
+    public function setDonutMetric(string $metric): void
+    {
+        if (in_array($metric, ['value', 'qty'])) {
+            $this->donutMetric = $metric;
+        }
     }
 
     public function updatedStagnantPeriod(): void
@@ -350,6 +380,47 @@ class Dashboard extends Component
         }
 
         return 'OTHER';
+    }
+
+    /**
+     * Palet warna seragam & konsisten antar semua chart (Stacked Bar, Donut, List).
+     */
+    public static function getDistributorGroupColor(string $group): string
+    {
+        return match ($group) {
+            'KFTD' => '#3b82f6',  // Blue
+            'SDL' => '#f97316',   // Orange
+            'UDC' => '#a855f7',   // Purple
+            'GMP' => '#84cc16',   // Lime/Green
+            'MAM' => '#06b6d4',   // Cyan
+            'OTHER' => '#eab308', // Amber/Yellow
+            default => '#64748b', // Slate
+        };
+    }
+
+    /**
+     * Format nama cabang agar bersih, ringkas, dan mudah dibaca tanpa prefix PT/Cabang berulang.
+     */
+    public static function formatBranchDisplayName(?string $name, ?string $code = ''): string
+    {
+        if (! $name) {
+            return $code ?: '-';
+        }
+
+        $patterns = [
+            '/^PT\.?\s*KIMIA\s+FARMA\s+TRADING\s*&\s*DISTRIBUTION\s*(CABANG\s*)?[-:]?\s*/i' => 'KFTD ',
+            '/^PT\.?\s*SATORIA\s+DISTRIBUSI\s+LESTARI\s*[-:]?\s*(CABANG\s*)?/i' => 'SDL ',
+            '/^PT\.?\s*INDOFARMA\s+GLOBAL\s+MEDIKA\s*[-:]?\s*(CABANG\s*)?/i' => 'IGM ',
+            '/^PT\.?\s*GLOBAL\s+MITRA\s+PRIMA\s*[-:]?\s*(CABANG\s*)?/i' => 'GMP ',
+            '/^PT\.?\s*MITRA\s+ALFAR\s+MEDICALINDO\s*[-:]?\s*(CABANG\s*)?/i' => 'MAM ',
+            '/^PT\.?\s*MENJANGAN\s+ENAM\s*[-:]?\s*(CABANG\s*)?/i' => 'MAM ',
+            '/^PT\.?\s*/i' => '',
+        ];
+
+        $cleaned = preg_replace(array_keys($patterns), array_values($patterns), trim($name));
+        $cleaned = preg_replace('/\s+/', ' ', (string) $cleaned);
+
+        return trim($cleaned) ?: $name;
     }
 
     /**
@@ -631,13 +702,101 @@ class Dashboard extends Component
     }
 
     /**
+     * Hitung tren kepatuhan upload laporan stok cabang harian (Daily Compliance Tracker).
+     * Menghasilkan histori jumlah cabang yang sudah lapor vs belum lapor serta persentase kepatuhan harian.
+     */
+    public function calculateComplianceTrend(array $scopedDistributorIds, ?string $targetComplianceDate): array
+    {
+        $totalBranches = count($scopedDistributorIds);
+        if ($totalBranches === 0) {
+            return [
+                'labels' => [],
+                'full_dates' => [],
+                'submitted' => [],
+                'missing' => [],
+                'rates' => [],
+                'total_branches' => 0,
+                'avg_rate' => 0.0,
+                'period' => $this->complianceTrendPeriod,
+                'start_date' => '',
+                'end_date' => '',
+                'start_date_formatted' => '-',
+                'end_date_formatted' => '-',
+                'has_data' => false,
+            ];
+        }
+
+        $endDate = $targetComplianceDate ?: Carbon::today()->toDateString();
+        $startDate = Carbon::parse($endDate)->subDays($this->complianceTrendPeriod - 1)->toDateString();
+
+        $submittedByDate = StockEntry::query()
+            ->whereBetween('tanggal', [$startDate, $endDate])
+            ->whereIn('distributor_id', $scopedDistributorIds)
+            ->select('tanggal', DB::raw('COUNT(DISTINCT distributor_id) as submitted_count'))
+            ->groupBy('tanggal')
+            ->pluck('submitted_count', 'tanggal')
+            ->mapWithKeys(fn ($cnt, $d) => [Carbon::parse($d)->toDateString() => (int) $cnt])
+            ->all();
+
+        $curr = Carbon::parse($startDate);
+        $end = Carbon::parse($endDate);
+
+        $labels = [];
+        $fullDates = [];
+        $submitted = [];
+        $missing = [];
+        $rates = [];
+        $totalRateSum = 0.0;
+        $hasAnyUpload = false;
+
+        while ($curr->lte($end)) {
+            $dateStr = $curr->toDateString();
+            $labels[] = $curr->translatedFormat('d M');
+            $fullDates[] = $curr->translatedFormat('l, d F Y');
+
+            $subCount = $submittedByDate[$dateStr] ?? 0;
+            if ($subCount > 0) {
+                $hasAnyUpload = true;
+            }
+            $missCount = max(0, $totalBranches - $subCount);
+            $rate = $totalBranches > 0 ? round(($subCount / $totalBranches) * 100, 1) : 0.0;
+
+            $submitted[] = $subCount;
+            $missing[] = $missCount;
+            $rates[] = $rate;
+            $totalRateSum += $rate;
+
+            $curr->addDay();
+        }
+
+        $avgRate = count($rates) > 0 ? round($totalRateSum / count($rates), 1) : 0.0;
+
+        return [
+            'labels' => $labels,
+            'full_dates' => $fullDates,
+            'submitted' => $submitted,
+            'missing' => $missing,
+            'rates' => $rates,
+            'total_branches' => $totalBranches,
+            'avg_rate' => $avgRate,
+            'period' => $this->complianceTrendPeriod,
+            'start_date' => $startDate,
+            'end_date' => $endDate,
+            'start_date_formatted' => Carbon::parse($startDate)->translatedFormat('d M Y'),
+            'end_date_formatted' => Carbon::parse($endDate)->translatedFormat('d M Y'),
+            'has_data' => $hasAnyUpload,
+        ];
+    }
+
+    /**
      * Hitung horizon umur kedaluwarsa makro (Macro Expiry Horizon Breakdown).
      * Membagi stok fisik (BTL / AMP / PCS) ke dalam 5 zona farmasi:
      * < 1 bln (expired), 1-3 bln (kritis), 3-6 bln (waspada), 6-12 bln (perhatian), > 12 bln (aman).
      */
     public function calculateFefoHorizon(Collection $allCurrentEntries, array $scopedDistributorIds): array
     {
-        $unit = $this->fefoChartUnit;
+        $unit = in_array($this->fefoSatuanFilter, ['BTL', 'AMP', 'PCS']) ? $this->fefoSatuanFilter : $this->fefoChartUnit;
+        $this->fefoChartUnit = $unit;
         $unitLabel = match ($unit) {
             'BTL' => 'Botol (BTL)',
             'AMP' => 'Ampul (AMP)',
@@ -813,7 +972,14 @@ class Dashboard extends Component
      */
     public function calculateStagnantStock(Collection $latestEntries, array $scopedDistributorIds, ?string $latestSnapshotDate): Collection
     {
-        $endDate = $latestSnapshotDate ?: Carbon::today()->toDateString();
+        $branchSnapshotDate = null;
+        if ($this->stagnantBranchId) {
+            $maxDate = StockEntry::where('distributor_id', $this->stagnantBranchId)->max('tanggal');
+            if ($maxDate) {
+                $branchSnapshotDate = Carbon::parse($maxDate)->toDateString();
+            }
+        }
+        $endDate = $branchSnapshotDate ?: ($latestSnapshotDate ?: Carbon::today()->toDateString());
         $startDate = Carbon::parse($endDate)->subDays($this->stagnantPeriod - 1)->toDateString();
 
         // Hanya evaluasi item yang saat ini ada stok fisiknya di cabang (> 0)
@@ -1139,14 +1305,6 @@ class Dashboard extends Component
         if ($isNationalSummary) {
             // Stacked Bar Chart per Distributor Group (Looker Studio Style)
             $distGroups = ['KFTD', 'SDL', 'UDC', 'GMP', 'MAM', 'OTHER'];
-            $distGroupColors = [
-                'KFTD' => '#3b82f6',  // Blue
-                'SDL' => '#f97316',   // Orange
-                'UDC' => '#a855f7',   // Purple
-                'GMP' => '#84cc16',   // Lime/Green
-                'MAM' => '#06b6d4',   // Cyan
-                'OTHER' => '#eab308', // Amber/Yellow
-            ];
 
             foreach ($distGroups as $dg) {
                 $dataPoints = [];
@@ -1160,7 +1318,7 @@ class Dashboard extends Component
                 $chartTopProducts['datasets'][] = [
                     'label' => $dg === 'OTHER' ? 'Lainnya' : $dg,
                     'data' => $dataPoints,
-                    'backgroundColor' => $distGroupColors[$dg],
+                    'backgroundColor' => self::getDistributorGroupColor($dg),
                     'stack' => 'stack0',
                 ];
             }
@@ -1186,33 +1344,69 @@ class Dashboard extends Component
             'labels' => [],
             'data' => [],
             'colors' => [],
+            'metric' => $this->donutMetric,
+            'total' => 0.0,
         ];
+
+        $totalDonut = 0.0;
 
         if ($isNationalSummary) {
             $distGroups = ['KFTD', 'SDL', 'UDC', 'GMP', 'MAM', 'OTHER'];
-            $colors = ['#3b82f6', '#f97316', '#a855f7', '#84cc16', '#06b6d4', '#eab308'];
             $totals = [];
 
             foreach ($distGroups as $dg) {
-                $totals[$dg] = $allCurrentEntries
-                    ->filter(fn ($e) => self::getDistributorGroup($e->distributor?->distributor_code) === $dg)
-                    ->sum('quantity');
+                $entriesForGroup = $allCurrentEntries->filter(fn ($e) => self::getDistributorGroup($e->distributor?->distributor_code) === $dg);
+                if ($this->donutMetric === 'value') {
+                    $sum = (float) $entriesForGroup->sum(function ($e) {
+                        $unitPrice = (float) ($e->distributorItem?->netsuiteItem?->unit_price ?? 0.0);
+                        return (float) $e->quantity * $unitPrice;
+                    });
+                } else {
+                    $sum = (float) $entriesForGroup->sum('quantity');
+                }
+                $totals[$dg] = $sum;
+                $totalDonut += $sum;
             }
 
-            foreach ($distGroups as $idx => $dg) {
+            foreach ($distGroups as $dg) {
                 if ($totals[$dg] > 0) {
                     $chartDonut['labels'][] = $dg === 'OTHER' ? 'Lainnya' : $dg;
-                    $chartDonut['data'][] = (float) $totals[$dg];
-                    $chartDonut['colors'][] = $colors[$idx];
+                    $chartDonut['data'][] = round((float) $totals[$dg], 2);
+                    $chartDonut['colors'][] = self::getDistributorGroupColor($dg);
                 }
             }
         } else {
             // Jika memilih 1 distributor grup, tampilkan komposisi per sediaan yang ada stoknya (> 0)
-            $sediaanData = [
-                'Botol (Btl)' => (float) $kpi['total_btl'],
-                'Ampul (Amp)' => (float) $kpi['total_amp'],
-                'Pcs / Box' => (float) $kpi['total_pcs'],
-            ];
+            if ($this->donutMetric === 'value') {
+                $valBtl = (float) $allCurrentEntries->filter(function ($e) {
+                    $sat = strtoupper(trim((string) $e->satuan));
+                    return str_contains($sat, 'BTL') || str_contains($sat, 'BOTOL');
+                })->sum(fn ($e) => (float) $e->quantity * (float) ($e->distributorItem?->netsuiteItem?->unit_price ?? 0.0));
+
+                $valAmp = (float) $allCurrentEntries->filter(function ($e) {
+                    $sat = strtoupper(trim((string) $e->satuan));
+                    return str_contains($sat, 'AMP');
+                })->sum(fn ($e) => (float) $e->quantity * (float) ($e->distributorItem?->netsuiteItem?->unit_price ?? 0.0));
+
+                $valPcs = (float) $allCurrentEntries->filter(function ($e) {
+                    $sat = strtoupper(trim((string) $e->satuan));
+                    return ! str_contains($sat, 'BTL') && ! str_contains($sat, 'BOTOL') && ! str_contains($sat, 'AMP');
+                })->sum(fn ($e) => (float) $e->quantity * (float) ($e->distributorItem?->netsuiteItem?->unit_price ?? 0.0));
+
+                $sediaanData = [
+                    'Botol (Btl)' => $valBtl,
+                    'Ampul (Amp)' => $valAmp,
+                    'Pcs / Box' => $valPcs,
+                ];
+            } else {
+                $sediaanData = [
+                    'Botol (Btl)' => (float) $kpi['total_btl'],
+                    'Ampul (Amp)' => (float) $kpi['total_amp'],
+                    'Pcs / Box' => (float) $kpi['total_pcs'],
+                ];
+            }
+
+            $totalDonut = array_sum($sediaanData);
             $sediaanColors = [
                 'Botol (Btl)' => '#0d6d5f',
                 'Ampul (Amp)' => '#06b6d4',
@@ -1221,11 +1415,45 @@ class Dashboard extends Component
             foreach ($sediaanData as $sName => $sVal) {
                 if ($sVal > 0) {
                     $chartDonut['labels'][] = $sName;
-                    $chartDonut['data'][] = $sVal;
+                    $chartDonut['data'][] = round((float) $sVal, 2);
                     $chartDonut['colors'][] = $sediaanColors[$sName];
                 }
             }
         }
+
+        $chartDonut['total'] = $totalDonut;
+
+        // 7b. Ranking Top 5 Cabang Terbesar (Branch Capital / Physical Allocation)
+        $branchGroups = $allCurrentEntries->groupBy('distributor_id');
+        $totalUniverse = $this->donutMetric === 'value'
+            ? (float) $allCurrentEntries->sum(fn ($e) => (float) $e->quantity * (float) ($e->distributorItem?->netsuiteItem?->unit_price ?? 0.0))
+            : (float) $allCurrentEntries->sum('quantity');
+
+        $topBranches = $branchGroups->map(function ($entries) use ($totalUniverse) {
+            $dist = $entries->first()->distributor;
+            $val = (float) $entries->sum(fn ($e) => (float) $e->quantity * (float) ($e->distributorItem?->netsuiteItem?->unit_price ?? 0.0));
+            $qty = (float) $entries->sum('quantity');
+            $metricVal = $this->donutMetric === 'value' ? $val : $qty;
+            $pct = $totalUniverse > 0 ? round(($metricVal / $totalUniverse) * 100, 1) : 0.0;
+            $grp = self::getDistributorGroup($dist?->distributor_code);
+
+            return (object) [
+                'id' => $dist?->id,
+                'name' => $dist?->name ?? ('Cabang #'.$entries->first()->distributor_id),
+                'short_name' => self::formatBranchDisplayName($dist?->name, $dist?->distributor_code),
+                'code' => $dist?->distributor_code ?? '',
+                'group' => $grp,
+                'color' => self::getDistributorGroupColor($grp),
+                'total_value' => $val,
+                'total_qty' => $qty,
+                'metric_val' => $metricVal,
+                'pct' => $pct,
+            ];
+        })
+        ->filter(fn ($b) => $b->metric_val > 0)
+        ->sortByDesc('metric_val')
+        ->take(5)
+        ->values();
 
         // 8. Filter Tabel Detail Stock (Tab 1: Posisi Stok On-Hand)
         $filteredEntries = $allCurrentEntries;
@@ -1551,6 +1779,9 @@ class Dashboard extends Component
         // 12. Line Chart: Trend Stock On Hand (Snapshot Historis per Satuan)
         $chartTrend = $this->calculateStockTrend($scopedDistributorIds, $latestSnapshotDate);
 
+        // 12b. Combo Chart: Tren Kepatuhan Laporan Harian (Daily Compliance Tracker)
+        $chartComplianceTrend = $this->calculateComplianceTrend($scopedDistributorIds, $targetComplianceDate);
+
         // 13. Tab 4: Stok Macet & Slow-Moving (Dead Stock Alert)
         if ($this->activeTab === 'stagnant') {
             $stagnantAllRows = $this->calculateStagnantStock($allCurrentEntries, $scopedDistributorIds, $latestSnapshotDate);
@@ -1602,6 +1833,7 @@ class Dashboard extends Component
             'donut' => $chartDonut,
             'trend' => $chartTrend,
             'fefo' => $chartFefoHorizon,
+            'compliance' => $chartComplianceTrend,
         ]);
 
         return view('livewire.dashboard', [
@@ -1611,11 +1843,15 @@ class Dashboard extends Component
             'stockTable' => $stockTablePaginated,
             'chartTopProducts' => $chartTopProducts,
             'chartDonut' => $chartDonut,
+            'donutMetric' => $this->donutMetric,
+            'topBranches' => $topBranches,
             'chartTrend' => $chartTrend,
             'trendUnit' => $this->trendUnit,
             'trendPeriod' => $this->trendPeriod,
             'chartFefoHorizon' => $chartFefoHorizon,
             'fefoChartUnit' => $this->fefoChartUnit,
+            'chartComplianceTrend' => $chartComplianceTrend,
+            'complianceTrendPeriod' => $this->complianceTrendPeriod,
             'expiryAlerts' => $expiryAlerts,
             'totalDisplayRows' => $totalRows,
             'activeTab' => $this->activeTab,

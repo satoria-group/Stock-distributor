@@ -144,12 +144,19 @@ class StockTemplateDownloadTest extends TestCase
         $user = User::where('email', 'logistik@satoriagroup.co.id')->first() ?? User::first();
         $user->syncPermissions(['stock.view', 'stock.upload']);
 
-        $distributor = \App\Models\Distributor::where('name', 'like', '%PUSAT%')->first() ?? \App\Models\Distributor::first();
+        $entry = \App\Models\StockEntry::with('distributor')->whereNotNull('expired_date')->first();
+        if ($entry && $entry->distributor) {
+            $distributor = $entry->distributor;
+            $tanggal = $entry->tanggal ? $entry->tanggal->toDateString() : '2026-09-02';
+        } else {
+            $distributor = \App\Models\Distributor::where('name', 'like', '%PUSAT%')->first() ?? \App\Models\Distributor::first();
+            $tanggal = '2026-09-02';
+        }
         $this->assertNotNull($distributor);
 
         $test = Livewire::actingAs($user)
             ->test(Upload::class)
-            ->set('tanggal', '2026-09-02')
+            ->set('tanggal', $tanggal)
             ->set('distributorId', $distributor->id)
             ->call('loadExisting')
             ->assertDispatched('rows-loaded');

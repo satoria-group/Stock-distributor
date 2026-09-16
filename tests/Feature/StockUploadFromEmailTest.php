@@ -6,6 +6,7 @@ use App\Models\Distributor;
 use App\Models\DistributorItem;
 use App\Models\User;
 use App\Services\ImapService;
+use Illuminate\Foundation\Testing\DatabaseTransactions;
 use Livewire\Livewire;
 use Mockery;
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
@@ -14,6 +15,8 @@ use Tests\TestCase;
 
 class StockUploadFromEmailTest extends TestCase
 {
+    use DatabaseTransactions;
+
     private function createSampleExcelContent(string $distCode = 'TEST_DIST_01'): string
     {
         $spreadsheet = new Spreadsheet();
@@ -51,18 +54,21 @@ class StockUploadFromEmailTest extends TestCase
             $user->syncRoles([User::ROLE_ADMIN]);
         }
 
-        // Setup test distributor & item
-        $dist = Distributor::firstOrCreate(
-            ['distributor_code' => 'TEST_EMAIL_DIST'],
-            ['name' => 'Distributor Uji Email', 'is_active' => true]
-        );
+        // Setup test distributor & item with unique code
+        $code = 'TEST_EM_' . uniqid();
+        $dist = Distributor::create([
+            'distributor_code' => $code,
+            'name' => 'Distributor Uji Email ' . $code,
+            'is_active' => true,
+        ]);
 
-        $distItem = DistributorItem::firstOrCreate(
-            ['distributor_id' => $dist->id, 'item_name' => 'Item Uji Coba Email'],
-            ['satuan' => 'BTL']
-        );
+        $distItem = DistributorItem::create([
+            'distributor_id' => $dist->id,
+            'item_name' => 'Item Uji Coba Email',
+            'satuan' => 'BTL',
+        ]);
 
-        $excelBytes = $this->createSampleExcelContent('TEST_EMAIL_DIST');
+        $excelBytes = $this->createSampleExcelContent($code);
 
         $mockImap = Mockery::mock(ImapService::class);
         $mockImap->shouldReceive('isConfigured')->andReturn(true);

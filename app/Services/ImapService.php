@@ -507,6 +507,58 @@ class ImapService
     }
 
     /**
+     * Get unread messages from INBOX for automated background processing.
+     *
+     * @return array<int, array{uid: string, message_id: ?string, from_name: string, from_email: string, subject: string, date: ?Carbon, is_daily_stock: bool, has_attachments: bool}>
+     */
+    public function getUnreadMessages(int $limit = 20): array
+    {
+        if (! $this->isConfigured()) {
+            return [];
+        }
+
+        try {
+            $client = $this->getClient();
+            $folder = $client->getFolder(config('imap.mailbox', 'INBOX'));
+            if (! $folder) {
+                return [];
+            }
+
+            $messages = $folder->query()->unseen()->leaveUnread()->setFetchOrder('desc')->limit($limit)->get();
+            $items = [];
+
+            foreach ($messages as $message) {
+                $fromData = $message->getFrom();
+                $fromObj = method_exists($fromData, 'first') ? $fromData->first() : (is_array($fromData) ? ($fromData[0] ?? null) : null);
+                $fromName = $fromObj?->personal ?? '';
+                $fromEmail = $fromObj?->mail ?? '';
+                $subject = (string) $message->getSubject();
+                $date = $message->getDate();
+                $dateCarbon = $date ? Carbon::parse($date->first() ?? $date) : null;
+                $uid = (string) $message->getUid();
+                $messageId = (string) ($message->getMessageId() ?? null);
+
+                $items[] = [
+                    'uid' => $uid,
+                    'message_id' => $messageId,
+                    'from_name' => $fromName,
+                    'from_email' => $fromEmail,
+                    'subject' => $subject,
+                    'date' => $dateCarbon,
+                    'is_daily_stock' => $this->isDailyStockSubject($subject),
+                    'has_attachments' => (bool) $message->hasAttachments(),
+                ];
+            }
+
+            return $items;
+        } catch (\Throwable $e) {
+            Log::warning('mail.imap.fetch_unread_failed', ['error' => $e->getMessage()]);
+
+            return [];
+        }
+    }
+
+    /**
      * Check if a subject matches the Daily Stock keyword patterns.
      */
     public function isDailyStockSubject(?string $subject): bool
