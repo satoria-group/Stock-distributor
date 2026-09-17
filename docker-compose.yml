@@ -30,6 +30,11 @@ services:
       - /var/www/html/node_modules
     networks:
       - stock_network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
     healthcheck:
       test: ["CMD-SHELL", "nc -z 127.0.0.1 9000 2>/dev/null || nc -w 1 127.0.0.1 9000 </dev/null || exit 1"]
       interval: 30s
@@ -50,12 +55,15 @@ services:
       - app
     networks:
       - stock_network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
     healthcheck:
-      # /up membangunkan Laravel sepenuhnya. Di stack dev, source code datang
-      # dari bind mount Windows sehingga setiap file autoload melewati batas
-      # virtiofs — satu request bisa 0,3-4 detik, dan melonjak lebih lama lagi
-      # saat mesin sibuk. Timeout dibuat longgar supaya container tidak
-      # ditandai unhealthy padahal aplikasinya sehat.
+      # Lebih longgar dari sekadar "seharusnya cepat": /up membangunkan Laravel
+      # penuh, dan meski di sini kode sudah ter-bake di image (tanpa bind mount)
+      # dan config sudah di-cache, lonjakan beban tetap bisa melewati 5 detik.
       test: ["CMD-SHELL", "wget -qO- http://localhost/up >/dev/null 2>&1 || exit 1"]
       interval: 30s
       timeout: 20s
@@ -84,6 +92,11 @@ services:
         condition: service_healthy
     networks:
       - stock_network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
 
 networks:
   stock_network:

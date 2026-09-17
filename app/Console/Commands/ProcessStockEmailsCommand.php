@@ -75,6 +75,15 @@ class ProcessStockEmailsCommand extends Command
                 continue;
             }
 
+            // Batas dihitung dari email yang BENAR-BENAR diproses, bukan dari
+            // jumlah yang diambil: jalur cadangan di ImapService memindai
+            // jendela lebih lebar, dan email non-stok tidak boleh ikut
+            // menghabiskan jatah.
+            if ($processedCount >= $limit) {
+                $this->comment("Batas {$limit} email per eksekusi tercapai. Sisanya diproses pada jadwal berikutnya.");
+                break;
+            }
+
             $processedCount++;
             $this->line("--------------------------------------------------");
             $this->line("Memproses Email UID #{$uid}: \"{$subject}\" dari {$fromEmail}");

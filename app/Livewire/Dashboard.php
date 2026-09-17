@@ -342,6 +342,31 @@ class Dashboard extends Component
         $this->resetPage();
     }
 
+    /**
+     * Ganti grup distributor.
+     *
+     * Dibuat sebagai metode tersendiri (bukan $set) supaya bisa dijadikan
+     * wire:target oleh indikator loading pada grafik: wire:target mencocokkan
+     * nama METODE yang dipanggil, sedangkan $set('selectedGroup', ...) tercatat
+     * sebagai pemanggilan "$set" — yang juga dipakai 20+ aksi lain di halaman
+     * ini, sehingga tidak bisa dibedakan.
+     *
+     * Logika reset disamakan dengan updatedSelectedGroup(), karena hook
+     * updated* TIDAK ikut terpanggil saat properti diubah dari dalam metode.
+     */
+    public function setGroup(string $group): void
+    {
+        if ($this->selectedGroup === $group) {
+            return;
+        }
+
+        $this->selectedGroup = $group;
+        $this->selectedBranchId = null;
+        $this->fefoBranchId = null;
+        $this->stagnantBranchId = null;
+        $this->resetPage();
+    }
+
     public function updatedSelectedBranchId(): void
     {
         $this->resetPage();
@@ -451,15 +476,19 @@ class Dashboard extends Component
      */
     private function latestSnapshotPerDistributor(array $scopedDistributorIds): Collection
     {
-        $query = StockEntry::query()
+        // Scope diterapkan untuk SEMUA grup, termasuk 'ALL'.
+        //
+        // Sebelumnya 'ALL' melewati filter ini sepenuhnya, sehingga KPI dan
+        // total stok ikut menghitung distributor NON-AKTIF — padahal
+        // $scopedDistributorIds (dan daftar cabang di sampingnya) berasal dari
+        // scopedBranchQuery() yang memfilter is_active = true. Akibatnya
+        // menjumlahkan seluruh tab grup satu per satu tidak pernah sama dengan
+        // angka di tab ALL.
+        return StockEntry::query()
             ->select('distributor_id', DB::raw('MAX(tanggal) as max_tanggal'))
-            ->groupBy('distributor_id');
-
-        if ($this->selectedGroup !== 'ALL') {
-            $query->whereIn('distributor_id', $scopedDistributorIds ?: [0]);
-        }
-
-        return $query->get();
+            ->whereIn('distributor_id', $scopedDistributorIds ?: [0])
+            ->groupBy('distributor_id')
+            ->get();
     }
 
     private function entriesForLatestSnapshots(Collection $latestPerDist): Collection
@@ -870,9 +899,9 @@ class Dashboard extends Component
 
             if ($days < 30) {
                 $tier = 'expired';
-            } elseif ($days <= 90) {
+            } elseif ($days <= StockEntry::CRITICAL_DAYS) {
                 $tier = 'critical';
-            } elseif ($days <= 180) {
+            } elseif ($days <= StockEntry::WARNING_DAYS) {
                 $tier = 'warning';
             } elseif ($days <= 365) {
                 $tier = 'caution';
@@ -933,8 +962,8 @@ class Dashboard extends Component
                     $days = $e->daysToExpiry();
                     $matchTier = match (true) {
                         $days < 30 => 'expired',
-                        $days <= 90 => 'critical',
-                        $days <= 180 => 'warning',
+                        $days <= StockEntry::CRITICAL_DAYS => 'critical',
+                        $days <= StockEntry::WARNING_DAYS => 'warning',
                         $days <= 365 => 'caution',
                         default => 'safe',
                     };
@@ -1058,7 +1087,7 @@ class Dashboard extends Component
             }
 
             $isNearEd = in_array($entry->expiryStatus(), ['critical', 'warning', 'expired'])
-                || ($entry->daysToExpiry() !== null && $entry->daysToExpiry() <= 180);
+                || ($entry->daysToExpiry() !== null && $entry->daysToExpiry() <= StockEntry::WARNING_DAYS);
 
             if ($status === 'dead_stock' && $isNearEd) {
                 $actionText = 'Prioritas Retur / Penjualan Cepat';
@@ -1859,7 +1888,6 @@ class Dashboard extends Component
             'top' => $chartTopProducts,
             'donut' => $chartDonut,
             'trend' => $chartTrend,
-            'fefo' => $chartFefoHorizon,
             'compliance' => $chartComplianceTrend,
         ]);
 

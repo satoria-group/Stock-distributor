@@ -47,13 +47,21 @@
         <div class="flex items-center gap-2 shrink-0">
             @if (count($bulkSuggestions) > 0)
                 @can('create', \App\Models\DistributorItem::class)
+                {{-- Membuka modal ini menjalankan pencocokan terhadap seluruh item
+                     yang belum ter-mapping, jadi bisa terasa lama saat datanya banyak. --}}
                 <button type="button" wire:click="openBulkModal"
-                        class="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 text-xs font-bold shadow-2xs transition cursor-pointer shrink-0 whitespace-nowrap"
+                        wire:loading.attr="disabled" wire:target="openBulkModal"
+                        class="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 text-xs font-bold shadow-2xs transition cursor-pointer shrink-0 whitespace-nowrap disabled:opacity-60 disabled:cursor-wait"
                         title="Tinjau dan setujui pemetaan rekomendasi dengan 1 klik">
-                    <svg width="14" height="14" style="width: 14px; height: 14px; min-width: 14px; flex-shrink: 0; color: #0d6d5f;" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <svg wire:loading.remove wire:target="openBulkModal" width="14" height="14" style="width: 14px; height: 14px; min-width: 14px; flex-shrink: 0; color: #0d6d5f;" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path>
                     </svg>
-                    <span>Tinjau & Setujui Saran ({{ count($bulkSuggestions) }} Item)</span>
+                    <svg wire:loading wire:target="openBulkModal" class="animate-spin" width="14" height="14" style="width: 14px; height: 14px; min-width: 14px; flex-shrink: 0;" fill="none" viewBox="0 0 24 24">
+                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path>
+                    </svg>
+                    <span wire:loading.remove wire:target="openBulkModal">Tinjau &amp; Setujui Saran ({{ count($bulkSuggestions) }} Item)</span>
+                    <span wire:loading wire:target="openBulkModal">Menganalisis kecocokan…</span>
                 </button>
                 @endcan
             @endif
@@ -78,7 +86,7 @@
                     <th class="px-5 py-3.5">Distributor</th>
                     <th class="px-5 py-3.5">Nama Item (Distributor)</th>
                     <th class="px-5 py-3.5 w-28 text-center">Satuan</th>
-                    <th class="px-5 py-3.5">Produk Netsuite / Rekomendasi Cerdas</th>
+                    <th class="px-5 py-3.5">Produk Netsuite</th>
                     <th class="px-5 py-3.5 w-44 text-center">Status</th>
                     <th class="px-5 py-3.5 w-36 text-right">Aksi</th>
                 </tr>
@@ -322,12 +330,17 @@
                 </button>
                 @if (count($bulkSuggestions) > 0)
                 <button type="button" wire:click="approveSelectedBulk"
-                        wire:loading.attr="disabled"
-                        class="inline-flex items-center gap-2 text-xs bg-[#0d6d5f] hover:bg-[#07352d] text-white font-bold px-5 py-2.5 rounded-xl shadow-xs transition cursor-pointer disabled:opacity-50">
-                    <svg width="14" height="14" style="width: 14px; height: 14px; min-width: 14px; flex-shrink: 0;" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        wire:loading.attr="disabled" wire:target="approveSelectedBulk"
+                        class="inline-flex items-center gap-2 text-xs bg-[#0d6d5f] hover:bg-[#07352d] text-white font-bold px-5 py-2.5 rounded-xl shadow-xs transition cursor-pointer disabled:opacity-50 disabled:cursor-wait">
+                    <svg wire:loading.remove wire:target="approveSelectedBulk" width="14" height="14" style="width: 14px; height: 14px; min-width: 14px; flex-shrink: 0;" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"></path>
                     </svg>
-                    <span>1-Click Setujui Semua ({{ count($selectedBulkIds) }} Item)</span>
+                    <svg wire:loading wire:target="approveSelectedBulk" class="animate-spin" width="14" height="14" style="width: 14px; height: 14px; min-width: 14px; flex-shrink: 0;" fill="none" viewBox="0 0 24 24">
+                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path>
+                    </svg>
+                    <span wire:loading.remove wire:target="approveSelectedBulk">1-Click Setujui Semua ({{ count($selectedBulkIds) }} Item)</span>
+                    <span wire:loading wire:target="approveSelectedBulk">Menyimpan pemetaan…</span>
                 </button>
                 @endif
             </div>

@@ -35,6 +35,11 @@ services:
       - storage_data:/var/www/html/storage
     networks:
       - stock_network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
     healthcheck:
       test: ["CMD-SHELL", "nc -z 127.0.0.1 9000 2>/dev/null || nc -w 1 127.0.0.1 9000 </dev/null || exit 1"]
       interval: 30s
@@ -62,6 +67,11 @@ services:
         condition: service_healthy
     networks:
       - stock_network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
     healthcheck:
       # Lebih longgar dari sekadar "seharusnya cepat": /up membangunkan Laravel
       # penuh, dan meski di sini kode sudah ter-bake di image (tanpa bind mount)
@@ -73,6 +83,10 @@ services:
       start_period: 60s
 
   scheduler:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: production
     image: stock-distributor-app:latest
     container_name: stock_scheduler_prod
     restart: always
@@ -91,6 +105,11 @@ services:
         condition: service_healthy
     networks:
       - stock_network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
 
 volumes:
   storage_data:

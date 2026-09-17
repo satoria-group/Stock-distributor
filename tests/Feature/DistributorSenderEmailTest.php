@@ -45,7 +45,8 @@ class DistributorSenderEmailTest extends TestCase
         Livewire::actingAs($this->adminUser)
             ->test(Index::class)
             ->assertSee('Whitelist Email Pengirim Otomasi Laporan Stok')
-            ->assertSee('Email Whitelist (Otomasi Laporan)')
+            ->assertSee('Email Whitelist')
+            ->set('search', $code)
             ->assertSee('bandung@kftd.co.id')
             ->assertSee('@kftd.co.id');
     }

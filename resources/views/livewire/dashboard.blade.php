@@ -68,7 +68,7 @@
                         ];
                     @endphp
                     @foreach ($groups as $gKey => $gLabel)
-                        <button type="button" wire:click="$set('selectedGroup', '{{ $gKey }}')"
+                        <button type="button" wire:click="setGroup('{{ $gKey }}')"
                                 class="px-3.5 py-2 rounded-xl text-xs font-bold transition duration-150 cursor-pointer"
                                 style="{{ $selectedGroup === $gKey ? 'background: #ffffff; color: #07352d; box-shadow: 0 2px 8px rgba(0,0,0,0.18); font-weight: 800;' : 'color: #d1fae5; background: transparent;' }}">
                             {{ $gLabel }}
@@ -177,7 +177,6 @@
          data-top='@json($chartTopProducts)'
          data-donut='@json($chartDonut)'
          data-trend='@json($chartTrend)'
-         data-fefo='@json($chartFefoHorizon)'
          data-compliance='@json($chartComplianceTrend)'>
     </div>
 
@@ -262,7 +261,9 @@
         <!-- Canvas Grafik Line -->
         <div class="relative" style="height: 300px;">
             <!-- Loading Indicator Overlay saat ganti unit/periode grafik -->
-            <div wire:loading wire:target="setTrendUnit,setTrendPeriod"
+            {{-- Target diperluas: selain unit/periode, data tren juga berubah saat
+                 grup atau cabang diganti. --}}
+            <div wire:loading wire:target="setTrendUnit,setTrendPeriod,setGroup,selectedBranchId"
                  class="absolute inset-0 bg-white/75 backdrop-blur-[1.5px] flex items-center justify-center z-20 rounded-xl transition-all">
                 <div class="inline-flex items-center gap-2.5 px-3.5 py-2 rounded-xl bg-slate-900/90 text-white text-xs font-semibold shadow-lg backdrop-blur-md">
                     <svg class="animate-spin h-3.5 w-3.5 text-emerald-400 shrink-0" fill="none" viewBox="0 0 24 24">
@@ -310,12 +311,26 @@
                         </p>
                     </div>
                 </div>
-                <div wire:ignore class="relative" style="height: 385px;">
-                    <canvas id="chart-top-products"></canvas>
-                    <div id="no-data-top" class="absolute inset-0 flex flex-col items-center justify-center text-slate-400 text-xs hidden">
-                        <div class="text-3xl mb-1">📊</div>
-                        <span class="font-medium text-slate-500">Belum ada data stok produk untuk grup ini.</span>
-                        <span class="text-[11px] text-slate-400">Silakan pilih distributor lain atau unggah data stok harian.</span>
+                <div class="relative" style="height: 385px;">
+                    {{-- Overlay HARUS di luar wire:ignore agar tetap dikendalikan Livewire. --}}
+                    <div wire:loading wire:target="setGroup,selectedBranchId"
+                         class="absolute inset-0 bg-white/75 backdrop-blur-[1.5px] flex items-center justify-center z-20 rounded-xl transition-all">
+                        <div class="inline-flex items-center gap-2.5 px-3.5 py-2 rounded-xl bg-slate-900/90 text-white text-xs font-semibold shadow-lg backdrop-blur-md">
+                            <svg class="animate-spin h-3.5 w-3.5 text-emerald-400 shrink-0" fill="none" viewBox="0 0 24 24">
+                                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path>
+                            </svg>
+                            <span>Memperbarui grafik...</span>
+                        </div>
+                    </div>
+
+                    <div wire:ignore class="relative w-full h-full">
+                        <canvas id="chart-top-products"></canvas>
+                        <div id="no-data-top" class="absolute inset-0 flex flex-col items-center justify-center text-slate-400 text-xs hidden">
+                            <div class="text-3xl mb-1">📊</div>
+                            <span class="font-medium text-slate-500">Belum ada data stok produk untuk grup ini.</span>
+                            <span class="text-[11px] text-slate-400">Silakan pilih distributor lain atau unggah data stok harian.</span>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -355,11 +370,24 @@
                 </div>
 
                 <!-- Donut Chart Canvas -->
-                <div wire:ignore class="relative flex items-center justify-center" style="height: 165px;">
-                    <canvas id="chart-donut-dist"></canvas>
-                    <div id="no-data-donut" class="absolute inset-0 flex flex-col items-center justify-center text-slate-400 text-xs hidden">
-                        <div class="text-3xl mb-1">🍩</div>
-                        <span class="font-medium text-slate-500">Belum ada data stok.</span>
+                <div class="relative" style="height: 165px;">
+                    <div wire:loading wire:target="setDonutMetric,setGroup,selectedBranchId"
+                         class="absolute inset-0 bg-white/75 backdrop-blur-[1.5px] flex items-center justify-center z-20 rounded-xl transition-all">
+                        <div class="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-900/90 text-white text-[11px] font-semibold shadow-lg backdrop-blur-md">
+                            <svg class="animate-spin h-3 w-3 text-emerald-400 shrink-0" fill="none" viewBox="0 0 24 24">
+                                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path>
+                            </svg>
+                            <span>Memperbarui...</span>
+                        </div>
+                    </div>
+
+                    <div wire:ignore class="relative w-full h-full flex items-center justify-center">
+                        <canvas id="chart-donut-dist"></canvas>
+                        <div id="no-data-donut" class="absolute inset-0 flex flex-col items-center justify-center text-slate-400 text-xs hidden">
+                            <div class="text-3xl mb-1">🍩</div>
+                            <span class="font-medium text-slate-500">Belum ada data stok.</span>
+                        </div>
                     </div>
                 </div>
 
@@ -910,10 +938,15 @@
                                 wire:loading.attr="disabled"
                                 class="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-white hover:bg-slate-50 text-slate-800 border border-slate-200 text-xs font-bold shadow-2xs transition cursor-pointer disabled:opacity-50"
                                 title="Unduh rekapitulasi batch near-ED dalam format CSV Excel">
-                            <svg width="15" height="15" style="width: 15px; height: 15px; min-width: 15px; flex-shrink: 0; color: #0d6d5f;" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <svg wire:loading.remove wire:target="exportNearEdCsv" width="15" height="15" style="width: 15px; height: 15px; min-width: 15px; flex-shrink: 0; color: #0d6d5f;" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path>
                             </svg>
-                            <span>Ekspor CSV</span>
+                            <svg wire:loading wire:target="exportNearEdCsv" class="animate-spin" width="15" height="15" style="width: 15px; height: 15px; min-width: 15px; flex-shrink: 0; color: #0d6d5f;" fill="none" viewBox="0 0 24 24">
+                                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path>
+                            </svg>
+                            <span wire:loading.remove wire:target="exportNearEdCsv">Ekspor CSV</span>
+                            <span wire:loading wire:target="exportNearEdCsv">Menyiapkan berkas…</span>
                         </button>
                     </div>
                 </div>
@@ -1569,6 +1602,17 @@
 
                 <!-- Canvas Chart Container -->
                 <div class="relative w-full mt-2" style="height: 270px;">
+                    <div wire:loading wire:target="setComplianceTrendPeriod,complianceDate,setGroup,selectedBranchId"
+                         class="absolute inset-0 bg-white/75 backdrop-blur-[1.5px] flex items-center justify-center z-20 rounded-xl transition-all">
+                        <div class="inline-flex items-center gap-2.5 px-3.5 py-2 rounded-xl bg-slate-900/90 text-white text-xs font-semibold shadow-lg backdrop-blur-md">
+                            <svg class="animate-spin h-3.5 w-3.5 text-emerald-400 shrink-0" fill="none" viewBox="0 0 24 24">
+                                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path>
+                            </svg>
+                            <span>Memperbarui grafik...</span>
+                        </div>
+                    </div>
+
                     <canvas id="chart-compliance-trend" class="w-full h-full"></canvas>
                     <div id="no-data-compliance" class="hidden absolute inset-0 flex flex-col items-center justify-center text-slate-400 bg-white/90">
                         <svg class="w-10 h-10 mb-2 text-slate-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1739,11 +1783,17 @@
             <!-- Action Buttons: Export CSV & Reset -->
             <div class="flex items-center gap-2">
                 <button type="button" wire:click="exportStagnantCsv"
-                        class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-slate-200 bg-white text-xs font-semibold text-slate-700 hover:bg-slate-50 hover:text-slate-900 transition shadow-2xs cursor-pointer">
-                    <svg class="w-3.5 h-3.5 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        wire:loading.attr="disabled" wire:target="exportStagnantCsv"
+                        class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-slate-200 bg-white text-xs font-semibold text-slate-700 hover:bg-slate-50 hover:text-slate-900 transition shadow-2xs cursor-pointer disabled:opacity-60 disabled:cursor-wait">
+                    <svg wire:loading.remove wire:target="exportStagnantCsv" class="w-3.5 h-3.5 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
                     </svg>
-                    <span>Unduh CSV</span>
+                    <svg wire:loading wire:target="exportStagnantCsv" class="w-3.5 h-3.5 text-slate-500 animate-spin" fill="none" viewBox="0 0 24 24">
+                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path>
+                    </svg>
+                    <span wire:loading.remove wire:target="exportStagnantCsv">Unduh CSV</span>
+                    <span wire:loading wire:target="exportStagnantCsv">Menyiapkan…</span>
                 </button>
 
                 @if ($stagnantPeriod !== 30 || $stagnantRiskFilter !== 'all' || $stagnantBranchId || $stagnantSatuanFilter || $stagnantSearch || $stagnantSortBy !== 'days_stagnant' || $stagnantSortDir !== 'desc')
@@ -2091,7 +2141,6 @@
         let chartTopInstance = null;
         let chartDonutInstance = null;
         let chartTrendInstance = null;
-        let chartFefoInstance = null;
         let chartComplianceInstance = null;
 
         // Tanda tangan data terakhir per chart header.
@@ -2113,7 +2162,7 @@
             }
         }
 
-        function updateChartData(topData, donutData, trendData, fefoData, complianceData) {
+        function updateChartData(topData, donutData, trendData, complianceData) {
             const canvasTop = document.getElementById('chart-top-products');
             const noDataTop = document.getElementById('no-data-top');
             const canvasDonut = document.getElementById('chart-donut-dist');
@@ -2396,86 +2445,7 @@
                 }
             }
 
-            // 4. Horizontal Stacked Bar Chart (Horizon Kedaluwarsa Makro)
-            const canvasFefo = document.getElementById('chart-fefo-horizon');
-            const noDataFefo = document.getElementById('no-data-fefo');
-
-            if (!canvasFefo && chartFefoInstance) {
-                chartFefoInstance.destroy();
-                chartFefoInstance = null;
-            }
-
-            if (canvasFefo && window.Chart) {
-                if (chartFefoInstance) {
-                    chartFefoInstance.destroy();
-                    chartFefoInstance = null;
-                }
-
-                const hasFefoData = fefoData && fefoData.has_data && fefoData.labels && fefoData.labels.length > 0;
-                if (!hasFefoData) {
-                    canvasFefo.style.display = 'none';
-                    if (noDataFefo) noDataFefo.classList.remove('hidden');
-                } else {
-                    canvasFefo.style.display = 'block';
-                    if (noDataFefo) noDataFefo.classList.add('hidden');
-
-                    chartFefoInstance = new window.Chart(canvasFefo, {
-                        type: 'bar',
-                        data: {
-                            labels: fefoData.labels,
-                            datasets: fefoData.datasets
-                        },
-                        options: {
-                            indexAxis: 'y',
-                            responsive: true,
-                            maintainAspectRatio: false,
-                            plugins: {
-                                legend: {
-                                    position: 'top',
-                                    labels: {
-                                        boxWidth: 12,
-                                        font: { size: 11, family: 'Plus Jakarta Sans' }
-                                    }
-                                },
-                                tooltip: {
-                                    backgroundColor: 'rgba(15, 23, 42, 0.95)',
-                                    titleFont: { size: 12, family: 'Plus Jakarta Sans', weight: 'bold' },
-                                    bodyFont: { size: 12, family: 'JetBrains Mono' },
-                                    padding: 10,
-                                    cornerRadius: 8,
-                                    callbacks: {
-                                        label: function(ctx) {
-                                            const val = ctx.raw || 0;
-                                            if (val === 0) return null;
-                                            const label = ctx.dataset.label || '';
-                                            return label + ': ' + Number(val).toLocaleString('id-ID') + ' ' + (fefoData.unit || '');
-                                        }
-                                    }
-                                }
-                            },
-                            scales: {
-                                x: {
-                                    stacked: true,
-                                    grid: { color: '#f1f5f9' },
-                                    ticks: {
-                                        font: { size: 10, family: 'JetBrains Mono' },
-                                        callback: val => Number(val).toLocaleString('id-ID')
-                                    }
-                                },
-                                y: {
-                                    stacked: true,
-                                    grid: { display: false },
-                                    ticks: {
-                                        font: { size: 11, family: 'Plus Jakarta Sans' }
-                                    }
-                                }
-                            }
-                        }
-                    });
-                }
-            }
-
-            // 5. Combo Chart (Tren Kepatuhan Upload Cabang Harian)
+            // 4. Combo Chart (Tren Kepatuhan Upload Cabang Harian)
             const canvasCompliance = document.getElementById('chart-compliance-trend');
             const noDataCompliance = document.getElementById('no-data-compliance');
 
@@ -2645,9 +2615,8 @@
                     const top = JSON.parse(holder.getAttribute('data-top') || '{}');
                     const donut = JSON.parse(holder.getAttribute('data-donut') || '{}');
                     const trend = JSON.parse(holder.getAttribute('data-trend') || '{}');
-                    const fefo = JSON.parse(holder.getAttribute('data-fefo') || '{}');
                     const compliance = JSON.parse(holder.getAttribute('data-compliance') || '{}');
-                    updateChartData(top, donut, trend, fefo, compliance);
+                    updateChartData(top, donut, trend, compliance);
                 } catch(e) {
                     console.error('Error parsing chart data:', e);
                 }
@@ -2663,7 +2632,7 @@
             lastChartEventTime = Date.now();
             const data = Array.isArray(payload) ? payload[0] : payload;
             if (data) {
-                updateChartData(data.top, data.donut, data.trend, data.fefo, data.compliance);
+                updateChartData(data.top, data.donut, data.trend, data.compliance);
             }
         });
 

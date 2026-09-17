@@ -9,6 +9,12 @@ use Webklex\PHPIMAP\ClientManager;
 
 class ImapService
 {
+    /** Penanda versi cache inbox — dinaikkan untuk membatalkan seluruh cache sekaligus. */
+    protected const CACHE_VERSION_KEY = 'mail:inbox:version';
+
+    /** Peta uid => sudah-dibaca, ditimpakan ke hasil cache inbox. */
+    protected const FLAG_OVERLAY_KEY = 'mail:inbox:flag-overlay';
+
     protected ?ClientManager $clientManager = null;
 
     /**
@@ -82,13 +88,27 @@ class ImapService
         }
 
         $perPage = min(max($perPage, 5), 50);
-        $cacheKey = "mail:inbox:page:{$page}:per-page:{$perPage}";
 
         if ($forceRefresh) {
             $this->clearCache();
         }
 
-        return Cache::remember($cacheKey, now()->addSeconds(config('imap.cache_ttl', 30)), function () use ($page, $perPage) {
+        $cacheKey = 'mail:inbox:v'.$this->cacheVersion().":page:{$page}:per-page:{$perPage}";
+
+        // SENGAJA tidak memakai Cache::remember(): closure-nya mengembalikan
+        // array error saat koneksi gagal, dan remember() menyimpan array itu
+        // seperti hasil sukses. Akibatnya satu gangguan jaringan sedetik
+        // membekukan inbox dalam keadaan error selama cache_ttl penuh (300
+        // detik) untuk SEMUA pengguna. Hanya hasil sukses yang layak di-cache.
+        $cached = Cache::get($cacheKey);
+
+        if (is_array($cached)) {
+            $cached['data'] = $this->applyFlagOverlay($cached['data'] ?? []);
+
+            return $cached;
+        }
+
+        $result = (function () use ($page, $perPage) {
             try {
                 $client = $this->getClient();
                 $mailboxName = config('imap.mailbox', 'INBOX');
@@ -173,13 +193,33 @@ class ImapService
                     'message' => 'Gagal terhubung ke mail server: '.$e->getMessage(),
                 ];
             }
-        });
+        })();
+
+        // Kegagalan tidak disimpan: percobaan berikutnya harus benar-benar
+        // menghubungi mail server lagi, bukan mengulang error yang sama.
+        if (($result['success'] ?? false) === true) {
+            Cache::put($cacheKey, $result, now()->addSeconds(config('imap.cache_ttl', 30)));
+        }
+
+        // Status baca terbaru ditimpakan di luar cache, sehingga menandai email
+        // sebagai sudah dibaca tidak perlu membatalkan (dan mengambil ulang) cache.
+        if (! empty($result['data'])) {
+            $result['data'] = $this->applyFlagOverlay($result['data']);
+        }
+
+        return $result;
     }
 
     /**
      * Get a specific message detail by UID.
      */
-    public function getMessage(string|int $uid): ?array
+    /**
+     * @param  bool  $markRead  Tandai sekalian sebagai sudah dibaca memakai sesi
+     *                          IMAP yang sama. Memanggil markAsRead() terpisah
+     *                          berarti membuka koneksi + login kedua (±370 ms)
+     *                          dan mengambil ulang pesan yang sama.
+     */
+    public function getMessage(string|int $uid, bool $markRead = false): ?array
     {
         if (! $this->isConfigured()) {
             return null;
@@ -195,6 +235,25 @@ class ImapService
             $message = $folder->query()->leaveUnread()->getMessageByUid($uid);
             if (! $message) {
                 return null;
+            }
+
+            if ($markRead) {
+                try {
+                    $flags = $message->getFlags();
+                    $isAlreadySeen = $flags ? ($flags->has('seen') || $flags->contains('Seen') || $flags->contains('\\Seen')) : false;
+
+                    if (! $isAlreadySeen) {
+                        $message->setFlag(['Seen']);
+                    }
+
+                    $this->setFlagOverlay($uid, true);
+                } catch (\Throwable $e) {
+                    // Gagal menandai jangan sampai menggagalkan pembacaan email.
+                    Log::warning('mail.mark_as_read_failed', [
+                        'uid' => $uid,
+                        'error' => $e->getMessage(),
+                    ]);
+                }
             }
 
             $fromData = $message->getFrom();
@@ -442,8 +501,12 @@ class ImapService
 
                 if (! $isAlreadySeen) {
                     $message->setFlag(['Seen']);
-                    $this->clearCache();
                 }
+
+                // Cukup catat di overlay — JANGAN clearCache(), karena itu memaksa
+                // render berikutnya mengambil ulang seluruh inbox (beberapa detik)
+                // hanya demi satu flag.
+                $this->setFlagOverlay($uid, true);
 
                 return true;
             }
@@ -478,7 +541,7 @@ class ImapService
             $message = $folder->query()->leaveUnread()->getMessageByUid($uid);
             if ($message) {
                 $message->unsetFlag(['Seen']);
-                $this->clearCache();
+                $this->setFlagOverlay($uid, false);
 
                 return true;
             }
@@ -497,13 +560,66 @@ class ImapService
     /**
      * Clear all cached inbox pages.
      */
+    /**
+     * Invalidasi seluruh cache inbox.
+     *
+     * Memakai penanda versi, bukan menghapus satu per satu setiap kombinasi
+     * halaman × ukuran. Cara lama menembakkan 100 Cache::forget() — dan karena
+     * CACHE_STORE=database, itu berarti 100 query DELETE setiap kali dipanggil.
+     * Entri lama cukup dibiarkan kedaluwarsa sendiri lewat TTL.
+     */
     public function clearCache(): void
     {
-        for ($page = 1; $page <= 20; $page++) {
-            foreach ([10, 15, 20, 25, 50] as $perPage) {
-                Cache::forget("mail:inbox:page:{$page}:per-page:{$perPage}");
+        Cache::put(self::CACHE_VERSION_KEY, $this->cacheVersion() + 1, now()->addDay());
+        Cache::forget(self::FLAG_OVERLAY_KEY);
+    }
+
+    /**
+     * Versi cache inbox saat ini; ikut menjadi bagian dari cache key.
+     */
+    protected function cacheVersion(): int
+    {
+        return (int) Cache::get(self::CACHE_VERSION_KEY, 1);
+    }
+
+    /**
+     * Catat perubahan status baca/belum-baca tanpa membuang cache inbox.
+     *
+     * Menandai email sebagai sudah dibaca TIDAK boleh memicu pengambilan ulang
+     * seluruh inbox — pengambilan itu memakan beberapa detik (±190 ms per pesan
+     * ke mail server), sementara yang berubah hanya satu flag. Overlay kecil ini
+     * ditimpakan ke hasil getInbox() sehingga tampilan tetap akurat seketika.
+     */
+    protected function setFlagOverlay(string|int $uid, bool $isRead): void
+    {
+        $overlay = (array) Cache::get(self::FLAG_OVERLAY_KEY, []);
+        $overlay[(string) $uid] = $isRead;
+
+        Cache::put(self::FLAG_OVERLAY_KEY, $overlay, now()->addMinutes(30));
+    }
+
+    /**
+     * Terapkan overlay status baca ke daftar inbox hasil cache.
+     *
+     * @param  array<int, array>  $items
+     * @return array<int, array>
+     */
+    protected function applyFlagOverlay(array $items): array
+    {
+        $overlay = (array) Cache::get(self::FLAG_OVERLAY_KEY, []);
+
+        if ($overlay === []) {
+            return $items;
+        }
+
+        foreach ($items as $i => $item) {
+            $uid = (string) ($item['uid'] ?? '');
+            if ($uid !== '' && array_key_exists($uid, $overlay)) {
+                $items[$i]['is_read'] = (bool) $overlay[$uid];
             }
         }
+
+        return $items;
     }
 
     /**
@@ -524,7 +640,7 @@ class ImapService
                 return [];
             }
 
-            $messages = $folder->query()->unseen()->leaveUnread()->setFetchOrder('desc')->limit($limit)->get();
+            $messages = $this->queryUnreadCandidates($folder, $limit);
             $items = [];
 
             foreach ($messages as $message) {
@@ -536,7 +652,12 @@ class ImapService
                 $date = $message->getDate();
                 $dateCarbon = $date ? Carbon::parse($date->first() ?? $date) : null;
                 $uid = (string) $message->getUid();
-                $messageId = (string) ($message->getMessageId() ?? null);
+                // (string) null menghasilkan "" — bukan null. Nilai itu lalu
+                // tersimpan sebagai string kosong di stock_email_logs, dan
+                // pemeriksaan anti-duplikat `orWhere('message_id', $id)` bisa
+                // mencocokkan SEMUA baris tanpa message_id satu sama lain.
+                $rawMessageId = trim((string) ($message->getMessageId() ?? ''));
+                $messageId = $rawMessageId !== '' ? $rawMessageId : null;
 
                 $items[] = [
                     'uid' => $uid,
@@ -555,6 +676,66 @@ class ImapService
             Log::warning('mail.imap.fetch_unread_failed', ['error' => $e->getMessage()]);
 
             return [];
+        }
+    }
+
+    /**
+     * Ambil kandidat email belum dibaca, DIFILTER DI SISI MAIL SERVER lewat
+     * kriteria IMAP SUBJECT.
+     *
+     * Sebelumnya di sini hanya `unseen()->limit($limit)`, lalu subject-nya
+     * disaring di PHP. Itu bisa membuat otomasi kelaparan: email non-stok yang
+     * belum dibaca tidak pernah ditandai terbaca, jadi ia menetap di jendela
+     * N-terbaru selamanya. Begitu ada >= $limit email non-stok yang lebih baru,
+     * laporan stok TIDAK PERNAH terproses — cron tiap menit hanya mengulang
+     * email yang sama.
+     *
+     * Dengan SUBJECT di sisi server, email non-stok boleh menumpuk tanpa batas
+     * tanpa pernah memakan kuota.
+     *
+     * @return iterable<mixed>
+     */
+    protected function queryUnreadCandidates($folder, int $limit): iterable
+    {
+        $keywords = array_filter((array) config('imap.stock_subject_keywords', ['Satoria Daily Stock']));
+
+        try {
+            $byUid = [];
+
+            foreach ($keywords as $keyword) {
+                $found = $folder->query()
+                    ->unseen()
+                    ->subject($keyword)
+                    ->leaveUnread()
+                    ->setFetchOrder('desc')
+                    ->limit($limit)
+                    ->get();
+
+                foreach ($found as $message) {
+                    // Dedupe: sebuah subject bisa cocok dengan beberapa kata kunci.
+                    $byUid[(string) $message->getUid()] = $message;
+                }
+            }
+
+            krsort($byUid, SORT_NUMERIC);
+
+            return array_slice($byUid, 0, $limit, true);
+        } catch (\Throwable $e) {
+            // Tidak semua server IMAP menangani SUBJECT dengan baik (terutama
+            // untuk karakter non-ASCII). Jangan sampai otomasi mati total:
+            // kembali ke pemindaian biasa, tapi dengan jendela jauh lebih lebar
+            // supaya starvation tetap tidak mudah terjadi.
+            Log::warning('mail.imap.subject_search_failed', [
+                'error' => $e->getMessage(),
+                'fallback_scan' => $limit * 10,
+            ]);
+
+            return $folder->query()
+                ->unseen()
+                ->leaveUnread()
+                ->setFetchOrder('desc')
+                ->limit($limit * 10)
+                ->get();
         }
     }
 

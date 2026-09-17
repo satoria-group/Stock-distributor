@@ -89,6 +89,36 @@ class Upload extends Component
 
     public array $saveSummary = [];
 
+    /**
+     * Asal-usul data yang sedang dimuat di grid, ikut disimpan ke
+     * StockSnapshotActivity saat menyimpan.
+     *
+     * Jalur "upload dari email" SENGAJA tidak memverifikasi whitelist pengirim:
+     * ada operator yang memilih emailnya secara sadar, jadi keputusan ada di
+     * tangan manusia. Yang dicatat di sini adalah jejaknya — tanpa ini riwayat
+     * hanya berbunyi "Upload snapshot baru oleh <nama>", tidak bisa dibedakan
+     * dari unggah berkas biasa, dan lampiran asalnya tak bisa ditelusuri lagi
+     * begitu email di inbox dihapus atau diarsipkan.
+     */
+    public ?string $sourceEmailUid = null;
+
+    public ?string $sourceEmailFrom = null;
+
+    public ?string $sourceEmailSubject = null;
+
+    public ?string $sourceFilename = null;
+
+    /**
+     * Pengguna memilih "Timpa/Revisi" pada modal konflik, artinya berkas baru
+     * dianggap sebagai kebenaran UTUH untuk tanggal + distributor tersebut.
+     *
+     * Tanpa penanda ini, "Timpa" hanya mengganti isi grid: saveRows() cuma
+     * meng-upsert baris yang ada di grid, sehingga SKU lama yang tidak ada di
+     * berkas baru tetap tertinggal di database — hasilnya identik dengan mode
+     * "Gabung", padahal labelnya menjanjikan hal lain.
+     */
+    public bool $replaceExistingSnapshot = false;
+
     public function mount(): void
     {
         Gate::authorize('viewAny', StockEntry::class);
@@ -123,20 +153,39 @@ class Upload extends Component
         $filename = $att['filename'] ?? 'attachment.xlsx';
         $ext = strtolower(pathinfo($filename, PATHINFO_EXTENSION));
         $cleanExt = in_array($ext, ['xlsx', 'xls'], true) ? $ext : 'xlsx';
-        $tempClean = tempnam(sys_get_temp_dir(), 'satoria_email_att_').'.'.$cleanExt;
+        // tempnam() sudah membuat berkasnya; menambah ekstensi = path berbeda,
+        // jadi keduanya harus dihapus (lihat blok finally di bawah).
+        $tempBase = tempnam(sys_get_temp_dir(), 'satoria_email_att_');
+        $tempClean = $tempBase.'.'.$cleanExt;
 
         file_put_contents($tempClean, $att['content']);
 
-        $senderEmail = null;
-        try {
-            $msgDetails = $imapService->getMessageDetails($emailUid);
-            $senderEmail = $msgDetails['from_email'] ?? null;
-        } catch (\Throwable) {
-            // fallback jika koneksi mock atau tidak tersedia
+        // Metadata pengirim dicatat untuk jejak audit, BUKAN untuk memblokir:
+        // lihat catatan pada properti $sourceEmailUid.
+        //
+        // Sebelumnya di sini memanggil getMessageDetails() — metode yang tidak
+        // pernah ada di ImapService. Error-nya tertelan `catch (\Throwable)`
+        // yang kosong, sehingga pengirim SELALU null tanpa jejak apa pun.
+        $this->sourceEmailUid = (string) $emailUid;
+        $this->sourceEmailFrom = null;
+        $this->sourceEmailSubject = null;
+        $this->sourceFilename = $filename;
+
+        $detail = $imapService->getMessage($emailUid);
+        if ($detail) {
+            $this->sourceEmailFrom = $detail['from_email'] ?: null;
+            $this->sourceEmailSubject = $detail['subject'] ?? null;
+        } else {
+            // Jangan diam-diam: grid tetap boleh dimuat, tapi harus terlihat
+            // bahwa asal-usulnya tidak lengkap.
+            \Illuminate\Support\Facades\Log::warning('stock.upload.email_sender_unresolved', [
+                'uid' => $emailUid,
+                'user_id' => Auth::id(),
+            ]);
         }
 
         try {
-            $success = $this->processSpreadsheetPath($tempClean, "Lampiran Email ({$filename})", $senderEmail);
+            $success = $this->processSpreadsheetPath($tempClean, "Lampiran Email ({$filename})");
             if ($success) {
                 // Tandai email sebagai terbaca setelah berhasil diproses
                 $imapService->markAsRead($emailUid);
@@ -148,12 +197,49 @@ class Upload extends Component
             }
         } finally {
             @unlink($tempClean);
+            @unlink($tempBase);
         }
+    }
+
+    /**
+     * Lupakan asal-usul email. Dipanggil saat isi grid diganti dari sumber
+     * lain (unggah berkas, memuat data tersimpan) supaya riwayat tidak
+     * mengklaim sebuah email sebagai asal data yang bukan berasal darinya.
+     */
+    private function clearSourceEmail(): void
+    {
+        $this->sourceEmailUid = null;
+        $this->sourceEmailFrom = null;
+        $this->sourceEmailSubject = null;
+        $this->sourceFilename = null;
+    }
+
+    /**
+     * Jejak asal-usul untuk disimpan ke metadata StockSnapshotActivity.
+     * Mengembalikan array kosong bila data tidak berasal dari email.
+     *
+     * @return array<string, string|null>
+     */
+    private function sourceMetadata(): array
+    {
+        if ($this->sourceEmailUid === null) {
+            return $this->sourceFilename ? ['source' => 'file', 'filename' => $this->sourceFilename] : [];
+        }
+
+        return [
+            'source' => 'email',
+            'email_uid' => $this->sourceEmailUid,
+            'from_email' => $this->sourceEmailFrom,
+            'subject' => $this->sourceEmailSubject,
+            'filename' => $this->sourceFilename,
+        ];
     }
 
     public function loadExisting(): void
     {
         $this->activeTab = 'manual';
+        $this->clearSourceEmail();
+        $this->replaceExistingSnapshot = false;
 
         if (! $this->tanggal || ! $this->distributorId) {
             $this->addError('load', 'Pilih tanggal dan distributor dulu.');
@@ -220,9 +306,16 @@ class Upload extends Component
             'file.mimes' => 'Format file harus berupa berkas Excel (.xlsx atau .xls).',
         ]);
 
+        // Unggah berkas dari komputer: asal-usul email sebelumnya (jika ada)
+        // tidak lagi berlaku untuk isi grid yang baru.
+        $this->clearSourceEmail();
+        $this->sourceFilename = $this->file->getClientOriginalName();
+
         $ext = strtolower($this->file->getClientOriginalExtension());
         $cleanExt = in_array($ext, ['xlsx', 'xls'], true) ? $ext : 'xlsx';
-        $tempClean = tempnam(sys_get_temp_dir(), 'satoria_stock_').'.'.$cleanExt;
+        // Lihat catatan di loadFromEmail(): tempnam() meninggalkan berkas kedua.
+        $tempBase = tempnam(sys_get_temp_dir(), 'satoria_stock_');
+        $tempClean = $tempBase.'.'.$cleanExt;
         copy($this->file->getRealPath(), $tempClean);
 
         try {
@@ -233,10 +326,11 @@ class Upload extends Component
             }
         } finally {
             @unlink($tempClean);
+            @unlink($tempBase);
         }
     }
 
-    protected function processSpreadsheetPath(string $filePath, string $sourceDescription = 'File Excel', ?string $fromEmail = null): bool
+    protected function processSpreadsheetPath(string $filePath, string $sourceDescription = 'File Excel'): bool
     {
         try {
             $spreadsheet = IOFactory::load($filePath);
@@ -307,39 +401,15 @@ class Upload extends Component
             return false;
         }
 
-        if ($fromEmail) {
-            $senderEmailConfig = trim((string) ($distributor->sender_email ?? ''));
-
-            if ($senderEmailConfig === '') {
-                $this->addError('file', "Distributor '{$distributor->name}' ({$distributorCode}) belum mendaftarkan email whitelist resmi di Master Distributor. Pengunggahan dari email '{$fromEmail}' ditolak demi keamanan data.");
-
-                return false;
-            }
-
-            $allowedEmails = array_map('trim', explode(',', strtolower($senderEmailConfig)));
-            $cleanFromEmail = strtolower(trim($fromEmail));
-            $isMatch = false;
-
-            foreach ($allowedEmails as $allowed) {
-                if ($allowed === '') {
-                    continue;
-                }
-                if ($allowed === $cleanFromEmail) {
-                    $isMatch = true;
-                    break;
-                }
-                if (str_starts_with($allowed, '@') && str_ends_with($cleanFromEmail, $allowed)) {
-                    $isMatch = true;
-                    break;
-                }
-            }
-
-            if (! $isMatch) {
-                $this->addError('file', "Pengirim email ('{$fromEmail}') tidak terdaftar pada whitelist resmi distributor '{$distributor->name}' ({$distributorCode}).");
-
-                return false;
-            }
-        }
+        // Tidak ada verifikasi whitelist pengirim di sini — DISENGAJA.
+        //
+        // Jalur ini selalu dijalankan oleh operator yang memilih sendiri berkas
+        // atau emailnya, jadi keputusan ada di tangan manusia. Whitelist
+        // ditegakkan pada jalur OTOMATIS (tanpa pengawasan) di
+        // StockImportService::parseAndImportSpreadsheet().
+        //
+        // Yang tetap dijaga di sini: asal-usulnya dicatat ke riwayat snapshot
+        // (lihat $sourceEmailFrom dan saveRows()).
 
         $rawTanggal = $firstDataRow[$col['Tanggal']];
         if (in_array(trim(strtoupper((string) $rawTanggal)), ['DD/MM/YYYY', 'YYYY-MM-DD', 'DD-MM-YYYY'], true)) {
@@ -363,6 +433,10 @@ class Upload extends Component
         $skipped = [];
         $skippedRowsData = [];
 
+        // Di-resolve sekali di luar loop: berkas stok bisa berisi ribuan baris,
+        // dan app() di dalam loop berarti resolusi container sebanyak itu pula.
+        $importService = app(\App\Services\StockImportService::class);
+
         foreach ($bodyRows as $r) {
             $itemName = trim((string) ($r[$col['Distributor Item Name']] ?? ''));
             if ($itemName === '' || strtoupper($itemName) === 'XXXXX XXXX') {
@@ -372,8 +446,9 @@ class Upload extends Component
             $key = mb_strtolower(trim(preg_replace('/\s+/', ' ', $itemName)));
             $distItem = $knownItems->get($key);
 
-            $rawQty = str_replace([',', ' '], '', trim((string) ($r[$col['Quantity']] ?? 0)));
-            $qty = (float) $rawQty;
+            // Satu definisi dipakai bersama dengan jalur otomasi email, supaya
+            // angka yang sama tidak pernah terbaca berbeda di dua jalur.
+            $qty = $importService->parseQuantity($r[$col['Quantity']] ?? 0);
             $satuan = isset($col['Satuan']) ? trim((string) ($r[$col['Satuan']] ?? '')) : null;
             $ed = isset($col['ED']) ? $this->parseExcelDate($r[$col['ED']] ?? null) : null;
             $edFormatted = $ed ? \Carbon\Carbon::parse($ed)->format('d/m/Y') : null;
@@ -465,6 +540,7 @@ class Upload extends Component
         $this->skippedItems = $pending['skipped'];
         $this->skippedRowsData = $pending['skipped_rows_data'];
         $this->removedItemIds = [];
+        $this->replaceExistingSnapshot = ($mode !== 'merge');
 
         if ($mode === 'merge') {
             $existingEntries = StockEntry::query()
@@ -517,6 +593,7 @@ class Upload extends Component
     public function cancelConflictModal(): void
     {
         $this->showConflictModal = false;
+        $this->replaceExistingSnapshot = false;
         $this->pendingImportData = [];
     }
 
@@ -570,13 +647,20 @@ class Upload extends Component
                         }
                         $distItem = $existing;
                     } else {
+                        // DB::transaction() bersarang = SAVEPOINT. Ini WAJIB di
+                        // PostgreSQL: begitu sebuah statement gagal, seluruh
+                        // transaksi masuk status aborted dan setiap query
+                        // berikutnya ditolak (SQLSTATE 25P02) — termasuk query
+                        // pemulihan di blok catch ini. Savepoint membuat
+                        // kegagalan insert bisa dibatalkan sendirian, sehingga
+                        // transaksi induk tetap sehat.
                         try {
-                            $distItem = DistributorItem::create([
+                            $distItem = DB::transaction(fn () => DistributorItem::create([
                                 'distributor_id' => $this->distributorId,
                                 'item_name' => $rawName,
                                 'satuan' => $itemData['satuan'] ?: 'PCS',
                                 'netsuite_item_id' => null,
-                            ]);
+                            ]));
                         } catch (\Illuminate\Database\UniqueConstraintViolationException) {
                             $distItem = DistributorItem::withTrashed()
                                 ->where('distributor_id', $this->distributorId)
@@ -726,6 +810,7 @@ class Upload extends Component
     public function updatedTanggal(): void
     {
         $this->removedItemIds = [];
+        $this->replaceExistingSnapshot = false;
         if ($this->tanggal && preg_match('/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/', trim($this->tanggal), $m)) {
             $this->tanggal = sprintf('%04d-%02d-%02d', $m[3], $m[2], $m[1]);
         }
@@ -735,6 +820,7 @@ class Upload extends Component
     public function updatedDistributorId(): void
     {
         $this->removedItemIds = [];
+        $this->replaceExistingSnapshot = false;
     }
 
     public function saveRows(array $rows): void
@@ -790,7 +876,12 @@ class Upload extends Component
                         'distributor_id' => $this->distributorId,
                         'quantity' => (float) ($row['quantity'] ?? 0),
                         'satuan' => $row['satuan'] ?: $item->satuan,
-                        'expired_date' => ! empty($row['expired_date']) ? ($this->parseExcelDate($row['expired_date']) ?: $row['expired_date']) : null,
+                        // Kalau tidak terbaca, simpan NULL — JANGAN teruskan
+                        // string mentahnya. Kolomnya bertipe `date`, sehingga
+                        // nilai seperti "ED menyusul" membuat seluruh transaksi
+                        // penyimpanan gagal dengan error SQL, bukan sekadar
+                        // satu sel yang kosong.
+                        'expired_date' => ! empty($row['expired_date']) ? $this->parseExcelDate($row['expired_date']) : null,
                         'batch_no' => $row['batch_no'] ?: null,
                         'uploaded_by' => Auth::id(),
                     ]
@@ -808,6 +899,21 @@ class Upload extends Component
             // menyimpan. Tanpa pengecualian ini baris tersebut akan di-upsert
             // lalu langsung dihapus lagi pada transaksi yang sama.
             $idsToDelete = array_values(array_diff($this->removedItemIds, $savedItemIds));
+
+            // Mode "Timpa/Revisi": berkas baru adalah kebenaran UTUH untuk
+            // tanggal + distributor ini, jadi SKU lama yang tidak ada di berkas
+            // baru ikut dibuang. Inilah yang membedakannya dari mode "Gabung";
+            // tanpa ini keduanya menghasilkan data yang sama persis.
+            if ($this->replaceExistingSnapshot) {
+                $staleIds = StockEntry::query()
+                    ->where('tanggal', $this->tanggal)
+                    ->where('distributor_id', $this->distributorId)
+                    ->whereNotIn('distributor_item_id', $savedItemIds ?: [0])
+                    ->pluck('distributor_item_id')
+                    ->all();
+
+                $idsToDelete = array_values(array_unique(array_merge($idsToDelete, $staleIds)));
+            }
 
             if ($idsToDelete !== []) {
                 $toDelete = StockEntry::query()
@@ -830,6 +936,17 @@ class Upload extends Component
                     ? "Koreksi/Update snapshot oleh {$userName} ({$mappedCount} SKU tersimpan" . ($deletedCount > 0 ? ", {$deletedCount} baris dihapus" : "") . ")"
                     : "Upload snapshot baru oleh {$userName} ({$mappedCount} SKU)";
 
+                // Sebutkan asal emailnya di deskripsi, bukan hanya di metadata:
+                // inilah teks yang dibaca orang di halaman Riwayat.
+                if ($this->sourceEmailUid !== null) {
+                    $desc .= ' — dari email '.($this->sourceEmailFrom ?: 'pengirim tidak diketahui')
+                        .' (UID #'.$this->sourceEmailUid.')';
+                }
+
+                // Kolom description hanya varchar(255); metadata menyimpan versi
+                // utuhnya, jadi aman dipotong di sini.
+                $desc = \Illuminate\Support\Str::limit($desc, 250);
+
                 StockSnapshotActivity::create([
                     'tanggal' => $this->tanggal,
                     'distributor_id' => $this->distributorId,
@@ -840,7 +957,7 @@ class Upload extends Component
                         'mapped_count' => $mappedCount,
                         'unmapped_count' => $unmappedCount,
                         'deleted_count' => $deletedCount,
-                    ],
+                    ] + $this->sourceMetadata(),
                 ]);
             }
         });

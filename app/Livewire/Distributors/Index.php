@@ -5,6 +5,7 @@ namespace App\Livewire\Distributors;
 use App\Models\Distributor;
 use App\Models\DistributorItem;
 use App\Models\StockEntry;
+use App\Support\Search;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Validation\Rule;
 use Livewire\Attributes\Layout;
@@ -134,9 +135,9 @@ class Index extends Component
     {
         $distributors = Distributor::query()
             ->when($this->search, fn ($q) => $q->where(function ($sub) {
-                $sub->where('name', 'ilike', "%{$this->search}%")
-                    ->orWhere('distributor_code', 'ilike', "%{$this->search}%")
-                    ->orWhere('sender_email', 'ilike', "%{$this->search}%");
+                $sub->where('name', 'ilike', Search::contains($this->search))
+                    ->orWhere('distributor_code', 'ilike', Search::contains($this->search))
+                    ->orWhere('sender_email', 'ilike', Search::contains($this->search));
             }))
             ->orderBy('name')
             ->paginate(15);

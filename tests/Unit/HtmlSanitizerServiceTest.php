@@ -78,4 +78,67 @@ class HtmlSanitizerServiceTest extends TestCase
         $this->assertSame('', $this->sanitizer->sanitize(null));
         $this->assertSame('', $this->sanitizer->sanitize('   '));
     }
+    // ---------------------------------------------------------------
+    // Regresi: atribut terlewat karena DOMNamedNodeMap bersifat live
+    // ---------------------------------------------------------------
+
+    public function test_event_handler_after_href_is_still_removed_on_anchor(): void
+    {
+        // href diproses lebih dulu dan memicu setAttribute(target/rel).
+        // Bila peta atribut diiterasi secara live, onmouseover terlewat.
+        $dirty = '<a href="https://example.com" onmouseover="alert(1)" onfocus="evil()">Klik</a>';
+        $clean = $this->sanitizer->sanitize($dirty);
+
+        $this->assertStringNotContainsString('onmouseover', $clean);
+        $this->assertStringNotContainsString('onfocus', $clean);
+        $this->assertStringNotContainsString('alert', $clean);
+        $this->assertStringContainsString('https://example.com', $clean);
+    }
+
+    public function test_disallowed_attribute_after_href_is_still_removed(): void
+    {
+        $dirty = '<a href="https://example.com" formaction="javascript:alert(1)" srcdoc="<script>x</script>">Klik</a>';
+        $clean = $this->sanitizer->sanitize($dirty);
+
+        $this->assertStringNotContainsString('formaction', $clean);
+        $this->assertStringNotContainsString('srcdoc', $clean);
+    }
+
+    // ---------------------------------------------------------------
+    // Regresi: skema URL yang dikaburkan karakter kontrol
+    // ---------------------------------------------------------------
+
+    /**
+     * Browser mengabaikan karakter kontrol di dalam skema URL; PHP tidak.
+     * Entity sudah di-decode oleh parser DOM sebelum sampai ke pemeriksaan.
+     */
+    public function test_strips_javascript_href_obfuscated_with_control_characters(): void
+    {
+        foreach ([
+            'jav&#x09;ascript:alert(1)',   // tab
+            'jav&#x0A;ascript:alert(1)',   // newline
+            'jav&#x0D;ascript:alert(1)',   // carriage return
+            ' javascript:alert(1)',        // spasi di depan
+            'java script:alert(1)',        // spasi di tengah
+        ] as $payload) {
+            $clean = $this->sanitizer->sanitize('<a href="'.$payload.'">Klik</a>');
+
+            $this->assertStringNotContainsString(
+                'script:',
+                str_replace(["\t", "\n", "\r", ' '], '', strtolower($clean)),
+                "Skema berbahaya lolos untuk payload: {$payload}"
+            );
+        }
+    }
+
+    public function test_keeps_ordinary_links_and_safe_data_images(): void
+    {
+        $clean = $this->sanitizer->sanitize(
+            '<a href="https://satoria.co.id/laporan">Laporan</a>'
+            .'<img src="data:image/png;base64,iVBORw0KGgo=" alt="grafik">'
+        );
+
+        $this->assertStringContainsString('https://satoria.co.id/laporan', $clean);
+        $this->assertStringContainsString('data:image/png;base64', $clean);
+    }
 }

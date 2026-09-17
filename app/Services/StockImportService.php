@@ -66,6 +66,80 @@ class StockImportService
         return null;
     }
 
+    /**
+     * Baca nilai Quantity dari sel Excel menjadi float.
+     *
+     * Sebelumnya: str_replace([',', ' '], '', $raw) — semua koma dibuang mentah.
+     * Itu benar untuk pemisah ribuan gaya Inggris ("1,234" -> 1234) tapi SALAH
+     * TOTAL untuk format Indonesia, di mana koma adalah pemisah DESIMAL:
+     * "1,5" terbaca 15 — sepuluh kali lipat, diam-diam, tanpa error.
+     *
+     * Aturan yang dipakai di sini:
+     *  - Nilai numerik asli dari PhpSpreadsheet dipakai apa adanya.
+     *  - Bila ada '.' DAN ',', pemisah yang muncul TERAKHIR adalah desimal
+     *    ("1.234,56" -> 1234.56 ; "1,234.56" -> 1234.56).
+     *  - Bila hanya satu jenis pemisah dan diikuti TEPAT 3 digit sampai akhir,
+     *    itu dianggap pemisah ribuan ("1,234" -> 1234). Ini konvensi yang
+     *    paling lazim di berkas stok dan mempertahankan perilaku lama.
+     *  - Selain itu, pemisah tunggal dianggap desimal ("1,5" -> 1.5).
+     */
+    public function parseQuantity(mixed $value): float
+    {
+        if ($value === null || $value === '') {
+            return 0.0;
+        }
+
+        if (is_int($value) || is_float($value)) {
+            return (float) $value;
+        }
+
+        $raw = trim((string) $value);
+        // Buang spasi (termasuk non-breaking space yang sering ikut dari Excel).
+        $raw = preg_replace('/[\s\x{00A0}]+/u', '', $raw) ?? '';
+
+        if ($raw === '') {
+            return 0.0;
+        }
+
+        $negative = str_starts_with($raw, '-');
+        $raw = ltrim($raw, '+-');
+
+        $lastDot = strrpos($raw, '.');
+        $lastComma = strrpos($raw, ',');
+
+        if ($lastDot !== false && $lastComma !== false) {
+            // Keduanya ada: yang terakhir adalah pemisah desimal.
+            [$decimalSep, $groupSep] = $lastComma > $lastDot ? [',', '.'] : ['.', ','];
+        } elseif ($lastDot !== false || $lastComma !== false) {
+            $sep = $lastDot !== false ? '.' : ',';
+            $pos = $lastDot !== false ? $lastDot : $lastComma;
+            $digitsAfter = strlen($raw) - $pos - 1;
+            $occurrences = substr_count($raw, $sep);
+
+            // Tepat 3 digit di belakang DAN tanpa pemisah lain di depan yang
+            // bertentangan -> pemisah ribuan. Selain itu -> desimal.
+            $isGrouping = $digitsAfter === 3 && ($occurrences > 1 || $pos > 0);
+
+            [$decimalSep, $groupSep] = $isGrouping ? ['', $sep] : [$sep, ''];
+        } else {
+            [$decimalSep, $groupSep] = ['', ''];
+        }
+
+        if ($groupSep !== '') {
+            $raw = str_replace($groupSep, '', $raw);
+        }
+        if ($decimalSep !== '') {
+            $raw = str_replace($decimalSep, '.', $raw);
+        }
+
+        // Sisakan hanya angka dan satu titik desimal.
+        $raw = preg_replace('/[^0-9.]/', '', $raw) ?? '';
+
+        $result = is_numeric($raw) ? (float) $raw : 0.0;
+
+        return $negative ? -$result : $result;
+    }
+
     public function mergeBatchNumbers(?string $batch1, ?string $batch2): ?string
     {
         $b1 = trim((string) $batch1);
@@ -447,8 +521,7 @@ class StockImportService
             $key = mb_strtolower(trim(preg_replace('/\s+/', ' ', $itemName)));
             $distItem = $knownItems->get($key);
 
-            $rawQty = str_replace([',', ' '], '', trim((string) ($r[$col['Quantity']] ?? 0)));
-            $qty = (float) $rawQty;
+            $qty = $this->parseQuantity($r[$col['Quantity']] ?? 0);
             $satuan = isset($col['Satuan']) ? trim((string) ($r[$col['Satuan']] ?? '')) : null;
             $ed = isset($col['ED']) ? $this->parseExcelDate($r[$col['ED']] ?? null) : null;
             $batch = isset($col['Batch No']) ? trim((string) ($r[$col['Batch No']] ?? '')) : null;
@@ -630,7 +703,12 @@ class StockImportService
     ): array {
         $ext = strtolower(pathinfo($filename, PATHINFO_EXTENSION));
         $cleanExt = in_array($ext, ['xlsx', 'xls'], true) ? $ext : 'xlsx';
-        $tempFile = tempnam(sys_get_temp_dir(), 'satoria_auto_stock_').'.'.$cleanExt;
+        // tempnam() SUDAH membuat berkas dan mengembalikan path-nya. Menambahkan
+        // ekstensi menghasilkan path BERBEDA, sehingga berkas asli tertinggal
+        // dan tidak pernah terhapus. Dengan cron tiap menit, temp dir terus
+        // membengkak. Karena itu kedua path disimpan dan dihapus bersama.
+        $tempBase = tempnam(sys_get_temp_dir(), 'satoria_auto_stock_');
+        $tempFile = $tempBase.'.'.$cleanExt;
 
         file_put_contents($tempFile, $binaryContent);
 
@@ -660,6 +738,7 @@ class StockImportService
             return $result;
         } finally {
             @unlink($tempFile);
+            @unlink($tempBase);
         }
     }
 }

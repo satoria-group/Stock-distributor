@@ -13,6 +13,22 @@
     @livewireStyles
 </head>
 <body class="bg-[#f8fafc] text-slate-900 font-sans antialiased selection:bg-[#0d6d5f] selection:text-white" style="font-family: 'Plus Jakarta Sans', sans-serif;">
+    {{-- Indikator proses global: muncul untuk SETIAP request Livewire di seluruh
+         aplikasi, jadi tidak ada aksi lambat yang berjalan tanpa umpan balik.
+         Sengaja ditunda ~250 ms supaya aksi cepat tidak berkedip. --}}
+    <div id="global-progress" class="fixed top-0 left-0 right-0 z-[9999] pointer-events-none opacity-0 transition-opacity duration-150">
+        <div class="h-0.5 w-full bg-[#0d6d5f]/15 overflow-hidden">
+            <div id="global-progress-bar" class="h-full w-1/3 rounded-full" style="background: linear-gradient(90deg, transparent, #0d6d5f, transparent); animation: gp-slide 1s ease-in-out infinite;"></div>
+        </div>
+    </div>
+    <style>
+        @keyframes gp-slide {
+            0%   { transform: translateX(-100%); }
+            100% { transform: translateX(300%); }
+        }
+        /* Kursor menunggu saat ada proses berjalan */
+        body.is-busy { cursor: progress; }
+    </style>
     <div class="min-h-screen flex">
         <!-- Modern Sidebar (Fixed) -->
         <aside class="w-64 fixed inset-y-0 left-0 bg-white border-r border-slate-200/80 flex flex-col justify-between shadow-xs z-30 overflow-y-auto">
@@ -183,5 +199,64 @@
     </div>
 
     @livewireScripts
+
+    <script>
+        // Progress bar global untuk semua request Livewire.
+        //
+        // Memakai hook 'request' (Livewire 3) sehingga berlaku untuk SELURUH
+        // komponen tanpa perlu menambah wire:loading satu per satu di tiap blade.
+        // Penghitung dipakai agar beberapa request bersamaan tidak saling
+        // mematikan indikator lebih cepat dari seharusnya.
+        document.addEventListener('livewire:init', () => {
+            const el = document.getElementById('global-progress');
+            if (!el) return;
+
+            let aktif = 0;
+            let timer = null;
+
+            const tampilkan = () => {
+                el.style.opacity = '1';
+                document.body.classList.add('is-busy');
+            };
+
+            const sembunyikan = () => {
+                el.style.opacity = '0';
+                document.body.classList.remove('is-busy');
+            };
+
+            const mulai = () => {
+                aktif++;
+                if (timer === null) {
+                    // Tunda sedikit: aksi yang selesai <250 ms tidak perlu
+                    // memunculkan bar (menghindari kedipan yang mengganggu).
+                    timer = setTimeout(() => { timer = null; if (aktif > 0) tampilkan(); }, 250);
+                }
+            };
+
+            const selesai = () => {
+                aktif = Math.max(0, aktif - 1);
+                if (aktif === 0) {
+                    if (timer !== null) { clearTimeout(timer); timer = null; }
+                    sembunyikan();
+                }
+            };
+
+            Livewire.hook('request', ({ respond, fail }) => {
+                mulai();
+
+                // respond() dan fail() bisa sama-sama terpanggil pada request yang
+                // gagal; pastikan tiap request hanya mengurangi penghitung sekali.
+                let sudahSelesai = false;
+                const sekali = () => {
+                    if (sudahSelesai) return;
+                    sudahSelesai = true;
+                    selesai();
+                };
+
+                respond(sekali);
+                if (typeof fail === 'function') { fail(sekali); }
+            });
+        });
+    </script>
 </body>
 </html>

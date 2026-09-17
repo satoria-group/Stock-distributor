@@ -26,6 +26,10 @@ class User extends Authenticatable
         'name',
         'email',
         'password',
+        // Akun dibuat oleh Admin lewat halaman Manajemen User, jadi emailnya
+        // sudah terverifikasi sejak awal dan kolom ini diisi saat create.
+        // Tanpa didaftarkan di sini, Eloquent membuangnya TANPA error.
+        'email_verified_at',
     ];
 
     /**

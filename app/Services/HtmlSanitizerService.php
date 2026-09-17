@@ -149,7 +149,21 @@ class HtmlSanitizerService
         $tag = strtolower($element->nodeName);
         $attributesToRemove = [];
 
-        foreach ($element->attributes as $attr) {
+        // Salin ke array biasa sebelum iterasi.
+        //
+        // Loop ini memanggil setAttribute() (menambah target/rel pada <a>) di
+        // tengah iterasi atas DOMNamedNodeMap yang bersifat live. Pada PHP saat
+        // ini hal itu TIDAK membuat atribut terlewat — sudah diuji: entri baru
+        // ditambahkan di akhir dan tetap ikut dikunjungi. Jadi ini pengerasan,
+        // bukan perbaikan bug yang pernah terjadi.
+        //
+        // Tetap dilakukan karena perilaku tersebut bergantung pada internal
+        // libxml dan tidak dijamin kontrak apa pun; memutus ketergantungan itu
+        // membuat sanitizer tidak bisa jebol diam-diam kalau implementasinya
+        // berubah. Biayanya satu salinan array kecil.
+        $attributes = iterator_to_array($element->attributes);
+
+        foreach ($attributes as $attr) {
             $attrName = strtolower($attr->nodeName);
             $attrValue = trim($attr->nodeValue);
 
@@ -203,7 +217,17 @@ class HtmlSanitizerService
      */
     private function isDangerousUrl(string $url): bool
     {
-        $cleaned = strtolower(trim($url));
+        // Normalisasi dulu, jangan langsung str_starts_with() pada nilai mentah.
+        //
+        // Browser MENGABAIKAN karakter kontrol dan spasi di dalam skema URL,
+        // sementara PHP tidak. Tanpa normalisasi, "jav&#x09;ascript:alert(1)"
+        // — yang oleh DOMDocument sudah di-decode menjadi "jav<TAB>ascript:" —
+        // lolos pemeriksaan di sini tetapi tetap dieksekusi browser.
+        //
+        // Dibuang: NUL, tab, newline, carriage return, seluruh karakter kontrol
+        // C0/C1, dan spasi. HTML entity sudah di-decode oleh parser DOM.
+        $cleaned = preg_replace('/[\x00-\x20\x7F-\xA0]+/u', '', $url) ?? '';
+        $cleaned = strtolower($cleaned);
 
         // Detect javascript:, vbscript:, data: (except safe images in src)
         return str_starts_with($cleaned, 'javascript:')

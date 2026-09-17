@@ -103,16 +103,23 @@ FROM base AS builder
 
 RUN apk add --no-cache git nodejs npm
 
-COPY . .
-
+# Salin manifes dependensi terlebih dahulu agar layer download dapat di-cache
+COPY composer.json composer.lock ./
 RUN composer install \
         --no-dev \
-        --optimize-autoloader \
+        --no-autoloader \
+        --no-scripts \
         --prefer-dist \
         --no-interaction \
         --no-progress
 
-RUN npm ci && npm run build
+COPY package.json package-lock.json ./
+RUN npm ci
+
+COPY . .
+
+RUN composer dump-autoload --optimize --no-dev
+RUN npm run build
 
 # =============================================================================
 # production — image mandiri: kode, vendor, dan aset sudah ter-bake di dalam.

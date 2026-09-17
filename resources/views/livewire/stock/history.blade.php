@@ -323,20 +323,32 @@
                                     <button type="button"
                                             wire:click="viewDetail('{{ $dateKey }}', {{ $s->distributor_id }})"
                                             title="{{ ($s->is_automation && ! $s->is_reviewed) ? 'Lihat Detail (Otomasi - Perlu Review)' : 'Lihat Detail Snapshot' }}"
-                                            class="p-1.5 rounded-lg transition cursor-pointer shadow-2xs hover:scale-105 {{ ($s->is_automation && ! $s->is_reviewed) ? 'bg-amber-100 hover:bg-amber-200 text-amber-800 border border-amber-300 ring-2 ring-amber-400/40' : 'bg-emerald-50 hover:bg-emerald-100 text-[#0d6d5f] border border-emerald-200/80' }}">
-                                        <svg width="15" height="15" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            wire:loading.attr="disabled"
+                                            wire:target="viewDetail('{{ $dateKey }}', {{ $s->distributor_id }})"
+                                            class="p-1.5 rounded-lg transition cursor-pointer shadow-2xs hover:scale-105 disabled:opacity-60 disabled:cursor-wait {{ ($s->is_automation && ! $s->is_reviewed) ? 'bg-amber-100 hover:bg-amber-200 text-amber-800 border border-amber-300 ring-2 ring-amber-400/40' : 'bg-emerald-50 hover:bg-emerald-100 text-[#0d6d5f] border border-emerald-200/80' }}">
+                                        <svg wire:loading.remove wire:target="viewDetail('{{ $dateKey }}', {{ $s->distributor_id }})" width="15" height="15" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
                                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/>
+                                        </svg>
+                                        <svg wire:loading wire:target="viewDetail('{{ $dateKey }}', {{ $s->distributor_id }})" class="animate-spin" width="15" height="15" fill="none" viewBox="0 0 24 24">
+                                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path>
                                         </svg>
                                     </button>
 
                                     <!-- Tombol Unduh CSV -->
                                     <button type="button"
                                             wire:click="exportCsv('{{ $dateKey }}', {{ $s->distributor_id }})"
+                                            wire:loading.attr="disabled"
+                                            wire:target="exportCsv('{{ $dateKey }}', {{ $s->distributor_id }})"
                                             title="Unduh CSV Snapshot"
-                                            class="p-1.5 rounded-lg bg-slate-50 hover:bg-slate-100 text-slate-700 border border-slate-200 transition cursor-pointer shadow-2xs hover:scale-105">
-                                        <svg width="15" height="15" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            class="p-1.5 rounded-lg bg-slate-50 hover:bg-slate-100 text-slate-700 border border-slate-200 transition cursor-pointer shadow-2xs hover:scale-105 disabled:opacity-60 disabled:cursor-wait">
+                                        <svg wire:loading.remove wire:target="exportCsv('{{ $dateKey }}', {{ $s->distributor_id }})" width="15" height="15" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/>
+                                        </svg>
+                                        <svg wire:loading wire:target="exportCsv('{{ $dateKey }}', {{ $s->distributor_id }})" class="animate-spin" width="15" height="15" fill="none" viewBox="0 0 24 24">
+                                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path>
                                         </svg>
                                     </button>
 

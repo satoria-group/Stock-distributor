@@ -6,6 +6,7 @@ use App\Models\Distributor;
 use App\Models\DistributorItem;
 use App\Models\NetsuiteItem;
 use App\Services\ItemMatchingService;
+use App\Support\Search;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Validation\Rule;
@@ -315,10 +316,10 @@ class Index extends Component
             ->with(['distributor', 'netsuiteItem'])
             ->when($this->search, function ($q) {
                 $q->where(function ($sub) {
-                    $sub->where('item_name', 'ilike', "%{$this->search}%")
+                    $sub->where('item_name', 'ilike', Search::contains($this->search))
                         ->orWhereHas('netsuiteItem', function ($ns) {
-                            $ns->where('netsuite_name', 'ilike', "%{$this->search}%")
-                               ->orWhere('netsuite_id', 'ilike', "%{$this->search}%");
+                            $ns->where('netsuite_name', 'ilike', Search::contains($this->search))
+                               ->orWhere('netsuite_id', 'ilike', Search::contains($this->search));
                         });
                 });
             })

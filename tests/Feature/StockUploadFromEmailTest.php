@@ -87,6 +87,16 @@ class StockUploadFromEmailTest extends TestCase
                 'content' => $excelBytes,
                 'size' => strlen($excelBytes),
             ]);
+        // Metadata pengirim diambil untuk jejak audit (BUKAN untuk memblokir).
+        $mockImap->shouldReceive('getMessage')
+            ->with('101')
+            ->once()
+            ->andReturn([
+                'uid' => '101',
+                'subject' => 'Satoria Daily Stock - 14 Sep 2026',
+                'from_email' => 'gudang@distributor-uji.co.id',
+                'from_name' => 'Gudang Distributor Uji',
+            ]);
         $mockImap->shouldReceive('markAsRead')
             ->with('101')
             ->once()
@@ -99,7 +109,74 @@ class StockUploadFromEmailTest extends TestCase
             ->test(\App\Livewire\Stock\Upload::class)
             ->assertSet('distributorId', $dist->id)
             ->assertSet('tanggal', '2026-09-14')
-            ->assertCount('rows', 1);
+            ->assertCount('rows', 1)
+            ->assertSet('sourceEmailUid', '101')
+            ->assertSet('sourceEmailFrom', 'gudang@distributor-uji.co.id');
+    }
+
+    /**
+     * Pengirim di luar whitelist TIDAK boleh menghalangi upload manual — jalur
+     * ini dijalankan operator yang memilih emailnya sendiri. Yang wajib: asal
+     * emailnya tetap tercatat untuk penelusuran.
+     */
+    public function test_upload_from_email_is_allowed_for_sender_outside_whitelist_but_is_recorded(): void
+    {
+        $user = User::where('email', 'admin@satoriagroup.co.id')->first() ?? User::first();
+        if (! $user) {
+            $user = User::factory()->create();
+            $user->syncRoles([User::ROLE_ADMIN]);
+        }
+
+        $code = 'TEST_WL_' . uniqid();
+        $dist = Distributor::create([
+            'distributor_code' => $code,
+            'name' => 'Distributor Whitelist ' . $code,
+            'is_active' => true,
+            // Whitelist terdaftar, tapi pengirim di bawah TIDAK cocok.
+            'sender_email' => 'resmi@distributor-resmi.co.id',
+        ]);
+
+        $nsItem = \App\Models\NetsuiteItem::create([
+            'netsuite_id' => 'NS_' . uniqid(),
+            'netsuite_name' => 'Item Whitelist NetSuite',
+        ]);
+
+        DistributorItem::create([
+            'distributor_id' => $dist->id,
+            'item_name' => 'Item Uji Coba Email',
+            'satuan' => 'BTL',
+            'netsuite_item_id' => $nsItem->id,
+        ]);
+
+        $excelBytes = $this->createSampleExcelContent($code);
+
+        $mockImap = Mockery::mock(ImapService::class);
+        $mockImap->shouldReceive('isConfigured')->andReturn(true);
+        $mockImap->shouldReceive('getExcelAttachment')->andReturn([
+            'filename' => 'daily_stock.xlsx',
+            'mime_type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            'content' => $excelBytes,
+            'size' => strlen($excelBytes),
+        ]);
+        $mockImap->shouldReceive('getMessage')->andReturn([
+            'uid' => '202',
+            'subject' => 'Satoria Daily Stock - 14 Sep 2026',
+            'from_email' => 'orang-luar@gmail.com',
+            'from_name' => 'Orang Luar',
+        ]);
+        $mockImap->shouldReceive('markAsRead')->andReturn(true);
+
+        $this->app->instance(ImapService::class, $mockImap);
+
+        Livewire::actingAs($user)
+            ->withQueryParams(['from_email_uid' => '202'])
+            ->test(\App\Livewire\Stock\Upload::class)
+            // Tidak diblokir meski pengirim di luar whitelist.
+            ->assertHasNoErrors('file')
+            ->assertCount('rows', 1)
+            // Tapi asal-usulnya tercatat.
+            ->assertSet('sourceEmailFrom', 'orang-luar@gmail.com')
+            ->assertSet('sourceEmailUid', '202');
     }
 
     public function test_email_table_displays_upload_button_when_attachments_exist(): void

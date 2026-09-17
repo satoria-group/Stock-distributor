@@ -231,13 +231,28 @@
                 </thead>
                 <tbody class="divide-y divide-slate-100">
                     @forelse ($emails as $email)
+                        {{-- Membuka email butuh ±1,5 detik (satu sesi IMAP), jadi baris
+                             yang sedang dibuka diberi penanda agar terasa responsif. --}}
                         <tr wire:click="selectEmail('{{ $email['uid'] }}')"
+                            wire:loading.class="opacity-60 cursor-wait"
+                            wire:target="selectEmail('{{ $email['uid'] }}')"
                             class="group transition-colors duration-150 ease-in-out cursor-pointer {{ $selectedUid === $email['uid'] ? 'bg-emerald-50/70' : 'hover:bg-slate-50/90' }}">
                             <!-- Status -->
                             <td class="relative py-3.5 px-4 text-center">
                                 <!-- Garis Indikator Hijau Saat Hover / Dipilih -->
                                 <div class="absolute inset-y-0 left-0 w-1 rounded-r-xs transition-all duration-150 {{ $selectedUid === $email['uid'] ? 'bg-[#0d6d5f]' : 'bg-transparent group-hover:bg-[#0d6d5f]' }}"></div>
 
+                                {{-- Spinner khusus baris ini selagi detail email diambil dari mail server --}}
+                                <span wire:loading wire:target="selectEmail('{{ $email['uid'] }}')"
+                                      class="inline-flex items-center justify-center gap-1 text-[10px] font-bold text-[#0d6d5f]">
+                                    <svg class="animate-spin" width="12" height="12" style="width:12px;height:12px;flex-shrink:0;" fill="none" viewBox="0 0 24 24">
+                                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path>
+                                    </svg>
+                                    <span>Memuat</span>
+                                </span>
+
+                                <span wire:loading.remove wire:target="selectEmail('{{ $email['uid'] }}')">
                                 @if (! $email['is_read'])
                                     <span class="inline-flex items-center justify-center gap-1 px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 text-[10px] font-bold border border-blue-200/80 group-hover:bg-blue-100 transition" title="Email Belum Dibaca">
                                         <span class="w-1.5 h-1.5 rounded-full bg-blue-500"></span>
@@ -249,6 +264,7 @@
                                         <span>Dibaca</span>
                                     </span>
                                 @endif
+                                </span>
                             </td>
 
                             <!-- Pengirim -->
@@ -395,16 +411,27 @@
                     Halaman <b>{{ $currentPage }}</b> dari <b>{{ $lastPage }}</b> (Total {{ $total }} email)
                 </span>
                 <div class="flex items-center gap-1.5 font-mono">
+                    {{-- Pindah halaman memicu pengambilan inbox dari mail server
+                         (bisa beberapa detik bila cache sudah kedaluwarsa). --}}
                     <button type="button" wire:click="gotoPage({{ $currentPage - 1 }})"
+                            wire:loading.attr="disabled" wire:target="gotoPage"
                             {{ $currentPage <= 1 ? 'disabled' : '' }}
                             class="px-3 py-1 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 font-bold disabled:opacity-40 disabled:cursor-not-allowed transition">
                         &laquo; Sebelumnya
                     </button>
                     <button type="button" wire:click="gotoPage({{ $currentPage + 1 }})"
+                            wire:loading.attr="disabled" wire:target="gotoPage"
                             {{ $currentPage >= $lastPage ? 'disabled' : '' }}
                             class="px-3 py-1 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 font-bold disabled:opacity-40 disabled:cursor-not-allowed transition">
                         Berikutnya &raquo;
                     </button>
+                    <span wire:loading wire:target="gotoPage" class="inline-flex items-center gap-1.5 text-[#0d6d5f] font-semibold">
+                        <svg class="animate-spin" width="13" height="13" style="width:13px;height:13px;flex-shrink:0;" fill="none" viewBox="0 0 24 24">
+                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path>
+                        </svg>
+                        <span>Memuat…</span>
+                    </span>
                 </div>
             </div>
         @endif
@@ -725,17 +752,17 @@
                             <div class="text-xs text-slate-400 mt-0.5">Riwayat akan otomatis terisi setiap kali background worker memproses email laporan stok.</div>
                         </div>
                     @else
-                        <div class="border border-slate-200 rounded-xl overflow-hidden text-xs">
-                            <table class="w-full text-left">
+                        <div class="border border-slate-200 rounded-xl text-xs">
+                            <table class="w-full text-left border-collapse">
                                 <thead class="bg-slate-50 border-b border-slate-200 text-slate-500 font-bold uppercase text-[10px]">
                                     <tr>
-                                        <th class="py-2.5 px-3">Waktu Eksekusi</th>
+                                        <th class="py-2.5 px-3 rounded-tl-xl">Waktu Eksekusi</th>
                                         <th class="py-2.5 px-3">Pengirim</th>
                                         <th class="py-2.5 px-3">Distributor & Tgl</th>
                                         <th class="py-2.5 px-3">Nama File</th>
                                         <th class="py-2.5 px-3 text-center">Status</th>
                                         <th class="py-2.5 px-3 text-right">Baris Sukses</th>
-                                        <th class="py-2.5 px-3">Catatan / Error</th>
+                                        <th class="py-2.5 px-3 text-center rounded-tr-xl w-28">Catatan / Error</th>
                                     </tr>
                                 </thead>
                                 <tbody class="divide-y divide-slate-100 bg-white">
@@ -772,50 +799,124 @@
                                             <td class="py-2.5 px-3 text-right font-mono font-bold text-slate-800">
                                                 {{ number_format($log->imported_rows) }}
                                             </td>
-                                            <td class="py-2.5 px-3 text-slate-500 text-[11px]">
-                                                @if ($log->status === 'partial_unmapped' && ! empty($log->details['unique_skipped_names']))
-                                                    <div class="space-y-1">
-                                                        <div class="font-semibold text-amber-900 text-[11px]">
-                                                            {{ count($log->details['unique_skipped_names']) }} Item Belum Ter-mapping:
-                                                        </div>
-                                                        <div class="flex flex-wrap gap-1 max-w-[280px]">
-                                                            @foreach (array_slice($log->details['unique_skipped_names'], 0, 3) as $unmappedItem)
-                                                                <span class="px-1.5 py-0.5 rounded bg-amber-50 text-amber-900 border border-amber-200 text-[10px] font-mono truncate max-w-[130px]" title="{{ $unmappedItem }}">
-                                                                    {{ $unmappedItem }}
-                                                                </span>
-                                                            @endforeach
-                                                            @if (count($log->details['unique_skipped_names']) > 3)
-                                                                <span class="text-[10px] text-amber-700 font-bold self-center">
-                                                                    +{{ count($log->details['unique_skipped_names']) - 3 }} lainnya
-                                                                </span>
+                                            <td class="py-2.5 px-3 text-center">
+                                                @php
+                                                    $hasPartialUnmapped = ($log->status === 'partial_unmapped' && ! empty($log->details['unique_skipped_names']));
+                                                    $hasDataAlreadyExists = ($log->status === 'data_already_exists');
+                                                    $hasErrorMessage = ! empty($log->error_message) && $log->error_message !== '-';
+                                                    $hasNote = $hasPartialUnmapped || $hasDataAlreadyExists || $hasErrorMessage;
+                                                @endphp
+
+                                                @if ($hasNote)
+                                                    <div class="relative inline-flex items-center justify-center"
+                                                         x-data="{ 
+                                                             open: false, 
+                                                             timeout: null,
+                                                             enter() { clearTimeout(this.timeout); this.open = true; },
+                                                             leave() { this.timeout = setTimeout(() => { this.open = false; }, 150); }
+                                                         }" 
+                                                         @mouseenter="enter()" 
+                                                         @mouseleave="leave()">
+                                                        
+                                                        <button type="button"
+                                                                @focus="enter()"
+                                                                @blur="leave()"
+                                                                aria-label="Detail Catatan / Error"
+                                                                class="inline-flex items-center justify-center w-6 h-6 rounded-full transition-all duration-150 shadow-2xs cursor-pointer select-none focus:outline-none focus:ring-2 focus:ring-offset-1
+                                                                    {{ $hasPartialUnmapped 
+                                                                        ? 'bg-amber-100 text-amber-800 hover:bg-amber-200 border border-amber-300 focus:ring-amber-400' 
+                                                                        : ($hasDataAlreadyExists || $hasErrorMessage 
+                                                                            ? 'bg-rose-100 text-rose-800 hover:bg-rose-200 border border-rose-300 focus:ring-rose-400' 
+                                                                            : 'bg-slate-100 text-slate-600 hover:bg-slate-200 border border-slate-300 focus:ring-slate-400') }}">
+                                                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                <circle cx="12" cy="12" r="9" stroke-width="2"/>
+                                                                <line x1="12" y1="8" x2="12" y2="8.01" stroke-width="2.5" stroke-linecap="round"/>
+                                                                <line x1="12" y1="11" x2="12" y2="16" stroke-width="2" stroke-linecap="round"/>
+                                                            </svg>
+                                                        </button>
+
+                                                        <!-- Tooltip Popover -->
+                                                        <div x-show="open"
+                                                             x-cloak
+                                                             @mouseenter="enter()"
+                                                             @mouseleave="leave()"
+                                                             x-transition:enter="transition ease-out duration-150"
+                                                             x-transition:enter-start="opacity-0 translate-y-1 scale-95"
+                                                             x-transition:enter-end="opacity-100 translate-y-0 scale-100"
+                                                             x-transition:leave="transition ease-in duration-100"
+                                                             x-transition:leave-start="opacity-100 translate-y-0 scale-100"
+                                                             x-transition:leave-end="opacity-0 translate-y-1 scale-95"
+                                                             class="absolute z-50 right-0 {{ $loop->index < 2 ? 'top-full mt-2' : 'bottom-full mb-2' }} w-80 bg-white rounded-xl shadow-2xl border border-slate-200/95 p-3.5 text-left pointer-events-auto">
+                                                            
+                                                            {{-- Arrow Pointer --}}
+                                                            @if ($loop->index < 2)
+                                                                <div class="absolute -top-1.5 right-2.5 w-3 h-3 bg-white border-t border-l border-slate-200 rotate-45"></div>
+                                                            @else
+                                                                <div class="absolute -bottom-1.5 right-2.5 w-3 h-3 bg-white border-b border-r border-slate-200 rotate-45"></div>
+                                                            @endif
+
+                                                            @if ($hasPartialUnmapped)
+                                                                <div class="space-y-2">
+                                                                    <div class="flex items-center gap-1.5 font-bold text-amber-900 text-xs pb-1.5 border-b border-amber-100">
+                                                                        <svg class="w-4 h-4 text-amber-600 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+                                                                        </svg>
+                                                                        <span>{{ count($log->details['unique_skipped_names']) }} Item Belum Ter-mapping</span>
+                                                                    </div>
+                                                                    <p class="text-[11px] text-slate-500 leading-snug">Item berikut dilewati karena belum terhubung ke master NetSuite:</p>
+                                                                    <div class="flex flex-wrap gap-1 max-h-36 overflow-y-auto pr-1">
+                                                                        @foreach ($log->details['unique_skipped_names'] as $unmappedItem)
+                                                                            <span class="px-1.5 py-0.5 rounded bg-amber-50 text-amber-900 border border-amber-200 text-[10px] font-mono" title="{{ $unmappedItem }}">
+                                                                                {{ $unmappedItem }}
+                                                                            </span>
+                                                                        @endforeach
+                                                                    </div>
+                                                                    @if ($log->distributor_id)
+                                                                        <div class="pt-2 border-t border-slate-100">
+                                                                            <button type="button" wire:click="openMappingForLog({{ $log->id }})"
+                                                                                    class="inline-flex items-center gap-1 text-[11px] text-[#0d6d5f] hover:text-[#07352d] font-bold cursor-pointer hover:underline">
+                                                                                <span>&rarr; Buka Form Mapping Item</span>
+                                                                            </button>
+                                                                        </div>
+                                                                    @endif
+                                                                </div>
+                                                            @elseif ($hasDataAlreadyExists)
+                                                                <div class="space-y-2">
+                                                                    <div class="flex items-center gap-1.5 font-bold text-rose-900 text-xs pb-1.5 border-b border-rose-100">
+                                                                        <svg class="w-4 h-4 text-rose-600 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                                                                        </svg>
+                                                                        <span>Gagal Validasi: Data Sudah Ada</span>
+                                                                    </div>
+                                                                    <p class="text-[11px] text-slate-700 leading-relaxed whitespace-normal break-words">
+                                                                        {{ $log->error_message }}
+                                                                    </p>
+                                                                    @if ($log->email_uid && $log->email_uid !== 'unknown')
+                                                                        <div class="pt-2 border-t border-slate-100">
+                                                                            <a href="{{ route('stock.upload', ['from_email_uid' => $log->email_uid]) }}"
+                                                                               class="inline-flex items-center gap-1 text-[11px] text-[#0d6d5f] hover:text-[#07352d] font-bold cursor-pointer hover:underline">
+                                                                                <span>&rarr; Upload Manual ke Grid</span>
+                                                                            </a>
+                                                                        </div>
+                                                                    @endif
+                                                                </div>
+                                                            @else
+                                                                <div class="space-y-1.5">
+                                                                    <div class="flex items-center gap-1.5 font-bold text-slate-800 text-xs pb-1.5 border-b border-slate-100">
+                                                                        <svg class="w-4 h-4 text-rose-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                                                                        </svg>
+                                                                        <span>Catatan / Pesan Kesalahan</span>
+                                                                    </div>
+                                                                    <p class="text-[11px] text-slate-700 leading-relaxed whitespace-normal break-words">
+                                                                        {{ $log->error_message }}
+                                                                    </p>
+                                                                </div>
                                                             @endif
                                                         </div>
-                                                        @if ($log->distributor_id)
-                                                            <button type="button" wire:click="openMappingForLog({{ $log->id }})"
-                                                                    class="inline-block text-[10px] text-emerald-700 hover:underline font-bold mt-0.5 cursor-pointer bg-transparent border-0 p-0 text-left">
-                                                                &rarr; Buka Form Mapping Item
-                                                            </button>
-                                                        @endif
-                                                    </div>
-                                                @elseif ($log->status === 'data_already_exists')
-                                                    <div class="space-y-0.5">
-                                                        <div class="font-bold text-rose-900 text-[11px]">
-                                                            Gagal Validasi: Data sudah ada. Silakan upload manual.
-                                                        </div>
-                                                        <div class="text-[10px] text-slate-500 truncate max-w-[240px]" title="{{ $log->error_message }}">
-                                                            {{ $log->error_message }}
-                                                        </div>
-                                                        @if ($log->email_uid && $log->email_uid !== 'unknown')
-                                                            <a href="{{ route('stock.upload', ['from_email_uid' => $log->email_uid]) }}"
-                                                               class="inline-block text-[10px] text-emerald-700 hover:underline font-bold mt-0.5 cursor-pointer">
-                                                                &rarr; Upload Manual ke Grid
-                                                            </a>
-                                                        @endif
                                                     </div>
                                                 @else
-                                                    <div class="truncate max-w-[220px]" title="{{ $log->error_message }}">
-                                                        {{ $log->error_message ?: '-' }}
-                                                    </div>
+                                                    <span class="text-slate-300 font-mono">-</span>
                                                 @endif
                                             </td>
                                         </tr>

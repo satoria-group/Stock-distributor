@@ -5,6 +5,7 @@ namespace App\Livewire\NetsuiteItems;
 use App\Models\DistributorItem;
 use App\Models\DplPriceProduct;
 use App\Models\NetsuiteItem;
+use App\Support\Search;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Validation\Rule;
@@ -189,8 +190,8 @@ class Index extends Component
         $query = NetsuiteItem::query()
             ->with('dplPrice')
             ->when($this->search, fn ($q) => $q->where(function ($sub) {
-                $sub->where('netsuite_name', 'ilike', "%{$this->search}%")
-                    ->orWhere('netsuite_id', 'ilike', "%{$this->search}%");
+                $sub->where('netsuite_name', 'ilike', Search::contains($this->search))
+                    ->orWhere('netsuite_id', 'ilike', Search::contains($this->search));
             }))
             ->when($this->priceFilter === 'with_price', fn ($q) => $q->whereHas('dplPrices', fn ($sub) => $sub->where('price', '>', 0)))
             ->when($this->priceFilter === 'without_price', fn ($q) => $q->whereDoesntHave('dplPrices', fn ($sub) => $sub->where('price', '>', 0)));

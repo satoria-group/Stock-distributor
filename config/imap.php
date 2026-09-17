@@ -29,7 +29,18 @@ return [
     /*
     | Cache duration for inbox listings in seconds (default: 30s).
     */
-    'cache_ttl' => (int) env('IMAP_CACHE_TTL', 30),
+    /*
+    | Lama cache daftar inbox (detik).
+    |
+    | Mengambil inbox dari mail server memakan ±190 ms PER PESAN (20 pesan ≈ 4
+    | detik), sementara membacanya dari cache hanya ±3 ms. Nilai 30 detik terlalu
+    | pendek: mengetik di kotak cari atau mengganti filter setelah 30 detik akan
+    | memicu pengambilan ulang penuh dan halaman terasa membeku.
+    |
+    | Tombol "Refresh" tetap mengambil data terbaru kapan pun dibutuhkan, jadi
+    | nilai yang lebih panjang aman untuk laporan stok harian.
+    */
+    'cache_ttl' => (int) env('IMAP_CACHE_TTL', 300),
 
     /*
     | Maximum allowed attachment download size in megabytes.

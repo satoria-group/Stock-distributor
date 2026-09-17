@@ -26,8 +26,6 @@ class Index extends Component
 
     public ?array $selectedEmail = null;
 
-    public bool $isLoadingDetail = false;
-
     public bool $showLogsModal = false;
 
     public function openLogsModal(): void
@@ -119,13 +117,12 @@ class Index extends Component
     public function selectEmail(string $uid, ImapService $imapService, HtmlSanitizerService $sanitizer): void
     {
         $this->selectedUid = $uid;
-        $this->isLoadingDetail = true;
 
-        $detail = $imapService->getMessage($uid);
+        // Ambil detail sekaligus tandai sudah dibaca dalam SATU sesi IMAP.
+        // Sebelumnya getMessage() + markAsRead() membuka dua koneksi terpisah.
+        $detail = $imapService->getMessage($uid, markRead: true);
 
         if ($detail) {
-            // Tandai email sebagai sudah dibaca di server mail
-            $imapService->markAsRead($uid);
             $detail['is_read'] = true;
 
             // Sanitize HTML body to prevent XSS
@@ -140,7 +137,6 @@ class Index extends Component
             session()->flash('error', 'Gagal memuat detail email atau email tidak ditemukan di server.');
         }
 
-        $this->isLoadingDetail = false;
     }
 
     public function toggleReadStatus(string $uid, ImapService $imapService): void
@@ -160,7 +156,6 @@ class Index extends Component
     {
         $this->selectedUid = null;
         $this->selectedEmail = null;
-        $this->isLoadingDetail = false;
     }
 
     public function refreshInbox(ImapService $imapService): void
@@ -222,13 +217,24 @@ class Index extends Component
         $uids = $emails->pluck('uid')->map(fn ($u) => (string) $u)->all();
         $emailLogs = \App\Models\StockEmailLog::whereIn('email_uid', $uids)->get()->keyBy('email_uid');
 
-        $logsQuery = \App\Models\StockEmailLog::query();
+        // Satu query agregat menggantikan 5 query terpisah (3x COUNT berkondisi,
+        // 1x COUNT total, 1x ambil baris terakhir) yang sebelumnya dijalankan
+        // pada SETIAP render halaman ini.
+        $agg = \App\Models\StockEmailLog::query()
+            ->selectRaw('COUNT(*) as total')
+            ->selectRaw("SUM(CASE WHEN status = 'success' THEN 1 ELSE 0 END) as success")
+            ->selectRaw("SUM(CASE WHEN status = 'partial_unmapped' THEN 1 ELSE 0 END) as partial")
+            ->selectRaw("SUM(CASE WHEN status NOT IN ('success', 'partial_unmapped') THEN 1 ELSE 0 END) as failed")
+            ->selectRaw('MAX(created_at) as last_run')
+            ->first();
+
         $automationStats = [
-            'total_processed' => $logsQuery->count(),
-            'success_count' => (clone $logsQuery)->where('status', 'success')->count(),
-            'partial_count' => (clone $logsQuery)->where('status', 'partial_unmapped')->count(),
-            'failed_count' => (clone $logsQuery)->whereNotIn('status', ['success', 'partial_unmapped'])->count(),
-            'last_run' => $logsQuery->latest()->first()?->created_at,
+            'total_processed' => (int) ($agg->total ?? 0),
+            'success_count' => (int) ($agg->success ?? 0),
+            'partial_count' => (int) ($agg->partial ?? 0),
+            'failed_count' => (int) ($agg->failed ?? 0),
+            // Blade memanggil ->diffForHumans(), jadi tipenya harus tetap Carbon.
+            'last_run' => ! empty($agg?->last_run) ? \Illuminate\Support\Carbon::parse($agg->last_run) : null,
         ];
         $recentLogs = $this->showLogsModal ? \App\Models\StockEmailLog::latest()->take(50)->get() : collect();
 
