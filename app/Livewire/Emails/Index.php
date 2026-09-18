@@ -28,6 +28,15 @@ class Index extends Component
 
     public bool $showLogsModal = false;
 
+    public function resetFilters(): void
+    {
+        $this->search = '';
+        $this->onlyDailyStock = false;
+        $this->onlyWithAttachments = false;
+        $this->perPage = 15;
+        $this->page = 1;
+    }
+
     public function openLogsModal(): void
     {
         $this->showLogsModal = true;

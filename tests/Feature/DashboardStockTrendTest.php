@@ -33,12 +33,9 @@ class DashboardStockTrendTest extends TestCase
 
         Livewire::actingAs($user)
             ->test(Dashboard::class)
-            ->assertSet('trendUnit', 'BTL')
+            ->assertSet('trendUnit', 'ALL')
             ->assertSet('trendPeriod', 30)
             ->assertSee('Trend Stock On Hand')
-            ->assertSee('Botol (BTL)')
-            ->assertSee('Ampul (AMP)')
-            ->assertSee('Pcs/Box (PCS)')
             ->assertSee('7 Hari')
             ->assertSee('30 Hari')
             ->assertSee('90 Hari')
@@ -46,20 +43,22 @@ class DashboardStockTrendTest extends TestCase
             ->assertDispatched('charts-updated');
     }
 
-    public function test_stock_trend_switches_unit_and_period(): void
+    public function test_stock_trend_switches_unit_via_satuan_filter_and_period(): void
     {
         $user = $this->getLogistikUser();
 
         Livewire::actingAs($user)
             ->test(Dashboard::class)
-            ->assertSet('trendUnit', 'BTL')
+            ->assertSet('trendUnit', 'ALL')
             ->assertSet('trendPeriod', 30)
-            ->call('setTrendUnit', 'AMP')
+            ->set('satuanFilter', 'BTL')
+            ->assertSet('trendUnit', 'BTL')
+            ->set('satuanFilter', 'AMP')
             ->assertSet('trendUnit', 'AMP')
-            ->call('setTrendUnit', 'PCS')
+            ->set('satuanFilter', 'PCS')
             ->assertSet('trendUnit', 'PCS')
-            ->call('setTrendUnit', 'INVALID')
-            ->assertSet('trendUnit', 'PCS') // Unchanged because invalid
+            ->set('satuanFilter', '')
+            ->assertSet('trendUnit', 'ALL')
             ->call('setTrendPeriod', 7)
             ->assertSet('trendPeriod', 7)
             ->call('setTrendPeriod', 90)
@@ -166,5 +165,17 @@ class DashboardStockTrendTest extends TestCase
         $this->assertNull($trendAmp['data'][2]);
         $this->assertNull($trendAmp['data'][3]);
         $this->assertEquals(1, $trendAmp['active_days']);
+
+        // Now test unit ALL on the same dataset (should aggregate BTL + AMP)
+        $component->trendUnit = 'ALL';
+        $trendAll = $component->calculateStockTrend([$distributor->id], $day4);
+
+        $this->assertEquals('ALL', $trendAll['unit']);
+        $this->assertEquals('Semua Satuan', $trendAll['unit_label']);
+        $this->assertEquals(150.0, $trendAll['data'][0]); // 100 BTL + 50 AMP
+        $this->assertEquals(120.0, $trendAll['data'][1]); // 120 BTL
+        $this->assertNull($trendAll['data'][2]);          // missing date
+        $this->assertEquals(150.0, $trendAll['data'][3]); // 150 BTL
+        $this->assertEquals(3, $trendAll['active_days']);
     }
 }

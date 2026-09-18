@@ -58,6 +58,8 @@ class Dashboard extends Component
 
     public string $satuanFilter = '';
 
+    public string $batchFilter = '';
+
     public int $perPage = 15;
 
     public string $sortBy = 'item_name';
@@ -77,13 +79,13 @@ class Dashboard extends Component
 
     public string $fefoSortDir = 'asc';
 
-    public string $fefoChartUnit = 'BTL'; // 'BTL', 'AMP', 'PCS'
+    public string $fefoChartUnit = 'ALL'; // 'ALL', 'BTL', 'AMP', 'PCS'
 
     // Donut Chart Metric (Nilai Finansial Rp vs Volume Fisik)
     public string $donutMetric = 'value'; // 'value', 'qty'
 
     // Trend Stock On Hand Line Chart
-    public string $trendUnit = 'BTL'; // 'BTL', 'AMP', 'PCS'
+    public string $trendUnit = 'ALL'; // 'ALL', 'BTL', 'AMP', 'PCS'
 
     public int $trendPeriod = 30; // 7, 30, 90
 
@@ -118,17 +120,19 @@ class Dashboard extends Component
 
     public function switchTab(string $tab, ?string $subFilter = null): void
     {
-        $this->activeTab = $tab;
-        if ($tab === 'expiry' && $subFilter) {
-            $this->expiryRiskFilter = $subFilter;
+        if (in_array($tab, ['stock', 'expiry', 'compliance', 'stagnant'], true)) {
+            $this->activeTab = $tab;
+            if ($tab === 'expiry' && $subFilter !== null) {
+                $this->expiryRiskFilter = $subFilter;
+            }
+            if ($tab === 'compliance' && $subFilter !== null) {
+                $this->complianceStatus = $subFilter;
+            }
+            if ($tab === 'stagnant' && $subFilter !== null) {
+                $this->stagnantRiskFilter = $subFilter;
+            }
+            $this->resetPage();
         }
-        if ($tab === 'compliance' && $subFilter) {
-            $this->complianceStatus = $subFilter;
-        }
-        if ($tab === 'stagnant' && $subFilter) {
-            $this->stagnantRiskFilter = $subFilter;
-        }
-        $this->resetPage();
     }
 
     public function updatedActiveTab(): void
@@ -143,11 +147,7 @@ class Dashboard extends Component
 
     public function updatedFefoSatuanFilter(): void
     {
-        if (in_array($this->fefoSatuanFilter, ['BTL', 'AMP', 'PCS'])) {
-            $this->fefoChartUnit = $this->fefoSatuanFilter;
-        } else {
-            $this->fefoChartUnit = 'BTL';
-        }
+        $this->fefoChartUnit = in_array($this->fefoSatuanFilter, ['BTL', 'AMP', 'PCS']) ? $this->fefoSatuanFilter : 'ALL';
         $this->resetPage();
     }
 
@@ -214,7 +214,7 @@ class Dashboard extends Component
 
     public function setTrendUnit(string $unit): void
     {
-        if (in_array($unit, ['BTL', 'AMP', 'PCS'])) {
+        if (in_array($unit, ['ALL', 'BTL', 'AMP', 'PCS'])) {
             $this->trendUnit = $unit;
         }
     }
@@ -228,16 +228,43 @@ class Dashboard extends Component
 
     public function setFefoChartUnit(string $unit): void
     {
-        if (in_array($unit, ['BTL', 'AMP', 'PCS'])) {
+        if (in_array($unit, ['ALL', 'BTL', 'AMP', 'PCS'])) {
             $this->fefoChartUnit = $unit;
+            $this->fefoSatuanFilter = $unit === 'ALL' ? '' : $unit;
         }
+    }
+
+    public function setBatchFilter(string $batch): void
+    {
+        $batch = trim($batch);
+        if ($this->batchFilter === $batch) {
+            $this->batchFilter = '';
+        } else {
+            $this->batchFilter = $batch;
+        }
+        $this->resetPage();
+    }
+
+    public function clearBatchFilter(): void
+    {
+        $this->batchFilter = '';
+        $this->resetPage();
     }
 
     public function resetFilters(): void
     {
+        $this->resetStockFilters();
+    }
+
+    public function resetStockFilters(): void
+    {
         $this->selectedBranchId = null;
         $this->satuanFilter = '';
+        $this->trendUnit = 'ALL';
         $this->search = '';
+        $this->batchFilter = '';
+        $this->sortBy = 'item_name';
+        $this->sortDir = 'asc';
         $this->resetPage();
     }
 
@@ -245,7 +272,7 @@ class Dashboard extends Component
     {
         $this->fefoBranchId = null;
         $this->fefoSatuanFilter = '';
-        $this->fefoChartUnit = 'BTL';
+        $this->fefoChartUnit = 'ALL';
         $this->expiryRiskFilter = 'all';
         $this->expirySearch = '';
         $this->fefoSortBy = 'days';
@@ -379,6 +406,7 @@ class Dashboard extends Component
 
     public function updatedSatuanFilter(): void
     {
+        $this->trendUnit = in_array($this->satuanFilter, ['BTL', 'AMP', 'PCS']) ? $this->satuanFilter : 'ALL';
         $this->resetPage();
     }
 
@@ -639,14 +667,27 @@ class Dashboard extends Component
             $trendQuery->whereIn('distributor_id', $scopedDistributorIds ?: [0]);
         }
 
-        // 3. Filter Satuan (BTL, AMP, PCS) sesuai klasifikasi standar farmasi Satoria
-        if ($this->trendUnit === 'BTL') {
+        if ($this->batchFilter !== '') {
+            $trendQuery->where('batch_no', $this->batchFilter);
+        }
+
+        // 3. Filter Satuan (ALL, BTL, AMP, PCS) sesuai filter utama tabel ($satuanFilter)
+        if ($this->satuanFilter !== '') {
+            $unit = in_array($this->satuanFilter, ['BTL', 'AMP', 'PCS']) ? $this->satuanFilter : 'ALL';
+        } else {
+            $unit = in_array($this->trendUnit, ['ALL', 'BTL', 'AMP', 'PCS']) ? $this->trendUnit : 'ALL';
+        }
+        $this->trendUnit = $unit;
+
+        if ($unit === 'ALL') {
+            $unitLabel = 'Semua Satuan';
+        } elseif ($unit === 'BTL') {
             $trendQuery->where(function ($q) {
                 $q->whereRaw('UPPER(satuan) LIKE ?', ['%BTL%'])
                   ->orWhereRaw('UPPER(satuan) LIKE ?', ['%BOTOL%']);
             });
             $unitLabel = 'Botol (BTL)';
-        } elseif ($this->trendUnit === 'AMP') {
+        } elseif ($unit === 'AMP') {
             $trendQuery->where(function ($q) {
                 $q->whereRaw('UPPER(satuan) LIKE ?', ['%AMP%']);
             });
@@ -824,18 +865,26 @@ class Dashboard extends Component
      */
     public function calculateFefoHorizon(Collection $allCurrentEntries, array $scopedDistributorIds): array
     {
-        $unit = in_array($this->fefoSatuanFilter, ['BTL', 'AMP', 'PCS']) ? $this->fefoSatuanFilter : $this->fefoChartUnit;
+        if ($this->fefoSatuanFilter !== '') {
+            $unit = in_array($this->fefoSatuanFilter, ['BTL', 'AMP', 'PCS']) ? $this->fefoSatuanFilter : 'ALL';
+        } else {
+            $unit = in_array($this->fefoChartUnit, ['ALL', 'BTL', 'AMP', 'PCS']) ? $this->fefoChartUnit : 'ALL';
+        }
         $this->fefoChartUnit = $unit;
         $unitLabel = match ($unit) {
             'BTL' => 'Botol (BTL)',
             'AMP' => 'Ampul (AMP)',
-            default => 'Pcs / Box (PCS)',
+            'PCS' => 'Pcs / Box (PCS)',
+            default => 'Semua Satuan',
         };
 
         // Filter entri stok berdasarkan satuan dan ketersediaan expired_date
         $matchingEntries = $allCurrentEntries->filter(function ($entry) use ($unit) {
             if ($entry->expired_date === null) {
                 return false;
+            }
+            if ($unit === 'ALL') {
+                return true;
             }
             $sat = strtoupper(trim((string) $entry->satuan));
             if ($unit === 'BTL') {
@@ -1274,6 +1323,7 @@ class Dashboard extends Component
 
         // 5. Perhitungan KPI Satuan Farmasi & Metrik Operasional
         $kpi = [
+            'total_all' => 0,
             'total_btl' => 0,
             'total_amp' => 0,
             'total_pcs' => 0,
@@ -1289,6 +1339,7 @@ class Dashboard extends Component
             $q = (float) $entry->quantity;
             $unitPrice = (float) ($entry->distributorItem?->netsuiteItem?->unit_price ?? 0.0);
             $kpi['total_value'] += ($q * $unitPrice);
+            $kpi['total_all'] += $q;
 
             if (str_contains($sat, 'BTL') || str_contains($sat, 'BOTOL')) {
                 $kpi['total_btl'] += $q;
@@ -1525,6 +1576,13 @@ class Dashboard extends Component
             });
         }
 
+        if ($this->batchFilter !== '') {
+            $batchTerm = mb_strtolower(trim($this->batchFilter));
+            $filteredEntries = $filteredEntries->filter(function ($e) use ($batchTerm) {
+                return mb_strtolower(trim((string) $e->batch_no)) === $batchTerm;
+            });
+        }
+
         // Jumlah baris hasil filter dipakai badge pada tombol tab, yang tampil di
         // SEMUA tab — jadi tetap harus dihitung walau tabelnya tidak dirender.
         // (map() mempertahankan jumlah elemen, jadi nilainya identik dengan
@@ -1650,6 +1708,10 @@ class Dashboard extends Component
                 'critical' => $fefoAllRows->where('tier', 'critical')->count(),
                 'warning' => $fefoAllRows->where('tier', 'warning')->count(),
                 'safe' => $fefoAllRows->where('tier', 'safe')->count(),
+                'expired_qty' => (float) $fefoAllRows->where('tier', 'expired')->sum(fn ($r) => (float) $r->entry->quantity),
+                'critical_qty' => (float) $fefoAllRows->where('tier', 'critical')->sum(fn ($r) => (float) $r->entry->quantity),
+                'warning_qty' => (float) $fefoAllRows->where('tier', 'warning')->sum(fn ($r) => (float) $r->entry->quantity),
+                'safe_qty' => (float) $fefoAllRows->where('tier', 'safe')->sum(fn ($r) => (float) $r->entry->quantity),
                 'total_qty_at_risk' => (float) $fefoAllRows->whereIn('tier', ['expired', 'critical', 'warning'])->sum(fn ($r) => (float) $r->entry->quantity),
                 'total_risk_value' => (float) $fefoAllRows->whereIn('tier', ['expired', 'critical'])->sum(fn ($r) => (float) $r->total_value),
             ];
@@ -1677,6 +1739,10 @@ class Dashboard extends Component
                 'critical' => $kpi['expiring_soon'],
                 'warning' => 0,
                 'safe' => 0,
+                'expired_qty' => 0.0,
+                'critical_qty' => 0.0,
+                'warning_qty' => 0.0,
+                'safe_qty' => 0.0,
                 'total_qty_at_risk' => 0.0,
                 'total_risk_value' => 0.0,
             ];
@@ -1690,11 +1756,12 @@ class Dashboard extends Component
             $chartFefoHorizon = [
                 'labels' => [],
                 'datasets' => [],
-                'unit' => $this->fefoChartUnit,
-                'unit_label' => match ($this->fefoChartUnit) {
+                'unit' => $this->fefoSatuanFilter ?: $this->fefoChartUnit,
+                'unit_label' => match ($this->fefoSatuanFilter ?: $this->fefoChartUnit) {
                     'BTL' => 'Botol (BTL)',
                     'AMP' => 'Ampul (AMP)',
-                    default => 'Pcs / Box (PCS)',
+                    'PCS' => 'Pcs / Box (PCS)',
+                    default => 'Semua Satuan',
                 },
                 'total_qty' => 0.0,
                 'total_batches' => 0,
@@ -1913,6 +1980,7 @@ class Dashboard extends Component
             'selectedBranchId' => $this->selectedBranchId,
             'search' => $this->search,
             'satuanFilter' => $this->satuanFilter,
+            'batchFilter' => $this->batchFilter,
             'sortBy' => $this->sortBy,
             'sortDir' => $this->sortDir,
             'perPage' => $this->perPage,

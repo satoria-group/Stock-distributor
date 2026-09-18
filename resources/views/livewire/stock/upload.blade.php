@@ -166,6 +166,17 @@
                     <button wire:click="loadExisting" class="text-sm border border-gray-300 hover:bg-gray-50 rounded-lg px-4 py-2 font-medium cursor-pointer">
                         Muat Data
                     </button>
+
+                    <!-- Tombol Reset Pilihan Manual (Persegi) -->
+                    <button type="button"
+                            wire:click="resetManualForm"
+                            wire:loading.attr="disabled"
+                            title="{{ ($tanggal || $distributorId) ? 'Reset pilihan tanggal & distributor' : 'Pilihan dalam posisi default' }}"
+                            class="w-[38px] h-[38px] flex items-center justify-center rounded-xl border transition cursor-pointer shrink-0 {{ ($tanggal || $distributorId) ? 'bg-emerald-50 hover:bg-emerald-100 text-[#0d6d5f] border-emerald-300 shadow-2xs hover:scale-105 active:scale-95' : 'bg-slate-50/70 hover:bg-slate-100 text-slate-400 border-slate-200' }}">
+                        <svg width="15" height="15" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+                        </svg>
+                    </button>
                 </div>
                 <div class="text-[11px] text-gray-500 flex items-center gap-1.5">
                     <svg width="14" height="14" style="width: 14px; height: 14px; min-width: 14px; max-width: 14px; flex-shrink: 0; color: #9ca3af;" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -314,16 +325,26 @@
         <!-- Integrated Toolbar: Search & Add Row -->
         <div class="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3 py-3">
             <!-- Quick Filter / Search inside grid -->
-            <div class="relative w-full md:w-72">
-                <div class="absolute inset-y-0 left-0 pl-2.5 flex items-center pointer-events-none text-gray-400">
-                    <svg width="14" height="14" style="width: 14px; height: 14px;" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
-                    </svg>
+            <div class="flex items-center gap-1.5 w-full md:w-auto">
+                <div class="relative w-full md:w-72">
+                    <div class="absolute inset-y-0 left-0 pl-2.5 flex items-center pointer-events-none text-gray-400">
+                        <svg width="14" height="14" style="width: 14px; height: 14px;" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
+                        </svg>
+                    </div>
+                    <input type="text" id="grid-search-box"
+                           oninput="window.onGridFilter && window.onGridFilter(this.value)"
+                           placeholder="Cari item atau batch di grid..."
+                           class="w-full pl-8 pr-3 py-1.5 text-xs rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-brand">
                 </div>
-                <input type="text" id="grid-search-box"
-                       oninput="window.onGridFilter && window.onGridFilter(this.value)"
-                       placeholder="Cari item atau batch di grid..."
-                       class="w-full pl-8 pr-3 py-1.5 text-xs rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-brand">
+                <button type="button"
+                        onclick="const sb = document.getElementById('grid-search-box'); if (sb) { sb.value = ''; window.onGridFilter && window.onGridFilter(''); }"
+                        title="Reset pencarian grid"
+                        class="w-[32px] h-[32px] flex items-center justify-center rounded-lg border border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-500 hover:text-slate-800 transition cursor-pointer shrink-0">
+                    <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+                    </svg>
+                </button>
             </div>
 
             <!-- Tambah Baris Manual ke Grid -->

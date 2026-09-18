@@ -38,9 +38,23 @@
                 </button>
                 <button type="button" wire:click="$set('mappingFilter', 'unmapped')"
                         class="px-2.5 py-1.5 rounded-lg cursor-pointer transition font-semibold {{ $mappingFilter === 'unmapped' ? 'bg-amber-500 text-white shadow-2xs font-bold' : 'text-amber-800 hover:bg-amber-50' }}">
-                    Belum ter-mapping @if($unmappedCount) ({{ $unmappedCount }}) @endif
+                    Belum @if($unmappedCount) ({{ $unmappedCount }}) @endif
                 </button>
             </div>
+
+            <!-- Tombol Reset Filter Mapping (Persegi) -->
+            @php
+                $isDistItemFiltered = !empty($search) || !empty($distributorFilter) || $mappingFilter !== 'all';
+            @endphp
+            <button type="button"
+                    wire:click="resetFilters"
+                    wire:loading.attr="disabled"
+                    title="{{ $isDistItemFiltered ? 'Reset semua filter mapping ke default' : 'Filter dalam posisi default' }}"
+                    class="w-[36px] h-[36px] flex items-center justify-center rounded-xl border transition cursor-pointer shrink-0 {{ $isDistItemFiltered ? 'bg-emerald-50 hover:bg-emerald-100 text-[#0d6d5f] border-emerald-300 shadow-2xs hover:scale-105 active:scale-95' : 'bg-slate-50/70 hover:bg-slate-100 text-slate-400 border-slate-200' }}">
+                <svg width="15" height="15" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+                </svg>
+            </button>
         </div>
 
         <!-- Action Buttons (Right Aligned on Same Row) -->
@@ -60,7 +74,7 @@
                         <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
                         <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path>
                     </svg>
-                    <span wire:loading.remove wire:target="openBulkModal">Tinjau &amp; Setujui Saran ({{ count($bulkSuggestions) }} Item)</span>
+                    <span wire:loading.remove wire:target="openBulkModal">Tinjau Saran ({{ count($bulkSuggestions) }} Item)</span>
                     <span wire:loading wire:target="openBulkModal">Menganalisis kecocokan…</span>
                 </button>
                 @endcan

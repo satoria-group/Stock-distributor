@@ -63,6 +63,8 @@ class Index extends Component
     {
         $this->search = '';
         $this->priceFilter = 'all';
+        $this->sortBy = 'netsuite_name';
+        $this->sortDirection = 'asc';
         $this->resetPage();
     }
 

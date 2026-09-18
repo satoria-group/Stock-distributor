@@ -67,6 +67,14 @@ class Index extends Component
         $this->resetPage();
     }
 
+    public function resetFilters(): void
+    {
+        $this->search = '';
+        $this->distributorFilter = '';
+        $this->mappingFilter = 'all';
+        $this->resetPage();
+    }
+
     public function updatedItemName(): void
     {
         if (trim($this->item_name) !== '') {

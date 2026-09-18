@@ -34,9 +34,10 @@ class DashboardFefoHorizonChartTest extends TestCase
         Livewire::actingAs($user)
             ->test(Dashboard::class)
             ->set('activeTab', 'expiry')
-            ->assertSet('fefoChartUnit', 'BTL')
+            ->assertSet('fefoChartUnit', 'ALL')
             ->assertSee('Distribusi Horizon Kedaluwarsa Makro')
             ->assertSee('Komposisi Umur Simpan Stok Agregat')
+            ->assertSee('Semua Satuan')
             ->assertSee('Botol (BTL)')
             ->assertSee('Ampul (AMP)')
             ->assertSee('Pcs / Box (PCS)')
@@ -50,6 +51,8 @@ class DashboardFefoHorizonChartTest extends TestCase
         Livewire::actingAs($user)
             ->test(Dashboard::class)
             ->set('activeTab', 'expiry')
+            ->assertSet('fefoChartUnit', 'ALL')
+            ->call('setFefoChartUnit', 'BTL')
             ->assertSet('fefoChartUnit', 'BTL')
             ->call('setFefoChartUnit', 'AMP')
             ->assertSet('fefoChartUnit', 'AMP')
@@ -58,7 +61,7 @@ class DashboardFefoHorizonChartTest extends TestCase
             ->call('setFefoChartUnit', 'INVALID')
             ->assertSet('fefoChartUnit', 'PCS') // Unchanged
             ->call('resetFefoFilters')
-            ->assertSet('fefoChartUnit', 'BTL'); // Reset back to default
+            ->assertSet('fefoChartUnit', 'ALL'); // Reset back to default ALL
     }
 
     public function test_calculate_fefo_horizon_categorizes_into_five_zones(): void
@@ -243,7 +246,68 @@ class DashboardFefoHorizonChartTest extends TestCase
         $this->assertArrayHasKey('national', $horizon);
         $this->assertArrayHasKey('unit', $horizon);
         $this->assertArrayHasKey('unit_label', $horizon);
-        $this->assertEquals('BTL', $horizon['unit']);
+        $this->assertEquals('ALL', $horizon['unit']);
+        $this->assertEquals('Semua Satuan', $horizon['unit_label']);
         $this->assertCount(5, $horizon['datasets']);
+    }
+
+    public function test_fefo_horizon_with_all_units_aggregates_all_satuan(): void
+    {
+        $today = Carbon::today();
+
+        $distributor = Distributor::create([
+            'distributor_code' => 'TEST-FEFO-ALL',
+            'name' => 'Test FEFO All Units',
+            'is_active' => true,
+        ]);
+
+        $itemBtl = DistributorItem::create([
+            'distributor_id' => $distributor->id,
+            'source_item_id' => 'ITEM-BTL',
+            'item_name' => 'Produk Botol',
+        ]);
+        $itemAmp = DistributorItem::create([
+            'distributor_id' => $distributor->id,
+            'source_item_id' => 'ITEM-AMP',
+            'item_name' => 'Produk Ampul',
+        ]);
+
+        StockEntry::create([
+            'distributor_id' => $distributor->id,
+            'distributor_item_id' => $itemBtl->id,
+            'tanggal' => $today->toDateString(),
+            'batch_no' => 'BATCH-BTL',
+            'expired_date' => $today->copy()->addDays(60)->toDateString(),
+            'quantity' => 100,
+            'satuan' => 'BTL',
+        ]);
+
+        StockEntry::create([
+            'distributor_id' => $distributor->id,
+            'distributor_item_id' => $itemAmp->id,
+            'tanggal' => $today->toDateString(),
+            'batch_no' => 'BATCH-AMP',
+            'expired_date' => $today->copy()->addDays(60)->toDateString(),
+            'quantity' => 250,
+            'satuan' => 'AMP',
+        ]);
+
+        $dashboard = new Dashboard();
+        $dashboard->fefoChartUnit = 'ALL';
+        $dashboard->fefoSatuanFilter = '';
+        $dashboard->fefoBranchId = $distributor->id;
+
+        $entries = StockEntry::with(['distributor', 'distributorItem.netsuiteItem'])
+            ->where('distributor_id', $distributor->id)
+            ->where('tanggal', $today->toDateString())
+            ->get();
+
+        $horizon = $dashboard->calculateFefoHorizon($entries, [$distributor->id]);
+
+        $this->assertEquals('ALL', $horizon['unit']);
+        $this->assertEquals('Semua Satuan', $horizon['unit_label']);
+        // Harus menggabungkan BTL (100) dan AMP (250) = 350
+        $this->assertEquals(350, $horizon['total_qty']);
+        $this->assertEquals(2, $horizon['total_batches']);
     }
 }

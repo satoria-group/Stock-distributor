@@ -327,10 +327,18 @@ class History extends Component
         $distributorCode = $this->deleteDistributorCode ?? '';
         $tanggalFormatted = Carbon::parse($this->deleteTanggal)->translatedFormat('d M Y');
 
-        $deletedCount = StockEntry::query()
-            ->where('tanggal', $this->deleteTanggal)
-            ->where('distributor_id', $this->deleteDistributorId)
-            ->delete();
+        $deletedCount = 0;
+        DB::transaction(function () use (&$deletedCount) {
+            $deletedCount = StockEntry::query()
+                ->where('tanggal', $this->deleteTanggal)
+                ->where('distributor_id', $this->deleteDistributorId)
+                ->delete();
+
+            StockSnapshotActivity::query()
+                ->where('tanggal', $this->deleteTanggal)
+                ->where('distributor_id', $this->deleteDistributorId)
+                ->delete();
+        });
 
         $this->cancelDeleteSnapshot();
         $this->showDetailModal = false;

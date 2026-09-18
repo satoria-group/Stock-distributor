@@ -235,6 +235,16 @@ class Upload extends Component
         ];
     }
 
+    public function resetManualForm(): void
+    {
+        $this->tanggal = null;
+        $this->distributorId = null;
+        $this->rows = [];
+        $this->removedItemIds = [];
+        $this->skippedItems = [];
+        $this->skippedRowsData = [];
+    }
+
     public function loadExisting(): void
     {
         $this->activeTab = 'manual';

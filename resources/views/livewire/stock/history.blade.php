@@ -203,13 +203,19 @@
                            class="w-full pl-9 pr-3 py-2 text-xs rounded-xl border border-slate-200 bg-slate-50/70 text-slate-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#0d6d5f]/20 focus:border-[#0d6d5f] transition">
                 </div>
 
-                <!-- Reset Filter Button -->
-                @if ($startDate || $endDate || $distributorId || $search || $selectedGroup !== 'ALL')
-                    <button type="button" wire:click="resetFilters"
-                            class="px-3 py-2 rounded-xl text-xs font-semibold text-slate-600 hover:text-slate-900 hover:bg-slate-100 border border-slate-200 transition cursor-pointer inline-flex items-center gap-1.5">
-                        Reset Filter
-                    </button>
-                @endif
+                <!-- Tombol Reset Filter Riwayat (Persegi) -->
+                @php
+                    $isHistoryFiltered = $startDate || $endDate || $distributorId || $search || $selectedGroup !== 'ALL';
+                @endphp
+                <button type="button"
+                        wire:click="resetFilters"
+                        wire:loading.attr="disabled"
+                        title="{{ $isHistoryFiltered ? 'Reset semua filter riwayat stok ke default' : 'Filter riwayat dalam posisi default' }}"
+                        class="w-[36px] h-[36px] flex items-center justify-center rounded-xl border transition cursor-pointer shrink-0 {{ $isHistoryFiltered ? 'bg-emerald-50 hover:bg-emerald-100 text-[#0d6d5f] border-emerald-300 shadow-2xs hover:scale-105 active:scale-95' : 'bg-slate-50/70 hover:bg-slate-100 text-slate-400 border-slate-200' }}">
+                    <svg width="15" height="15" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+                    </svg>
+                </button>
             </div>
         </div>
 

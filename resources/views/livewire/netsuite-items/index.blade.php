@@ -35,17 +35,19 @@
                 </button>
             </div>
 
-            <!-- Reset Filter Button -->
-            @if ($priceFilter !== 'all' || !empty($search))
-            <button type="button" wire:click="resetFilters"
-                    class="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs text-slate-500 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition cursor-pointer font-medium"
-                    title="Reset pencarian dan filter harga">
-                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+            <!-- Reset Filter Button (Persegi) -->
+            @php
+                $isNetsuiteFiltered = $priceFilter !== 'all' || !empty($search) || $sortBy !== 'netsuite_name' || $sortDirection !== 'asc';
+            @endphp
+            <button type="button"
+                    wire:click="resetFilters"
+                    wire:loading.attr="disabled"
+                    title="{{ $isNetsuiteFiltered ? 'Reset semua filter, pencarian, dan sortir ke default' : 'Filter dalam posisi default' }}"
+                    class="w-[36px] h-[36px] flex items-center justify-center rounded-xl border transition cursor-pointer shrink-0 {{ $isNetsuiteFiltered ? 'bg-emerald-50 hover:bg-emerald-100 text-[#0d6d5f] border-emerald-300 shadow-2xs hover:scale-105 active:scale-95' : 'bg-slate-50/70 hover:bg-slate-100 text-slate-400 border-slate-200' }}">
+                <svg width="15" height="15" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
                 </svg>
-                <span>Reset</span>
             </button>
-            @endif
         </div>
 
         @can('create', \App\Models\NetsuiteItem::class)

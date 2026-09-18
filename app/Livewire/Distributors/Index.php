@@ -41,6 +41,12 @@ class Index extends Component
         $this->resetPage();
     }
 
+    public function resetFilters(): void
+    {
+        $this->search = '';
+        $this->resetPage();
+    }
+
     public function openCreate(): void
     {
         Gate::authorize('create', Distributor::class);
