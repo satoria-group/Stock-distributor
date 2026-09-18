@@ -11,6 +11,9 @@ use Tests\TestCase;
 
 class StockUploadRequestMappingTest extends TestCase
 {
+    // Tanpa ini data yang dibuat test TER-COMMIT permanen ke database kerja.
+    use \Illuminate\Foundation\Testing\DatabaseTransactions;
+
     public function test_logistik_can_submit_request_mapping_for_skipped_items(): void
     {
         $user = User::where('email', 'logistik@satoriagroup.co.id')->first();

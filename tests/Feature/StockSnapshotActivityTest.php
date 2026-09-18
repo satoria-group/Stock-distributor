@@ -19,15 +19,67 @@ use Tests\TestCase;
 
 class StockSnapshotActivityTest extends TestCase
 {
+    // Tanpa ini, data yang dibuat test ini TER-COMMIT permanen ke database
+    // kerja — dan sisanya menabrak index unik pada run berikutnya.
+    use \Illuminate\Foundation\Testing\DatabaseTransactions;
+
+    /**
+     * Ambil-atau-buat DistributorItem dengan aman terhadap baris soft-deleted.
+     *
+     * firstOrCreate() mengabaikan baris ter-soft-delete, sedangkan index unik
+     * di database tetap mencakupnya — insert-nya ditolak padahal menurut
+     * Eloquent barisnya "tidak ada".
+     */
+    protected function itemOrRestore(int $distributorId, string $name, array $attrs = []): DistributorItem
+    {
+        $existing = DistributorItem::withTrashed()
+            ->where('distributor_id', $distributorId)
+            ->whereRaw('LOWER(TRIM(item_name)) = ?', [mb_strtolower(trim($name))])
+            ->first();
+
+        if ($existing) {
+            if ($existing->trashed()) {
+                $existing->restore();
+            }
+            if ($attrs !== []) {
+                $existing->update($attrs);
+            }
+
+            return $existing;
+        }
+
+        return DistributorItem::create(array_merge([
+            'distributor_id' => $distributorId,
+            'item_name' => $name,
+        ], $attrs));
+    }
+
     public function test_email_import_logs_automation_activity(): void
     {
-        $distributor = Distributor::firstOrCreate([
-            'distributor_code' => 'TEST-ACT-01',
-        ], [
-            'name' => 'PT Test Activity Distributor',
-            'is_active' => true,
-            'sender_email' => 'sender@testdist.co.id',
-        ]);
+        // withTrashed: Distributor juga memakai SoftDeletes, sementara index
+        // unik distributor_code mencakup baris terhapus. firstOrCreate biasa
+        // tidak menemukannya lalu gagal insert.
+        $distributor = Distributor::withTrashed()
+            ->where('distributor_code', 'TEST-ACT-01')
+            ->first();
+
+        if ($distributor) {
+            if ($distributor->trashed()) {
+                $distributor->restore();
+            }
+            $distributor->update([
+                'name' => 'PT Test Activity Distributor',
+                'is_active' => true,
+                'sender_email' => 'sender@testdist.co.id',
+            ]);
+        } else {
+            $distributor = Distributor::create([
+                'distributor_code' => 'TEST-ACT-01',
+                'name' => 'PT Test Activity Distributor',
+                'is_active' => true,
+                'sender_email' => 'sender@testdist.co.id',
+            ]);
+        }
 
         $ns = NetsuiteItem::firstOrCreate([
             'netsuite_id' => 'NS-ACT-01',
@@ -36,10 +88,7 @@ class StockSnapshotActivityTest extends TestCase
             'default_satuan' => 'BOTOL',
         ]);
 
-        $distItem = DistributorItem::firstOrCreate([
-            'distributor_id' => $distributor->id,
-            'item_name' => 'ITEM ACTIVITY TEST 1',
-        ], [
+        $distItem = $this->itemOrRestore($distributor->id, 'ITEM ACTIVITY TEST 1', [
             'satuan' => 'BOTOL',
             'netsuite_item_id' => $ns->id,
         ]);
@@ -164,10 +213,7 @@ class StockSnapshotActivityTest extends TestCase
             'default_satuan' => 'BOTOL',
         ]);
 
-        $item = DistributorItem::firstOrCreate([
-            'distributor_id' => $distributor->id,
-            'item_name' => 'ITEM MANUAL SAVE TEST',
-        ], [
+        $item = $this->itemOrRestore($distributor->id, 'ITEM MANUAL SAVE TEST', [
             'satuan' => 'BOTOL',
             'netsuite_item_id' => $ns->id,
         ]);

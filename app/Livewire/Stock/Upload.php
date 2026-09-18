@@ -53,17 +53,29 @@ class Upload extends Component
     public array $rows = [];
 
     /**
-     * distributor_item_id yang secara eksplisit dihapus pengguna dari grid dan
-     * karenanya harus ikut dihapus dari database saat menyimpan.
+     * Identitas sebuah baris grid: item + batch.
+     *
+     * Sejak stok dicatat per batch, distributor_item_id saja TIDAK LAGI unik —
+     * satu item bisa punya beberapa batch pada tanggal yang sama. Setiap tempat
+     * yang dulu memakai item id sebagai kunci harus memakai ini.
+     */
+    public static function rowKey(int|string $itemId, ?string $batch): string
+    {
+        return $itemId.'|'.mb_strtoupper(trim(preg_replace('/\s+/', ' ', (string) $batch) ?? ''));
+    }
+
+    /**
+     * Kunci baris (item|batch) yang secara eksplisit dihapus pengguna dari grid
+     * dan karenanya harus ikut dihapus dari database saat menyimpan.
      *
      * Sengaja memakai daftar eksplisit, bukan "hapus yang tidak ada di grid":
      * grid sering hanya memuat sebagian data (import melewati item yang belum
      * ter-mapping), sehingga rekonsiliasi otomatis bisa menghapus baris yang
      * tidak pernah dilihat pengguna.
      *
-     * @var array<int, int>
+     * @var array<int, string>
      */
-    public array $removedItemIds = [];
+    public array $removedRowKeys = [];
 
     public $file = null;
 
@@ -240,7 +252,7 @@ class Upload extends Component
         $this->tanggal = null;
         $this->distributorId = null;
         $this->rows = [];
-        $this->removedItemIds = [];
+        $this->removedRowKeys = [];
         $this->skippedItems = [];
         $this->skippedRowsData = [];
     }
@@ -272,7 +284,7 @@ class Upload extends Component
 
         $this->skippedItems = [];
         $this->skippedRowsData = [];
-        $this->removedItemIds = [];
+        $this->removedRowKeys = [];
 
         if ($existing->isEmpty()) {
             $this->rows = [];
@@ -447,7 +459,11 @@ class Upload extends Component
         // dan app() di dalam loop berarti resolusi container sebanyak itu pula.
         $importService = app(\App\Services\StockImportService::class);
 
+        $parsedRows = [];
+        $excelRow = 1; // baris 1 = header
+
         foreach ($bodyRows as $r) {
+            $excelRow++;
             $itemName = trim((string) ($r[$col['Distributor Item Name']] ?? ''));
             if ($itemName === '' || strtoupper($itemName) === 'XXXXX XXXX') {
                 continue;
@@ -481,24 +497,58 @@ class Upload extends Component
                     $skippedRowsData[$key]['expired_date'] = $this->mergeExpiredDates($skippedRowsData[$key]['expired_date'] ?? null, $edFormatted);
                 }
 
+                // Ikut divalidasi walau tidak disimpan — lihat catatan pada
+                // StockImportService::groupRowsByItemAndBatch().
+                $parsedRows[] = [
+                    'item_id' => 'x'.$key,
+                    'item_name' => $itemName,
+                    'qty' => $qty,
+                    'satuan' => $satuan,
+                    'ed' => $ed,
+                    'batch' => $batch,
+                    'excel_row' => $excelRow,
+                    'save' => false,
+                ];
+
                 continue;
             }
 
-            if (isset($rows[$distItem->id])) {
-                $rows[$distItem->id]['quantity'] += $qty;
-                $rows[$distItem->id]['batch_no'] = $this->mergeBatchNumbers($rows[$distItem->id]['batch_no'] ?? null, $batch);
-                $rows[$distItem->id]['expired_date'] = $this->mergeExpiredDates($rows[$distItem->id]['expired_date'] ?? null, $edFormatted);
-            } else {
-                $rows[$distItem->id] = [
-                    'distributor_item_id' => $distItem->id,
-                    'item_name' => $distItem->item_name,
-                    'satuan' => $satuan ?: $distItem->satuan,
-                    'quantity' => $qty,
-                    'expired_date' => $edFormatted,
-                    'batch_no' => $batch ?: null,
-                    'mapped' => $distItem->isMapped(),
-                ];
+            $parsedRows[] = [
+                'item_id' => $distItem->id,
+                'item_name' => $distItem->item_name,
+                'qty' => $qty,
+                'satuan' => $satuan ?: $distItem->satuan,
+                'ed' => $ed,
+                'batch' => $batch,
+                'excel_row' => $excelRow,
+                'mapped' => $distItem->isMapped(),
+            ];
+        }
+
+        // Pengelompokan per (item, batch) memakai definisi yang sama persis
+        // dengan jalur otomasi email — termasuk dua aturan penolakannya.
+        $grouping = $importService->groupRowsByItemAndBatch($parsedRows);
+
+        if (! $grouping['ok']) {
+            foreach ($grouping['errors'] as $err) {
+                $this->addError('file', $err);
             }
+
+            return false;
+        }
+
+        // Grid memakai ED berformat d/m/Y; pengelompokan bekerja dalam ISO.
+        $rows = [];
+        foreach ($grouping['rows'] as $gKey => $g) {
+            $rows[$gKey] = [
+                'distributor_item_id' => $g['distributor_item_id'],
+                'item_name' => $g['item_name'],
+                'satuan' => $g['satuan'],
+                'quantity' => $g['quantity'],
+                'expired_date' => $g['expired_date'] ? \Carbon\Carbon::parse($g['expired_date'])->format('d/m/Y') : null,
+                'batch_no' => $g['batch_no'],
+                'mapped' => true,
+            ];
         }
 
         $effectiveTanggal = $tanggal ?? $this->tanggal ?? now()->toDateString();
@@ -529,7 +579,7 @@ class Upload extends Component
         $this->rows = array_values($rows);
         $this->skippedItems = array_values(array_unique($skipped));
         $this->skippedRowsData = array_values($skippedRowsData);
-        $this->removedItemIds = [];
+        $this->removedRowKeys = [];
         $this->dispatch('rows-loaded', rows: $this->rows);
         $this->dispatch('file-imported');
 
@@ -549,7 +599,7 @@ class Upload extends Component
         $this->distributorId = $pending['distributor_id'];
         $this->skippedItems = $pending['skipped'];
         $this->skippedRowsData = $pending['skipped_rows_data'];
-        $this->removedItemIds = [];
+        $this->removedRowKeys = [];
         $this->replaceExistingSnapshot = ($mode !== 'merge');
 
         if ($mode === 'merge') {
@@ -559,29 +609,31 @@ class Upload extends Component
                 ->where('distributor_id', $this->distributorId)
                 ->get();
 
-            $mergedRows = $pending['new_rows']; // keyed by distributor_item_id
+            // Di-key per (item|batch). Penggabungan hanya terjadi bila batch-nya
+            // memang sama — batch berbeda tetap berdiri sebagai baris sendiri,
+            // bukan dilebur seperti sebelumnya.
+            $mergedRows = $pending['new_rows'];
 
             foreach ($existingEntries as $entry) {
                 if (! $entry->distributorItem?->isMapped()) {
                     continue;
                 }
+
                 $itemId = $entry->distributor_item_id;
-                if (isset($mergedRows[$itemId])) {
-                    $mergedRows[$itemId]['quantity'] += (float) $entry->quantity;
-                    $mergedRows[$itemId]['batch_no'] = $this->mergeBatchNumbers($entry->batch_no, $mergedRows[$itemId]['batch_no'] ?? null);
-                    $mergedRows[$itemId]['expired_date'] = $this->mergeExpiredDates(
-                        optional($entry->expired_date)->format('d/m/Y'),
-                        $mergedRows[$itemId]['expired_date'] ?? null
-                    );
+                $key = self::rowKey($itemId, $entry->batch_no);
+
+                if (isset($mergedRows[$key])) {
+                    // Batch identik -> satu tumpukan stok yang sama, dijumlah.
+                    $mergedRows[$key]['quantity'] += (float) $entry->quantity;
                 } else {
-                    $mergedRows[$itemId] = [
+                    $mergedRows[$key] = [
                         'distributor_item_id' => $itemId,
                         'item_name' => $entry->distributorItem?->item_name ?? ('Item ID #'.$itemId),
                         'satuan' => $entry->satuan ?: ($entry->distributorItem?->satuan ?? 'PCS'),
                         'quantity' => (float) $entry->quantity,
                         'expired_date' => optional($entry->expired_date)->format('d/m/Y'),
                         'batch_no' => $entry->batch_no,
-                        'mapped' => $entry->distributorItem?->isMapped() ?? false,
+                        'mapped' => true,
                     ];
                 }
             }
@@ -774,7 +826,13 @@ class Upload extends Component
             return;
         }
 
-        $already = collect($this->rows)->firstWhere('distributor_item_id', $item->id);
+        // Baris baru selalu berbatch kosong. Kalau sudah ada satu baris item ini
+        // yang batch-nya juga masih kosong, menambah lagi hanya menghasilkan
+        // dua baris kembar yang bentrok saat disimpan.
+        $emptyBatchKey = self::rowKey($item->id, null);
+        $already = collect($this->rows)
+            ->first(fn ($r) => self::rowKey((int) ($r['distributor_item_id'] ?? 0), $r['batch_no'] ?? null) === $emptyBatchKey);
+
         if ($already) {
             return;
         }
@@ -800,14 +858,18 @@ class Upload extends Component
      * dan mendorong $rows kembali ke grid akan menimpa editan sel yang belum
      * disimpan pada baris-baris lain.
      */
-    public function markRowRemoved(int $distributorItemId): void
+    public function markRowRemoved(int $distributorItemId, ?string $batchNo = null): void
     {
-        if (! in_array($distributorItemId, $this->removedItemIds, true)) {
-            $this->removedItemIds[] = $distributorItemId;
+        // Batch ikut menentukan baris mana yang dihapus. Tanpa itu, menghapus
+        // satu batch akan membuang SEMUA batch milik item tersebut.
+        $key = self::rowKey($distributorItemId, $batchNo);
+
+        if (! in_array($key, $this->removedRowKeys, true)) {
+            $this->removedRowKeys[] = $key;
         }
 
         $this->rows = collect($this->rows)
-            ->reject(fn ($r) => (int) ($r['distributor_item_id'] ?? 0) === $distributorItemId)
+            ->reject(fn ($r) => self::rowKey((int) ($r['distributor_item_id'] ?? 0), $r['batch_no'] ?? null) === $key)
             ->values()
             ->all();
     }
@@ -819,7 +881,7 @@ class Upload extends Component
      */
     public function updatedTanggal(): void
     {
-        $this->removedItemIds = [];
+        $this->removedRowKeys = [];
         $this->replaceExistingSnapshot = false;
         if ($this->tanggal && preg_match('/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/', trim($this->tanggal), $m)) {
             $this->tanggal = sprintf('%04d-%02d-%02d', $m[3], $m[2], $m[1]);
@@ -829,7 +891,7 @@ class Upload extends Component
 
     public function updatedDistributorId(): void
     {
-        $this->removedItemIds = [];
+        $this->removedRowKeys = [];
         $this->replaceExistingSnapshot = false;
     }
 
@@ -858,9 +920,11 @@ class Upload extends Component
             ->where('distributor_id', $this->distributorId)
             ->exists();
 
-        $savedItemIds = [];
+        // Kunci baris (item|batch) yang benar-benar tersimpan, dipakai untuk
+        // menentukan apa yang boleh dihapus.
+        $savedRowKeys = [];
 
-        DB::transaction(function () use ($rows, $isExistingSnapshot, &$mappedCount, &$unmappedCount, &$deletedCount, &$savedItemIds) {
+        DB::transaction(function () use ($rows, $isExistingSnapshot, &$mappedCount, &$unmappedCount, &$deletedCount, &$savedRowKeys) {
             foreach ($rows as $row) {
                 if (empty($row['distributor_item_id'])) {
                     continue;
@@ -877,10 +941,15 @@ class Upload extends Component
                     continue;
                 }
 
+                $batchNo = ! empty($row['batch_no']) ? trim((string) $row['batch_no']) : null;
+
                 StockEntry::updateOrCreate(
                     [
                         'tanggal' => $this->tanggal,
                         'distributor_item_id' => $item->id,
+                        // Batch bagian dari identitas: dua batch pada item &
+                        // tanggal yang sama adalah dua baris, bukan timpa.
+                        'batch_no' => $batchNo,
                     ],
                     [
                         'distributor_id' => $this->distributorId,
@@ -892,12 +961,11 @@ class Upload extends Component
                         // penyimpanan gagal dengan error SQL, bukan sekadar
                         // satu sel yang kosong.
                         'expired_date' => ! empty($row['expired_date']) ? $this->parseExcelDate($row['expired_date']) : null,
-                        'batch_no' => $row['batch_no'] ?: null,
                         'uploaded_by' => Auth::id(),
                     ]
                 );
 
-                $savedItemIds[] = $item->id;
+                $savedRowKeys[] = self::rowKey($item->id, $batchNo);
                 $item->isMapped() ? $mappedCount++ : $unmappedCount++;
             }
 
@@ -908,30 +976,31 @@ class Upload extends Component
             // menghapus sebuah baris lalu menambahkannya kembali sebelum
             // menyimpan. Tanpa pengecualian ini baris tersebut akan di-upsert
             // lalu langsung dihapus lagi pada transaksi yang sama.
-            $idsToDelete = array_values(array_diff($this->removedItemIds, $savedItemIds));
+            $keysToDelete = array_values(array_diff($this->removedRowKeys, $savedRowKeys));
 
-            // Mode "Timpa/Revisi": berkas baru adalah kebenaran UTUH untuk
-            // tanggal + distributor ini, jadi SKU lama yang tidak ada di berkas
-            // baru ikut dibuang. Inilah yang membedakannya dari mode "Gabung";
-            // tanpa ini keduanya menghasilkan data yang sama persis.
-            if ($this->replaceExistingSnapshot) {
-                $staleIds = StockEntry::query()
-                    ->where('tanggal', $this->tanggal)
-                    ->where('distributor_id', $this->distributorId)
-                    ->whereNotIn('distributor_item_id', $savedItemIds ?: [0])
-                    ->pluck('distributor_item_id')
-                    ->all();
+            // Baris kandidat dievaluasi per (item|batch), bukan per item, supaya
+            // menghapus satu batch tidak ikut membuang batch lain milik item
+            // yang sama.
+            $candidates = StockEntry::query()
+                ->where('tanggal', $this->tanggal)
+                ->where('distributor_id', $this->distributorId)
+                ->get();
 
-                $idsToDelete = array_values(array_unique(array_merge($idsToDelete, $staleIds)));
-            }
+            $toDelete = $candidates->filter(function (StockEntry $e) use ($keysToDelete, $savedRowKeys) {
+                $key = self::rowKey($e->distributor_item_id, $e->batch_no);
 
-            if ($idsToDelete !== []) {
-                $toDelete = StockEntry::query()
-                    ->where('tanggal', $this->tanggal)
-                    ->where('distributor_id', $this->distributorId)
-                    ->whereIn('distributor_item_id', $idsToDelete)
-                    ->get();
+                if (in_array($key, $keysToDelete, true)) {
+                    return true;
+                }
 
+                // Mode "Timpa/Revisi": berkas baru adalah kebenaran UTUH untuk
+                // tanggal + distributor ini, jadi baris lama yang tidak ada di
+                // berkas baru ikut dibuang. Inilah yang membedakannya dari mode
+                // "Gabung"; tanpa ini keduanya menghasilkan data yang sama.
+                return $this->replaceExistingSnapshot && ! in_array($key, $savedRowKeys, true);
+            });
+
+            if ($toDelete->isNotEmpty()) {
                 foreach ($toDelete as $entry) {
                     Gate::authorize('delete', $entry);
                     $entry->delete();
@@ -1191,8 +1260,8 @@ class Upload extends Component
             ['Distributor Item Name', 'WAJIB', 'DEXTROSE 5% 500 ml', 'Nama item produk sesuai yang terdaftar di sistem distributor.'],
             ['Quantity', 'WAJIB', '1200', 'Jumlah stok akhir fisik/sistem distributor (hanya angka numerik).'],
             ['Satuan', 'OPSIONAL', 'BOTOL / PCH / BOX', 'Satuan kemasan. Jika kosong, sistem akan menggunakan satuan default dari Master Produk.'],
-            ['ED', 'DISARANKAN', '31/12/2027', 'Tanggal kedaluwarsa (Expired Date) produk (format DD/MM/YYYY, contoh: 31/12/2027).'],
-            ['Batch No', 'DISARANKAN', '026C05', 'Nomor batch produksi fisik obat/alkes untuk ketertelusuran produk di gudang.'],
+            ['ED', 'DISARANKAN', '31/12/2027', 'Tanggal kedaluwarsa (Expired Date) produk (format DD/MM/YYYY, contoh: 31/12/2027). Satu nomor batch hanya boleh punya SATU tanggal ED.'],
+            ['Batch No', 'WAJIB', '026C05', 'Nomor batch produksi. Setiap baris WAJIB diisi. Satu item boleh punya beberapa baris dengan batch berbeda — tiap batch dicatat terpisah, tidak digabung.'],
         ];
         $guideSheet->fromArray($colGuideData, null, 'A5');
         $guideEnd = 4 + count($colGuideData);
@@ -1220,6 +1289,9 @@ class Upload extends Component
             "3. Baris 2 & 3 pada sheet Template adalah format contoh (placeholder) yang dapat langsung diganti dengan data Anda.",
             "4. Selalu periksa kode pada sheet 'Daftar Distributor' agar tidak terjadi penolakan akibat kode distributor salah.",
             "5. Satu file hanya boleh berisi SATU kode distributor dan SATU tanggal (format DD/MM/YYYY).",
+            "5a. Kolom 'Batch No' WAJIB diisi pada setiap baris. Berkas dengan batch kosong akan ditolak.",
+            "5b. Satu item boleh ditulis beberapa baris dengan nomor batch berbeda — setiap batch disimpan sebagai baris tersendiri, TIDAK digabung.",
+            "5c. Nomor batch yang sama WAJIB memakai tanggal ED yang sama. Bila berbeda, berkas ditolak untuk dikoreksi.",
             "6. Jika terdapat item baru yang belum terdaftar di Satoria, sistem akan memberikan opsi pemetaan atau permintaan mapping produk baru.",
         ];
         foreach ($notes as $idx => $n) {
@@ -1377,7 +1449,13 @@ class Upload extends Component
             'availableItems' => $this->distributorId
                 ? DistributorItem::mapped()
                     ->where('distributor_id', $this->distributorId)
-                    ->whereNotIn('id', collect($this->rows)->pluck('distributor_item_id')->all() ?: [0])
+                    // Hanya sembunyikan item yang SUDAH punya baris berbatch
+                    // kosong di grid. Item yang sudah ada dengan batch terisi
+                    // tetap boleh dipilih lagi — justru itu cara menambahkan
+                    // batch kedua secara manual.
+                    ->whereNotIn('id', collect($this->rows)
+                        ->filter(fn ($r) => trim((string) ($r['batch_no'] ?? '')) === '')
+                        ->pluck('distributor_item_id')->all() ?: [0])
                     ->orderBy('item_name')
                     ->get()
                 : collect(),

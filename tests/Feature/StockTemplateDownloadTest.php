@@ -10,6 +10,9 @@ use Tests\TestCase;
 
 class StockTemplateDownloadTest extends TestCase
 {
+    // Tanpa ini data yang dibuat test TER-COMMIT permanen ke database kerja.
+    use \Illuminate\Foundation\Testing\DatabaseTransactions;
+
     public function test_template_download_has_correct_format_and_placeholders(): void
     {
         $user = User::where('email', 'logistik@satoriagroup.co.id')->first() ?? User::first();

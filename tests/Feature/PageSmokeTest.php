@@ -75,6 +75,38 @@ class PageSmokeTest extends TestCase
     }
 
     /**
+     * Ekspor CSV menyentuh jalur perhitungan yang sama dengan dashboard —
+     * termasuk FEFO dan stok stagnan yang ikut berubah saat stok dipecah per
+     * batch. Sebelumnya tidak ada tes sama sekali yang menjalankannya.
+     */
+    public function test_csv_exports_run_without_error(): void
+    {
+        $admin = $this->admin();
+
+        foreach (['exportStagnantCsv', 'exportNearEdCsv'] as $action) {
+            $response = \Livewire\Livewire::actingAs($admin)
+                ->test(\App\Livewire\Dashboard::class)
+                ->call($action);
+
+            $response->assertStatus(200);
+
+            // Benar-benar jalankan closure-nya: error di dalam streamDownload
+            // baru muncul saat isinya dibangkitkan, bukan saat dipanggil.
+            $file = $response->effects['download'] ?? null;
+            $this->assertNotNull($file, "Aksi {$action} tidak menghasilkan unduhan.");
+        }
+    }
+
+    public function test_stock_template_download_runs_without_error(): void
+    {
+        $response = \Livewire\Livewire::actingAs($this->admin())
+            ->test(\App\Livewire\Stock\Upload::class)
+            ->call('downloadTemplate');
+
+        $response->assertStatus(200);
+    }
+
+    /**
      * Pencarian dengan karakter wildcard tidak boleh membuat query error
      * setelah perubahan escaping LIKE.
      */

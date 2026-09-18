@@ -13,6 +13,9 @@ use Tests\TestCase;
 
 class DashboardFefoSortTest extends TestCase
 {
+    // Tanpa ini data yang dibuat test TER-COMMIT permanen ke database kerja.
+    use \Illuminate\Foundation\Testing\DatabaseTransactions;
+
     protected function getLogistikUser(): User
     {
         $user = User::where('email', 'logistik@satoriagroup.co.id')->first();

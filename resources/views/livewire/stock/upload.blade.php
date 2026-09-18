@@ -611,10 +611,13 @@
         function actionRenderer(params) {
             if (!params.data || !params.data.distributor_item_id) return '';
             const itemId = params.data.distributor_item_id;
+            // Batch ikut dikirim: satu item bisa punya beberapa baris batch,
+            // jadi id item saja tidak cukup untuk menunjuk baris yang dihapus.
+            const batch = String(params.data.batch_no ?? '').replace(/'/g, "\\'");
             return `
                 <div class="flex items-center justify-center h-full">
                     <button type="button"
-                            onclick="window.deleteGridRow(${itemId})"
+                            onclick="window.deleteGridRow(${itemId}, '${batch}')"
                             title="Hapus baris ini dari grid"
                             class="delete-btn inline-flex items-center justify-center text-red-500 hover:text-red-700 hover:bg-red-50 p-1.5 rounded transition cursor-pointer">
                         <svg width="15" height="15" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="width:15px;height:15px;flex-shrink:0;">
@@ -795,15 +798,20 @@
             const isMapped = selectedOpt.getAttribute('data-mapped') === '1';
 
             // Check if already in grid
+            // Baris baru selalu berbatch kosong, jadi yang dicek hanya baris
+            // item ini yang batch-nya juga masih kosong. Item yang sudah ada
+            // dengan batch terisi tetap boleh ditambah — itulah cara menambah
+            // batch kedua secara manual.
+            const emptyKey = window.gridRowKey(itemId, '');
             let exists = false;
             gridApi.forEachNode(node => {
-                if (node.data && Number(node.data.distributor_item_id) === itemId) {
+                if (node.data && window.gridRowKey(node.data.distributor_item_id, node.data.batch_no) === emptyKey) {
                     exists = true;
                 }
             });
 
             if (exists) {
-                alert('Item ini sudah ada di dalam grid.');
+                alert('Item ini sudah ada di grid dengan Batch No yang masih kosong. Isi dulu batch-nya sebelum menambah baris baru untuk item yang sama.');
                 return;
             }
 
@@ -830,11 +838,17 @@
             selectEl.value = '';
         };
 
-        window.deleteGridRow = function(distributorItemId) {
+        // Identitas baris = item + batch (disamakan dengan Upload::rowKey() di server).
+        window.gridRowKey = function(itemId, batchNo) {
+            return String(itemId) + '|' + String(batchNo ?? '').trim().replace(/\s+/g, ' ').toUpperCase();
+        };
+
+        window.deleteGridRow = function(distributorItemId, batchNo) {
             if (!gridApi) return;
+            const targetKey = window.gridRowKey(distributorItemId, batchNo);
             let rowToDelete = null;
             gridApi.forEachNode(node => {
-                if (node.data && Number(node.data.distributor_item_id) === Number(distributorItemId)) {
+                if (node.data && window.gridRowKey(node.data.distributor_item_id, node.data.batch_no) === targetKey) {
                     rowToDelete = node.data;
                 }
             });
@@ -850,7 +864,7 @@
                 // hanya hilang dari grid lalu muncul lagi setelah disimpan.
                 // markRowRemoved juga membuang baris dari $rows sehingga
                 // dropdown "tambah item" kembali memunculkannya.
-                $wire.call('markRowRemoved', Number(distributorItemId));
+                $wire.call('markRowRemoved', Number(distributorItemId), batchNo ?? null);
             }
         };
 

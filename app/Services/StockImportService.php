@@ -140,6 +140,120 @@ class StockImportService
         return $negative ? -$result : $result;
     }
 
+    /**
+     * Normalisasi nomor batch untuk dipakai sebagai bagian identitas baris.
+     * Spasi berlebih dan beda huruf besar-kecil TIDAK boleh menghasilkan dua
+     * batch berbeda — "IGMP-02" dan "igmp-02 " adalah batch yang sama.
+     */
+    public function normalizeBatch(?string $batch): string
+    {
+        return mb_strtoupper(trim(preg_replace('/\s+/', ' ', (string) $batch) ?? ''));
+    }
+
+    /**
+     * Kelompokkan baris Excel per (item, batch) — BUKAN per item saja.
+     *
+     * Sebelumnya seluruh baris satu item dilebur menjadi satu: kuantitas
+     * dijumlah, nomor batch disambung koma, dan ED diambil yang paling awal.
+     * Akibatnya identitas batch hilang dan FEFO salah — stok dengan ED 2029
+     * ikut ditandai mendekati kedaluwarsa hanya karena satu batch lain di item
+     * yang sama ber-ED 2028.
+     *
+     * Dua aturan penolakan (keputusan pengguna, keduanya menolak SELURUH berkas
+     * agar tidak ada data setengah benar yang diam-diam tersimpan):
+     *
+     *  A. Batch No kosong  -> ditolak. Batch kini bagian dari identitas baris;
+     *     tanpa itu dua baris berbeda tidak bisa dibedakan.
+     *  B. Batch sama tapi ED berbeda -> ditolak. Secara farmasi satu batch
+     *     hanya punya satu ED, jadi ini hampir pasti salah input.
+     *
+     * Baris dengan (item, batch) yang benar-benar identik tetap dijumlahkan —
+     * itu memang satu tumpukan stok yang sama.
+     *
+     * Baris yang itemnya belum ter-mapping tetap IKUT DIVALIDASI (tandai
+     * 'save' => false) walau tidak masuk hasil. Kalau tidak, berkas dengan
+     * batch kosong pada item belum ter-mapping akan lolos hari ini lalu ditolak
+     * begitu item tersebut dipetakan — kegagalan yang muncul belakangan dan
+     * membingungkan.
+     *
+     * @param  array<int, array{item_id:int|string, item_name:string, qty:float, satuan:?string, ed:?string, batch:?string, excel_row:int, save?:bool}>  $rows
+     * @return array{ok: bool, rows: array<string, array>, errors: array<int, string>}
+     */
+    public function groupRowsByItemAndBatch(array $rows): array
+    {
+        $grouped = [];
+        $missingBatch = [];
+        $edConflicts = [];
+
+        foreach ($rows as $r) {
+            $batch = $this->normalizeBatch($r['batch'] ?? null);
+            $save = $r['save'] ?? true;
+
+            if ($batch === '') {
+                $missingBatch[] = "baris {$r['excel_row']} ({$r['item_name']})";
+
+                continue;
+            }
+
+            $key = $r['item_id'].'|'.$batch;
+
+            if (! $save) {
+                // Hanya divalidasi (deteksi bentrok ED), tidak ikut disimpan.
+                $key = 'unmapped:'.$key;
+            }
+
+            if (! isset($grouped[$key])) {
+                $grouped[$key] = [
+                    'distributor_item_id' => $r['item_id'],
+                    'item_name' => $r['item_name'],
+                    'quantity' => $r['qty'],
+                    'satuan' => $r['satuan'] ?: null,
+                    'expired_date' => $r['ed'],
+                    'batch_no' => trim((string) $r['batch']),
+                    'excel_row' => $r['excel_row'],
+                    'save' => $save,
+                ];
+
+                continue;
+            }
+
+            // Batch yang sama wajib punya ED yang sama. Null dianggap berbeda
+            // dari tanggal terisi: satu baris menyebut ED dan satunya tidak
+            // adalah ketidakcocokan yang perlu dikonfirmasi manusia.
+            if ($grouped[$key]['expired_date'] !== $r['ed']) {
+                $first = $grouped[$key]['expired_date'] ?? '(kosong)';
+                $second = $r['ed'] ?? '(kosong)';
+                $edConflicts[] = "{$r['item_name']} batch {$batch}: baris {$grouped[$key]['excel_row']} ED {$first} vs baris {$r['excel_row']} ED {$second}";
+
+                continue;
+            }
+
+            $grouped[$key]['quantity'] += $r['qty'];
+        }
+
+        $errors = [];
+
+        if ($missingBatch !== []) {
+            $errors[] = 'Kolom "Batch No" wajib diisi pada setiap baris data ('
+                .count($missingBatch).' baris kosong): '
+                .implode('; ', array_slice($missingBatch, 0, 5))
+                .(count($missingBatch) > 5 ? ' (dan '.(count($missingBatch) - 5).' baris lainnya)' : '').'.';
+        }
+
+        if ($edConflicts !== []) {
+            $errors[] = 'Nomor batch yang sama memiliki tanggal ED berbeda ('
+                .count($edConflicts).' kasus): '
+                .implode('; ', array_slice($edConflicts, 0, 5))
+                .(count($edConflicts) > 5 ? ' (dan '.(count($edConflicts) - 5).' kasus lainnya)' : '')
+                .'. Satu batch hanya boleh punya satu ED — mohon perbaiki berkasnya.';
+        }
+
+        // Baris yang hanya divalidasi dibuang dari hasil.
+        $savable = array_filter($grouped, fn ($g) => $g['save']);
+
+        return ['ok' => $errors === [], 'rows' => $savable, 'errors' => $errors];
+    }
+
     public function mergeBatchNumbers(?string $batch1, ?string $batch2): ?string
     {
         $b1 = trim((string) $batch1);
@@ -506,11 +620,13 @@ class StockImportService
             ->get()
             ->keyBy(fn ($i) => mb_strtolower(trim(preg_replace('/\s+/', ' ', $i->item_name))));
 
-        $validRowsToSave = [];
+        $parsedRows = [];
         $skippedItems = [];
         $totalValidDataRows = 0;
+        $excelRow = 1; // baris 1 = header
 
         foreach ($bodyRows as $r) {
+            $excelRow++;
             $itemName = trim((string) ($r[$col['Distributor Item Name']] ?? ''));
             if ($itemName === '' || strtoupper($itemName) === 'XXXXX XXXX') {
                 continue;
@@ -534,24 +650,55 @@ class StockImportService
                     'expired_date' => $ed,
                     'batch_no' => $batch ?: null,
                 ];
+
+                // Ikut divalidasi walau tidak disimpan — lihat catatan pada
+                // groupRowsByItemAndBatch().
+                $parsedRows[] = [
+                    'item_id' => 'x'.mb_strtolower($itemName),
+                    'item_name' => $itemName,
+                    'qty' => $qty,
+                    'satuan' => $satuan,
+                    'ed' => $ed,
+                    'batch' => $batch,
+                    'excel_row' => $excelRow,
+                    'save' => false,
+                ];
+
                 continue;
             }
 
-            $itemId = $distItem->id;
-            if (isset($validRowsToSave[$itemId])) {
-                $validRowsToSave[$itemId]['quantity'] += $qty;
-                $validRowsToSave[$itemId]['batch_no'] = $this->mergeBatchNumbers($validRowsToSave[$itemId]['batch_no'] ?? null, $batch);
-                $validRowsToSave[$itemId]['expired_date'] = $this->mergeExpiredDates($validRowsToSave[$itemId]['expired_date'] ?? null, $ed);
-            } else {
-                $validRowsToSave[$itemId] = [
-                    'distributor_item_id' => $itemId,
-                    'quantity' => $qty,
-                    'satuan' => $satuan ?: $distItem->satuan,
-                    'expired_date' => $ed,
-                    'batch_no' => $batch ?: null,
-                ];
-            }
+            $parsedRows[] = [
+                'item_id' => $distItem->id,
+                'item_name' => $itemName,
+                'qty' => $qty,
+                'satuan' => $satuan ?: $distItem->satuan,
+                'ed' => $ed,
+                'batch' => $batch,
+                'excel_row' => $excelRow,
+            ];
         }
+
+        // Pengelompokan per (item, batch) + dua aturan penolakan.
+        $grouping = $this->groupRowsByItemAndBatch($parsedRows);
+
+        if (! $grouping['ok']) {
+            return [
+                'success' => false,
+                'status' => 'invalid_batch_data',
+                'distributor' => $distributor,
+                'distributor_code' => $distributorCode,
+                'distributor_id' => $distributor->id,
+                'tanggal' => $tanggal,
+                'total_rows' => $totalValidDataRows,
+                'imported_rows' => 0,
+                'skipped_rows' => 0,
+                'skipped_items' => [],
+                'error' => implode(' ', $grouping['errors']),
+                'details' => ['batch_errors' => $grouping['errors']],
+            ];
+        }
+
+        $validRowsToSave = $grouping['rows'];
 
         if ($totalValidDataRows === 0) {
             return [
@@ -579,6 +726,10 @@ class StockImportService
                         [
                             'tanggal' => $tanggal,
                             'distributor_item_id' => $row['distributor_item_id'],
+                            // Batch kini bagian dari identitas snapshot: dua
+                            // batch pada item & tanggal yang sama adalah dua
+                            // baris berbeda, bukan saling menimpa.
+                            'batch_no' => $row['batch_no'],
                         ],
                         [
                             'distributor_id' => $distributor->id,

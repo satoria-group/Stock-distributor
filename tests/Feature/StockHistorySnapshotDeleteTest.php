@@ -8,11 +8,45 @@ use App\Models\DistributorItem;
 use App\Models\StockEntry;
 use App\Models\User;
 use Illuminate\Auth\Access\AuthorizationException;
+use Illuminate\Foundation\Testing\DatabaseTransactions;
 use Livewire\Livewire;
 use Tests\TestCase;
 
 class StockHistorySnapshotDeleteTest extends TestCase
 {
+    // Tanpa ini, seluruh data yang dibuat test ini TER-COMMIT permanen ke
+    // database kerja — dan sisa-sisanya menabrak index unik pada run berikutnya.
+    use DatabaseTransactions;
+
+    /**
+     * Ambil-atau-buat DistributorItem dengan aman terhadap baris soft-deleted.
+     *
+     * firstOrCreate() mengabaikan baris yang sudah di-soft-delete, sedangkan
+     * index unik di database tetap mencakupnya. Akibatnya insert-nya ditolak
+     * database padahal menurut Eloquent barisnya "tidak ada".
+     */
+    protected function itemOrRestore(int $distributorId, string $name, string $satuan = 'BTL'): DistributorItem
+    {
+        $existing = DistributorItem::withTrashed()
+            ->where('distributor_id', $distributorId)
+            ->whereRaw('LOWER(TRIM(item_name)) = ?', [mb_strtolower(trim($name))])
+            ->first();
+
+        if ($existing) {
+            if ($existing->trashed()) {
+                $existing->restore();
+            }
+
+            return $existing;
+        }
+
+        return DistributorItem::create([
+            'distributor_id' => $distributorId,
+            'item_name' => $name,
+            'satuan' => $satuan,
+        ]);
+    }
+
     protected function getLogistikUser(): User
     {
         $user = User::where('email', 'logistik@satoriagroup.co.id')->first();
@@ -48,10 +82,7 @@ class StockHistorySnapshotDeleteTest extends TestCase
 
         StockEntry::where('tanggal', $testDate)->where('distributor_id', $distributor->id)->forceDelete();
 
-        $item = DistributorItem::firstOrCreate(
-            ['distributor_id' => $distributor->id, 'item_name' => 'TEST SKU FOR DELETE MODAL'],
-            ['satuan' => 'BTL']
-        );
+        $item = $this->itemOrRestore($distributor->id, 'TEST SKU FOR DELETE MODAL', 'BTL');
 
         $entry = StockEntry::create([
             'distributor_id' => $distributor->id,
@@ -93,14 +124,8 @@ class StockHistorySnapshotDeleteTest extends TestCase
         StockEntry::where('tanggal', $testDate)->where('distributor_id', $distributor->id)->forceDelete();
         StockEntry::where('tanggal', $otherDate)->where('distributor_id', $distributor->id)->forceDelete();
 
-        $item1 = DistributorItem::firstOrCreate(
-            ['distributor_id' => $distributor->id, 'item_name' => 'TEST SKU 1 FOR DELETE'],
-            ['satuan' => 'BTL']
-        );
-        $item2 = DistributorItem::firstOrCreate(
-            ['distributor_id' => $distributor->id, 'item_name' => 'TEST SKU 2 FOR DELETE'],
-            ['satuan' => 'BOX']
-        );
+        $item1 = $this->itemOrRestore($distributor->id, 'TEST SKU 1 FOR DELETE', 'BTL');
+        $item2 = $this->itemOrRestore($distributor->id, 'TEST SKU 2 FOR DELETE', 'BOX');
 
         // Entries for testDate snapshot
         $entry1 = StockEntry::create([

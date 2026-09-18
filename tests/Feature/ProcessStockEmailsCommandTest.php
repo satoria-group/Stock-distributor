@@ -542,7 +542,15 @@ class ProcessStockEmailsCommandTest extends TestCase
         $this->assertStringContainsString('Silakan upload manual', $log->error_message);
     }
 
-    public function test_command_merges_multiple_batches_for_same_item_on_email_import(): void
+    /**
+     * Dua batch berbeda pada item yang sama harus tersimpan sebagai DUA baris
+     * terpisah, masing-masing dengan ED-nya sendiri.
+     *
+     * Sebelumnya keduanya dilebur: kuantitas dijumlah, nomor batch disambung
+     * koma, dan ED diambil yang paling awal — sehingga stok ber-ED 2028 ikut
+     * ditandai mendekati kedaluwarsa hanya karena batch lain ber-ED 2027.
+     */
+    public function test_command_keeps_batches_separate_on_email_import(): void
     {
         $code = 'DIST_MRG_' . uniqid();
         $dist = Distributor::create([
@@ -621,20 +629,185 @@ class ProcessStockEmailsCommandTest extends TestCase
         $this->app->instance(ImapService::class, $mock);
 
         $this->artisan('stock:process-emails')
-            ->expectsOutputToContain("BERHASIL: Diimpor 1 baris untuk {$code}")
+            ->expectsOutputToContain("BERHASIL: Diimpor 2 baris untuk {$code}")
             ->assertSuccessful();
 
-        // Verify single StockEntry with SUMMED quantity (50 + 30 = 80), MERGED batches, and EARLIEST ED (2027-06-30)
-        $entry = StockEntry::where('distributor_id', $dist->id)
+        $entries = StockEntry::where('distributor_id', $dist->id)
             ->where('tanggal', '2026-09-16')
             ->where('distributor_item_id', $item->id)
-            ->first();
+            ->get()
+            ->keyBy('batch_no');
 
-        $this->assertNotNull($entry);
-        $this->assertEquals(80.0, (float) $entry->quantity);
-        $this->assertStringContainsString('BATCH-001', $entry->batch_no);
-        $this->assertStringContainsString('BATCH-002', $entry->batch_no);
-        $this->assertEquals('2027-06-30', $entry->expired_date->toDateString());
+        $this->assertCount(2, $entries, 'Dua batch berbeda seharusnya jadi dua baris, bukan dilebur jadi satu.');
+
+        $this->assertEquals(50.0, (float) $entries['BATCH-001']->quantity);
+        $this->assertEquals('2028-12-31', $entries['BATCH-001']->expired_date->toDateString());
+
+        $this->assertEquals(30.0, (float) $entries['BATCH-002']->quantity);
+        $this->assertEquals('2027-06-30', $entries['BATCH-002']->expired_date->toDateString());
+
+        // Yang lama: satu baris qty 80, batch "BATCH-001, BATCH-002", ED 2027.
+        $this->assertDatabaseMissing('stock_entries', [
+            'distributor_item_id' => $item->id,
+            'tanggal' => '2026-09-16',
+            'batch_no' => 'BATCH-001, BATCH-002',
+        ]);
+    }
+
+    /**
+     * Batch No kosong menolak seluruh berkas — batch kini bagian dari identitas
+     * baris, jadi tanpa itu dua baris berbeda tidak bisa dibedakan.
+     */
+    public function test_command_rejects_email_when_batch_number_is_empty(): void
+    {
+        [$code, $dist, $item] = $this->makeBatchScenarioFixtures('DIST_NOBATCH_', 'nobatch@distributor.com');
+
+        $excelBytes = $this->buildBatchExcel($code, 'Produk Gabungan Test', [
+            ['qty' => 50, 'ed' => '31/12/2028', 'batch' => 'BATCH-001'],
+            ['qty' => 30, 'ed' => '30/06/2027', 'batch' => ''],   // <- kosong
+        ]);
+
+        $this->runCommandWithAttachment($excelBytes, '9911', 'nobatch@distributor.com');
+
+        $this->assertSame(0, StockEntry::where('distributor_item_id', $item->id)->count(),
+            'Berkas dengan batch kosong harus ditolak SELURUHNYA, tidak sebagian tersimpan.');
+
+        $log = StockEmailLog::where('email_uid', '9911')->latest()->first();
+        $this->assertSame('invalid_batch_data', $log->status);
+        $this->assertStringContainsString('Batch No', $log->error_message);
+    }
+
+    /**
+     * Nomor batch yang sama dengan ED berbeda hampir pasti salah input —
+     * secara farmasi satu batch hanya punya satu tanggal kedaluwarsa.
+     */
+    public function test_command_rejects_email_when_same_batch_has_conflicting_ed(): void
+    {
+        [$code, $dist, $item] = $this->makeBatchScenarioFixtures('DIST_EDCONF_', 'edconf@distributor.com');
+
+        $excelBytes = $this->buildBatchExcel($code, 'Produk Gabungan Test', [
+            ['qty' => 50, 'ed' => '31/12/2028', 'batch' => 'BATCH-SAMA'],
+            ['qty' => 30, 'ed' => '30/06/2027', 'batch' => 'BATCH-SAMA'],  // ED bentrok
+        ]);
+
+        $this->runCommandWithAttachment($excelBytes, '9912', 'edconf@distributor.com');
+
+        $this->assertSame(0, StockEntry::where('distributor_item_id', $item->id)->count());
+
+        $log = StockEmailLog::where('email_uid', '9912')->latest()->first();
+        $this->assertSame('invalid_batch_data', $log->status);
+        $this->assertStringContainsString('ED berbeda', $log->error_message);
+    }
+
+    /**
+     * Baris dengan (item, batch) yang benar-benar identik tetap dijumlahkan —
+     * itu memang satu tumpukan stok yang sama, bukan dua batch.
+     */
+    public function test_command_sums_rows_with_identical_item_and_batch(): void
+    {
+        [$code, $dist, $item] = $this->makeBatchScenarioFixtures('DIST_SAMEB_', 'sameb@distributor.com');
+
+        $excelBytes = $this->buildBatchExcel($code, 'Produk Gabungan Test', [
+            ['qty' => 500, 'ed' => '31/12/2028', 'batch' => 'BATCH-KEMBAR'],
+            ['qty' => 300, 'ed' => '31/12/2028', 'batch' => 'batch-kembar '], // beda huruf/spasi
+        ]);
+
+        $this->runCommandWithAttachment($excelBytes, '9913', 'sameb@distributor.com');
+
+        $entries = StockEntry::where('distributor_item_id', $item->id)->get();
+
+        $this->assertCount(1, $entries, 'Batch yang sama (beda huruf besar-kecil) harus dianggap satu.');
+        $this->assertEquals(800.0, (float) $entries->first()->quantity);
+    }
+
+    // ---------------------------------------------------------------
+    // Helper untuk skenario batch
+    // ---------------------------------------------------------------
+
+    private function makeBatchScenarioFixtures(string $prefix, string $senderEmail): array
+    {
+        $code = $prefix.uniqid();
+        $dist = Distributor::create([
+            'distributor_code' => $code,
+            'name' => 'Distributor Batch Test',
+            // Harus PERSIS sama dengan pengirim yang dipakai di test, kalau
+            // tidak importer menolaknya sebagai unauthorized_sender dan aturan
+            // batch tidak pernah tereksekusi.
+            'sender_email' => $senderEmail,
+            'is_active' => true,
+        ]);
+
+        $ns = NetsuiteItem::create([
+            'netsuite_id' => 'NS_'.uniqid(),
+            'netsuite_name' => 'Produk Gabungan Test',
+        ]);
+
+        $item = DistributorItem::create([
+            'distributor_id' => $dist->id,
+            'item_name' => 'Produk Gabungan Test',
+            'satuan' => 'BTL',
+            'netsuite_item_id' => $ns->id,
+        ]);
+
+        return [$code, $dist, $item];
+    }
+
+    private function buildBatchExcel(string $code, string $itemName, array $rows): string
+    {
+        $spreadsheet = new Spreadsheet();
+        $sheet = $spreadsheet->getActiveSheet();
+        $sheet->setTitle('Template');
+
+        foreach (['Tanggal', 'ID DISTRIBUTOR', 'Distributor Item Name', 'Quantity', 'Satuan', 'ED', 'Batch No'] as $i => $h) {
+            $sheet->setCellValue(\PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($i + 1).'1', $h);
+        }
+
+        $r = 2;
+        foreach ($rows as $row) {
+            $sheet->setCellValue("A{$r}", '16/09/2026');
+            $sheet->setCellValue("B{$r}", $code);
+            $sheet->setCellValue("C{$r}", $itemName);
+            $sheet->setCellValue("D{$r}", $row['qty']);
+            $sheet->setCellValue("E{$r}", 'BTL');
+            $sheet->setCellValue("F{$r}", $row['ed']);
+            $sheet->setCellValueExplicit("G{$r}", $row['batch'], \PhpOffice\PhpSpreadsheet\Cell\DataType::TYPE_STRING);
+            $r++;
+        }
+
+        $writer = new Xlsx($spreadsheet);
+        $tempBase = tempnam(sys_get_temp_dir(), 'test_batch_');
+        $tempFile = $tempBase.'.xlsx';
+        $writer->save($tempFile);
+        $bytes = file_get_contents($tempFile);
+        @unlink($tempFile);
+        @unlink($tempBase);
+
+        return $bytes;
+    }
+
+    private function runCommandWithAttachment(string $excelBytes, string $uid, string $fromEmail): void
+    {
+        $mock = Mockery::mock(ImapService::class);
+        $mock->shouldReceive('isConfigured')->andReturn(true);
+        $mock->shouldReceive('getUnreadMessages')->andReturn([[
+            'uid' => $uid,
+            'message_id' => "<{$uid}@test.com>",
+            'from_name' => 'Batch Sender',
+            'from_email' => $fromEmail,
+            'subject' => 'Satoria Daily Stock - Batch Test',
+            'date' => now(),
+            'is_daily_stock' => true,
+            'has_attachments' => true,
+        ]]);
+        $mock->shouldReceive('getExcelAttachment')->with($uid)->andReturn([
+            'filename' => 'batch.xlsx',
+            'content' => $excelBytes,
+        ]);
+        $mock->shouldReceive('markAsRead')->andReturn(true);
+
+        $this->app->instance(ImapService::class, $mock);
+
+        $this->artisan('stock:process-emails')->assertSuccessful();
     }
 
     public function test_command_rejects_email_when_all_items_are_unmapped(): void
