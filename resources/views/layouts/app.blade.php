@@ -71,6 +71,18 @@
                     </a>
                     @endcan
 
+                    <!-- Grup Template Excel -->
+                    @can('viewAny', \App\Models\DistributorTemplateGroup::class)
+                    <a href="{{ route('template-groups.index') }}"
+                       class="flex items-center gap-3 px-3.5 py-2.5 rounded-xl transition duration-150 {{ request()->routeIs('template-groups.*') ? 'font-bold shadow-2xs' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50 font-medium' }}"
+                       style="{{ request()->routeIs('template-groups.*') ? 'background: #eaf4f2; color: #07352d;' : '' }}">
+                        <svg width="18" height="18" style="width: 18px; height: 18px; min-width: 18px; flex-shrink: 0;" class="{{ request()->routeIs('template-groups.*') ? 'text-[#0d6d5f]' : 'text-slate-400' }}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h18M3 6h18M3 14h10M3 18h10"/>
+                        </svg>
+                        <span>Grup Template Excel</span>
+                    </a>
+                    @endcan
+
                     <!-- Master Netsuite -->
                     @can('viewAny', \App\Models\NetsuiteItem::class)
                     <a href="{{ route('netsuite-items.index') }}"

@@ -4,6 +4,7 @@ namespace App\Livewire\Distributors;
 
 use App\Models\Distributor;
 use App\Models\DistributorItem;
+use App\Models\DistributorTemplateGroup;
 use App\Models\StockEntry;
 use App\Support\Search;
 use Illuminate\Support\Facades\Gate;
@@ -30,6 +31,8 @@ class Index extends Component
     public ?string $sender_email = null;
 
     public bool $is_active = true;
+
+    public ?int $template_group_id = null;
 
     public function mount(): void
     {
@@ -64,6 +67,7 @@ class Index extends Component
         $this->name = $distributor->name;
         $this->sender_email = $distributor->sender_email;
         $this->is_active = $distributor->is_active;
+        $this->template_group_id = $distributor->template_group_id;
         $this->showModal = true;
     }
 
@@ -95,6 +99,7 @@ class Index extends Component
                 },
             ],
             'is_active' => ['boolean'],
+            'template_group_id' => ['nullable', 'integer', Rule::exists('distributor_template_groups', 'id')->whereNull('deleted_at')],
         ]);
 
         if ($this->editingId) {
@@ -134,6 +139,7 @@ class Index extends Component
         $this->name = '';
         $this->sender_email = null;
         $this->is_active = true;
+        $this->template_group_id = null;
         $this->resetErrorBag();
     }
 
@@ -145,11 +151,13 @@ class Index extends Component
                     ->orWhere('distributor_code', 'ilike', Search::contains($this->search))
                     ->orWhere('sender_email', 'ilike', Search::contains($this->search));
             }))
+            ->with('templateGroup:id,name')
             ->orderBy('name')
             ->paginate(15);
 
         return view('livewire.distributors.index', [
             'distributors' => $distributors,
+            'templateGroups' => DistributorTemplateGroup::orderBy('name')->get(['id', 'name']),
         ]);
     }
 }

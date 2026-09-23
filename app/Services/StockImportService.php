@@ -7,6 +7,8 @@ use App\Models\DistributorItem;
 use App\Models\StockEmailLog;
 use App\Models\StockEntry;
 use App\Models\StockSnapshotActivity;
+use App\Support\StockFileReader;
+use App\Support\StockRowReader;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -351,241 +353,294 @@ class StockImportService
             ];
         }
 
-        $sheet = $spreadsheet->getSheetByName('Template') ?? $spreadsheet->getActiveSheet();
-        $data = $sheet->toArray(null, true, true, false);
+        // Pemilihan cara baca dan pemecahan per cabang dikerjakan di kelas yang
+        // sama dengan jalur upload manual — satu berkas tidak boleh terbaca
+        // berbeda hanya karena datang lewat email.
+        $reading = (new StockFileReader($this))->read($spreadsheet, true);
 
-        if (empty($data) || count($data) < 2) {
-            return [
-                'success' => false,
-                'status' => 'invalid_template',
-                'distributor' => null,
-                'distributor_code' => null,
-                'distributor_id' => null,
-                'tanggal' => null,
-                'total_rows' => 0,
-                'imported_rows' => 0,
-                'skipped_rows' => 0,
-                'skipped_items' => [],
-                'error' => 'Lembar kerja Excel kosong atau tidak memiliki baris data.',
-                'details' => [],
-            ];
+        if (! $reading['ok']) {
+            return $this->importResult('invalid_template', false, null, null, [
+                'error' => $reading['error'] ?? 'Judul kolom pada berkas Excel tidak dikenali.',
+                'details' => [
+                    'missing_column' => implode(', ', $reading['resolved']['missing'] ?? []),
+                    'available_headers' => array_values(array_filter($reading['resolved']['headers'] ?? [], fn ($h) => $h !== '')),
+                ],
+            ]);
         }
 
-        // Header mapping
-        $headerRow = $data[0] ?? [];
-        $col = [];
-        foreach ($headerRow as $idx => $name) {
-            if ($name !== null && $name !== '') {
-                $col[trim((string) $name)] = $idx;
-            }
-        }
-
-        $requiredCols = ['Tanggal', 'ID DISTRIBUTOR', 'Distributor Item Name', 'Quantity', 'Satuan', 'ED', 'Batch No'];
-        foreach ($requiredCols as $rc) {
-            if (! isset($col[$rc])) {
-                return [
-                    'success' => false,
-                    'status' => 'invalid_template',
-                    'distributor' => null,
-                    'distributor_code' => null,
-                    'distributor_id' => null,
-                    'tanggal' => null,
-                    'total_rows' => 0,
-                    'imported_rows' => 0,
-                    'skipped_rows' => 0,
-                    'skipped_items' => [],
-                    'error' => "Kolom wajib '{$rc}' tidak ditemukan pada template Excel.",
-                    'details' => ['missing_column' => $rc, 'available_headers' => array_keys($col)],
-                ];
-            }
-        }
-
-        $bodyRows = array_slice($data, 1);
-        $firstDataRow = null;
-        foreach ($bodyRows as $r) {
-            $codeVal = trim((string) ($r[$col['ID DISTRIBUTOR']] ?? ''));
-            if ($codeVal !== '' && strtoupper($codeVal) !== 'XXXX') {
-                $firstDataRow = $r;
-                break;
-            }
-        }
-
-        if (! $firstDataRow) {
-            return [
-                'success' => false,
-                'status' => 'invalid_template',
-                'distributor' => null,
-                'distributor_code' => null,
-                'distributor_id' => null,
-                'tanggal' => null,
-                'total_rows' => 0,
-                'imported_rows' => 0,
-                'skipped_rows' => 0,
-                'skipped_items' => [],
-                'error' => 'Berkas Excel tidak berisi baris data distributor yang valid.',
-                'details' => [],
-            ];
-        }
-
-        $distributorCode = trim((string) $firstDataRow[$col['ID DISTRIBUTOR']]);
-        if (strtoupper($distributorCode) === 'XXXX') {
-            return [
-                'success' => false,
-                'status' => 'invalid_template',
-                'distributor' => null,
-                'distributor_code' => null,
-                'distributor_id' => null,
-                'tanggal' => null,
-                'total_rows' => 0,
-                'imported_rows' => 0,
-                'skipped_rows' => 0,
-                'skipped_items' => [],
+        if ($reading['placeholder']) {
+            return $this->importResult('invalid_template', false, null, null, [
                 'error' => "Kode distributor masih berupa contoh template ('XXXX').",
-                'details' => [],
+            ]);
+        }
+
+        $buckets = $reading['buckets'];
+        $reader = $reading['reader'];
+
+        if ($buckets === []) {
+            return $this->importResult('invalid_template', false, null, null, [
+                'error' => 'Tidak ditemukan baris data produk pada file Excel.',
+            ]);
+        }
+
+        // Seluruh cabang diperiksa sebelum satu baris pun disimpan.
+        $codes = array_keys($buckets);
+        $distributors = Distributor::whereIn('distributor_code', $codes)->get()->keyBy('distributor_code');
+
+        $unknown = array_values(array_diff($codes, $distributors->keys()->all()));
+        if ($unknown !== []) {
+            return $this->importResult('unknown_distributor', false, null, null, [
+                'error' => 'Kode distributor berikut belum terdaftar di Master Distributor: '.implode(', ', $unknown).'.',
+                'details' => ['distributor_code' => $unknown[0], 'unknown_codes' => $unknown],
+                'distributor_code' => $unknown[0],
+            ]);
+        }
+
+        foreach ($distributors as $code => $distributor) {
+            if (! $distributor->is_active) {
+                return $this->importResult('inactive_distributor', false, $distributor, null, [
+                    'error' => "Distributor '{$distributor->name}' ({$code}) berstatus NON-AKTIF di Master Data. Seluruh pengunggahan data stok ditolak.",
+                    'details' => ['distributor_code' => $code, 'is_active' => false],
+                ]);
+            }
+
+            // Whitelist ditegakkan per cabang: satu cabang yang pengirimnya
+            // tidak berwenang membatalkan seluruh berkas, karena berkasnya
+            // datang sebagai satu kiriman dari satu pengirim.
+            if ($fromEmail !== null) {
+                $rejection = $this->senderRejection($distributor, (string) $code, $fromEmail);
+                if ($rejection !== null) {
+                    return $rejection;
+                }
+            }
+        }
+
+        // Satu transaksi untuk seisi berkas: kalau satu cabang gagal di
+        // tengah jalan, cabang yang sudah tersimpan ikut dibatalkan. Berkas
+        // yang separuh masuk jauh lebih merepotkan daripada berkas yang
+        // ditolak utuh dengan sebab yang jelas.
+        $branchResults = [];
+        $failure = null;
+
+        try {
+            DB::transaction(function () use ($buckets, $distributors, $reader, $fromEmail, $uploadedBy, $dryRun, $isEmailAutomation, &$branchResults, &$failure) {
+                foreach ($buckets as $code => $branchRows) {
+                    $result = $this->importBranchRows(
+                        $distributors[$code],
+                        $branchRows,
+                        $reader,
+                        $fromEmail,
+                        $uploadedBy,
+                        $dryRun,
+                        $isEmailAutomation
+                    );
+
+                    if (! $result['success']) {
+                        $failure = $result;
+                        throw new \RuntimeException('branch_import_failed');
+                    }
+
+                    $branchResults[] = $result;
+                }
+            });
+        } catch (\RuntimeException $e) {
+            if ($e->getMessage() !== 'branch_import_failed') {
+                throw $e;
+            }
+
+            return $failure;
+        }
+
+        return $this->mergeBranchResults($branchResults);
+    }
+
+    /**
+     * Susun satu nilai kembalian parseAndImportSpreadsheet().
+     *
+     * Bentuk kembaliannya panjang dan dipakai di belasan tempat; menuliskannya
+     * berulang-ulang membuat satu kunci mudah tertinggal tanpa ketahuan.
+     *
+     * @param  array<string, mixed>  $overrides
+     * @return array<string, mixed>
+     */
+    private function importResult(
+        string $status,
+        bool $success,
+        ?Distributor $distributor,
+        ?string $tanggal,
+        array $overrides = []
+    ): array {
+        return array_merge([
+            'success' => $success,
+            'status' => $status,
+            'distributor' => $distributor,
+            'distributor_code' => $distributor?->distributor_code,
+            'distributor_id' => $distributor?->id,
+            'tanggal' => $tanggal,
+            'total_rows' => 0,
+            'imported_rows' => 0,
+            'skipped_rows' => 0,
+            'skipped_items' => [],
+            'error' => null,
+            'details' => [],
+        ], $overrides);
+    }
+
+    /**
+     * Verifikasi pengirim terhadap whitelist distributor.
+     *
+     * @return ?array  hasil penolakan, atau null bila pengirimnya sah
+     */
+    private function senderRejection(Distributor $distributor, string $distributorCode, string $fromEmail): ?array
+    {
+        $senderEmailConfig = trim((string) ($distributor->sender_email ?? ''));
+
+        if ($senderEmailConfig === '') {
+            return $this->importResult('unauthorized_sender', false, $distributor, null, [
+                'error' => "Distributor '{$distributor->name}' ({$distributorCode}) belum mendaftarkan email whitelist resmi di Master Distributor. Pengiriman dari '{$fromEmail}' ditolak demi keamanan data.",
+                'details' => [
+                    'from_email' => $fromEmail,
+                    'expected_sender' => null,
+                    'reason' => 'whitelist_not_configured',
+                ],
+            ]);
+        }
+
+        $cleanFromEmail = mb_strtolower(trim($fromEmail));
+        $allowedEmails = array_map('trim', explode(',', mb_strtolower($senderEmailConfig)));
+
+        foreach ($allowedEmails as $allowed) {
+            if ($allowed === '') {
+                continue;
+            }
+            if ($allowed === $cleanFromEmail) {
+                return null;
+            }
+            // Domain wildcard, mis. @kftd.co.id
+            if (str_starts_with($allowed, '@') && str_ends_with($cleanFromEmail, $allowed)) {
+                return null;
+            }
+        }
+
+        return $this->importResult('unauthorized_sender', false, $distributor, null, [
+            'error' => "Pengirim email ('{$fromEmail}') tidak terdaftar pada whitelist resmi distributor '{$distributor->name}' ({$distributorCode}).",
+            'details' => [
+                'from_email' => $fromEmail,
+                'expected_sender' => $distributor->sender_email,
+                'reason' => 'sender_not_in_whitelist',
+            ],
+        ]);
+    }
+
+    /**
+     * Gabungkan hasil tiap cabang menjadi satu nilai kembalian.
+     *
+     * Satu berkas tetap menghasilkan SATU baris StockEmailLog, jadi angkanya
+     * dijumlahkan dan rincian per cabang disimpan di details.
+     *
+     * @param  array<int, array<string, mixed>>  $results
+     * @return array<string, mixed>
+     */
+    private function mergeBranchResults(array $results): array
+    {
+        if (count($results) === 1) {
+            return $results[0];
+        }
+
+        $first = $results[0];
+        $skippedItems = [];
+        $branches = [];
+        $totalRows = 0;
+        $importedRows = 0;
+        $anySkipped = false;
+        $anyImported = false;
+
+        foreach ($results as $r) {
+            $totalRows += $r['total_rows'];
+            $importedRows += $r['imported_rows'];
+            $skippedItems = array_merge($skippedItems, $r['skipped_items']);
+            $anySkipped = $anySkipped || $r['skipped_rows'] > 0;
+            $anyImported = $anyImported || $r['imported_rows'] > 0;
+
+            $branches[] = [
+                'distributor_code' => $r['distributor_code'],
+                'distributor_id' => $r['distributor_id'],
+                'tanggal' => $r['tanggal'],
+                'imported_rows' => $r['imported_rows'],
+                'skipped_rows' => $r['skipped_rows'],
+                'status' => $r['status'],
             ];
         }
 
-        $distributor = Distributor::where('distributor_code', $distributorCode)->first();
-        if (! $distributor) {
-            return [
-                'success' => false,
-                'status' => 'unknown_distributor',
-                'distributor' => null,
-                'distributor_code' => $distributorCode,
-                'distributor_id' => null,
-                'tanggal' => null,
-                'total_rows' => 0,
-                'imported_rows' => 0,
-                'skipped_rows' => 0,
-                'skipped_items' => [],
-                'error' => "Distributor dengan kode '{$distributorCode}' belum terdaftar di Master Distributor.",
-                'details' => ['distributor_code' => $distributorCode],
-            ];
-        }
+        $status = match (true) {
+            ! $anyImported && $anySkipped => 'all_unmapped',
+            $anySkipped => 'partial_unmapped',
+            default => 'success',
+        };
 
-        if (! $distributor->is_active) {
-            return [
-                'success' => false,
-                'status' => 'inactive_distributor',
-                'distributor' => $distributor,
-                'distributor_code' => $distributorCode,
-                'distributor_id' => $distributor->id,
-                'tanggal' => null,
-                'total_rows' => 0,
-                'imported_rows' => 0,
-                'skipped_rows' => 0,
-                'skipped_items' => [],
-                'error' => "Distributor '{$distributor->name}' ({$distributorCode}) berstatus NON-AKTIF di Master Data. Seluruh pengunggahan data stok ditolak.",
-                'details' => ['distributor_code' => $distributorCode, 'is_active' => false],
-            ];
-        }
+        $codes = array_column($branches, 'distributor_code');
 
-        // Sender email whitelist verification (mandatory for email automation)
-        if ($fromEmail) {
-            $senderEmailConfig = trim((string) ($distributor->sender_email ?? ''));
+        return [
+            'success' => $anyImported,
+            'status' => $status,
+            // Log hanya punya satu kolom distributor; cabang pertama yang
+            // dicatat, selebihnya ada di details['branches'].
+            'distributor' => $first['distributor'],
+            'distributor_code' => $first['distributor_code'],
+            'distributor_id' => $first['distributor_id'],
+            'tanggal' => $first['tanggal'],
+            'total_rows' => $totalRows,
+            'imported_rows' => $importedRows,
+            'skipped_rows' => count($skippedItems),
+            'skipped_items' => $skippedItems,
+            'error' => $status === 'success'
+                ? null
+                : count($skippedItems).' item belum ter-mapping pada berkas berisi '.count($branches).' cabang.',
+            'details' => [
+                'branch_count' => count($branches),
+                'branches' => $branches,
+                'distributor_codes' => $codes,
+                'imported_count' => $importedRows,
+                'skipped_count' => count($skippedItems),
+            ],
+        ];
+    }
 
-            if ($senderEmailConfig === '') {
-                return [
-                    'success' => false,
-                    'status' => 'unauthorized_sender',
-                    'distributor' => $distributor,
-                    'distributor_code' => $distributorCode,
-                    'distributor_id' => $distributor->id,
-                    'tanggal' => null,
-                    'total_rows' => 0,
-                    'imported_rows' => 0,
-                    'skipped_rows' => 0,
-                    'skipped_items' => [],
-                    'error' => "Distributor '{$distributor->name}' ({$distributorCode}) belum mendaftarkan email whitelist resmi di Master Distributor. Pengiriman dari '{$fromEmail}' ditolak demi keamanan data.",
-                    'details' => [
-                        'from_email' => $fromEmail,
-                        'expected_sender' => null,
-                        'reason' => 'missing_whitelist_configuration',
-                    ],
-                ];
-            }
+    /**
+     * Impor baris milik SATU cabang.
+     *
+     * @param  array<int, array{row: array<int, mixed>, excel_row: int}>  $branchRows
+     * @return array<string, mixed>
+     */
+    private function importBranchRows(
+        Distributor $distributor,
+        array $branchRows,
+        StockRowReader $reader,
+        ?string $fromEmail,
+        ?int $uploadedBy,
+        bool $dryRun,
+        bool $isEmailAutomation
+    ): array {
+        $distributorCode = $distributor->distributor_code;
+        $firstRow = $branchRows[0]['row'];
 
-            $allowedEmails = array_map('trim', explode(',', strtolower($senderEmailConfig)));
-            $cleanFromEmail = strtolower(trim($fromEmail));
-            $isMatch = false;
-
-            foreach ($allowedEmails as $allowed) {
-                if ($allowed === '') {
-                    continue;
-                }
-                if ($allowed === $cleanFromEmail) {
-                    $isMatch = true;
-                    break;
-                }
-                // Check if domain match (e.g., @kftd.co.id)
-                if (str_starts_with($allowed, '@') && str_ends_with($cleanFromEmail, $allowed)) {
-                    $isMatch = true;
-                    break;
-                }
-            }
-
-            if (! $isMatch) {
-                return [
-                    'success' => false,
-                    'status' => 'unauthorized_sender',
-                    'distributor' => $distributor,
-                    'distributor_code' => $distributorCode,
-                    'distributor_id' => $distributor->id,
-                    'tanggal' => null,
-                    'total_rows' => 0,
-                    'imported_rows' => 0,
-                    'skipped_rows' => 0,
-                    'skipped_items' => [],
-                    'error' => "Pengirim email ('{$fromEmail}') tidak terdaftar pada whitelist resmi distributor '{$distributor->name}' ({$distributorCode}).",
-                    'details' => [
-                        'from_email' => $fromEmail,
-                        'expected_sender' => $distributor->sender_email,
-                        'reason' => 'sender_not_in_whitelist',
-                    ],
-                ];
-            }
-        }
-
-        // Tanggal snapshot validation
-        $rawTanggal = $firstDataRow[$col['Tanggal']];
+        $rawTanggal = $reader->rawTanggal($firstRow);
         if (in_array(trim(strtoupper((string) $rawTanggal)), ['DD/MM/YYYY', 'YYYY-MM-DD', 'DD-MM-YYYY'], true)) {
-            return [
-                'success' => false,
-                'status' => 'invalid_template',
-                'distributor' => $distributor,
-                'distributor_code' => $distributorCode,
-                'distributor_id' => $distributor->id,
-                'tanggal' => null,
-                'total_rows' => 0,
-                'imported_rows' => 0,
-                'skipped_rows' => 0,
-                'skipped_items' => [],
+            return $this->importResult('invalid_template', false, $distributor, null, [
                 'error' => "Tanggal snapshot masih berupa placeholder ('{$rawTanggal}').",
-                'details' => [],
-            ];
+            ]);
         }
 
-        $tanggal = $this->parseExcelDate($rawTanggal);
+        $tanggal = $reader->tanggal($firstRow);
         if (! $tanggal) {
-            return [
-                'success' => false,
-                'status' => 'invalid_template',
-                'distributor' => $distributor,
-                'distributor_code' => $distributorCode,
-                'distributor_id' => $distributor->id,
-                'tanggal' => null,
-                'total_rows' => 0,
-                'imported_rows' => 0,
-                'skipped_rows' => 0,
-                'skipped_items' => [],
+            return $this->importResult('invalid_template', false, $distributor, null, [
                 'error' => "Format tanggal snapshot tidak dikenali: '{$rawTanggal}'.",
                 'details' => ['raw_tanggal' => $rawTanggal],
-            ];
+            ]);
         }
 
-        // Cek data duplikat untuk Otomasi Email:
-        // Jika sudah ada data di database untuk distributor dan tanggal yang sama,
-        // tolak otomatis dengan status 'data_already_exists' dan minta user melakukan upload manual.
+        // Otomasi email tidak boleh menimpa data yang sudah ada: keputusan
+        // Gabung/Ganti hanya boleh diambil manusia di halaman Upload.
         if ($isEmailAutomation || $fromEmail !== null) {
             $existingCount = StockEntry::query()
                 ->where('distributor_id', $distributor->id)
@@ -593,17 +648,7 @@ class StockImportService
                 ->count();
 
             if ($existingCount > 0) {
-                return [
-                    'success' => false,
-                    'status' => 'data_already_exists',
-                    'distributor' => $distributor,
-                    'distributor_code' => $distributorCode,
-                    'distributor_id' => $distributor->id,
-                    'tanggal' => $tanggal,
-                    'total_rows' => 0,
-                    'imported_rows' => 0,
-                    'skipped_rows' => 0,
-                    'skipped_items' => [],
+                return $this->importResult('data_already_exists', false, $distributor, $tanggal, [
                     'error' => "Data sudah ada untuk distributor '{$distributor->name}' ({$distributorCode}) pada tanggal {$tanggal} ({$existingCount} baris data ditemukan). Silakan upload manual jika ingin memperbarui.",
                     'details' => [
                         'existing_count' => $existingCount,
@@ -612,7 +657,7 @@ class StockImportService
                         'tanggal' => $tanggal,
                         'reason' => 'data_already_exists',
                     ],
-                ];
+                ]);
             }
         }
 
@@ -623,24 +668,19 @@ class StockImportService
         $parsedRows = [];
         $skippedItems = [];
         $totalValidDataRows = 0;
-        $excelRow = 1; // baris 1 = header
 
-        foreach ($bodyRows as $r) {
-            $excelRow++;
-            $itemName = trim((string) ($r[$col['Distributor Item Name']] ?? ''));
-            if ($itemName === '' || strtoupper($itemName) === 'XXXXX XXXX') {
-                continue;
-            }
-
+        foreach ($branchRows as $entry) {
+            $r = $entry['row'];
+            $itemName = $reader->itemName($r);
             $totalValidDataRows++;
 
             $key = mb_strtolower(trim(preg_replace('/\s+/', ' ', $itemName)));
             $distItem = $knownItems->get($key);
 
-            $qty = $this->parseQuantity($r[$col['Quantity']] ?? 0);
-            $satuan = isset($col['Satuan']) ? trim((string) ($r[$col['Satuan']] ?? '')) : null;
-            $ed = isset($col['ED']) ? $this->parseExcelDate($r[$col['ED']] ?? null) : null;
-            $batch = isset($col['Batch No']) ? trim((string) ($r[$col['Batch No']] ?? '')) : null;
+            $qty = $reader->quantity($r);
+            $satuan = $reader->satuan($r);
+            $ed = $reader->expiredDate($r);
+            $batch = $reader->batchNo($r);
 
             if (! $distItem || ! $distItem->isMapped()) {
                 $skippedItems[] = [
@@ -660,7 +700,7 @@ class StockImportService
                     'satuan' => $satuan,
                     'ed' => $ed,
                     'batch' => $batch,
-                    'excel_row' => $excelRow,
+                    'excel_row' => $entry['excel_row'],
                     'save' => false,
                 ];
 
@@ -674,7 +714,7 @@ class StockImportService
                 'satuan' => $satuan ?: $distItem->satuan,
                 'ed' => $ed,
                 'batch' => $batch,
-                'excel_row' => $excelRow,
+                'excel_row' => $entry['excel_row'],
             ];
         }
 
@@ -682,39 +722,19 @@ class StockImportService
         $grouping = $this->groupRowsByItemAndBatch($parsedRows);
 
         if (! $grouping['ok']) {
-            return [
-                'success' => false,
-                'status' => 'invalid_batch_data',
-                'distributor' => $distributor,
-                'distributor_code' => $distributorCode,
-                'distributor_id' => $distributor->id,
-                'tanggal' => $tanggal,
+            return $this->importResult('invalid_batch_data', false, $distributor, $tanggal, [
                 'total_rows' => $totalValidDataRows,
-                'imported_rows' => 0,
-                'skipped_rows' => 0,
-                'skipped_items' => [],
-                'error' => implode(' ', $grouping['errors']),
+                'error' => $distributor->name.': '.implode(' ', $grouping['errors']),
                 'details' => ['batch_errors' => $grouping['errors']],
-            ];
+            ]);
         }
 
         $validRowsToSave = $grouping['rows'];
 
         if ($totalValidDataRows === 0) {
-            return [
-                'success' => false,
-                'status' => 'invalid_template',
-                'distributor' => $distributor,
-                'distributor_code' => $distributorCode,
-                'distributor_id' => $distributor->id,
-                'tanggal' => $tanggal,
-                'total_rows' => 0,
-                'imported_rows' => 0,
-                'skipped_rows' => 0,
-                'skipped_items' => [],
+            return $this->importResult('invalid_template', false, $distributor, $tanggal, [
                 'error' => 'Tidak ditemukan baris data produk pada file Excel.',
-                'details' => [],
-            ];
+            ]);
         }
 
         $importedCount = 0;
@@ -749,7 +769,7 @@ class StockImportService
                     'user_id' => $uploadedBy,
                     'action' => $uploadedBy ? 'upload' : 'automation',
                     'description' => $uploadedBy
-                        ? "Upload dari email oleh " . (\App\Models\User::find($uploadedBy)?->name ?? 'User') . " ({$importedCount} SKU)"
+                        ? 'Upload dari email oleh '.(\App\Models\User::find($uploadedBy)?->name ?? 'User')." ({$importedCount} SKU)"
                         : "Import otomatis via Email ({$importedCount} SKU)",
                     'metadata' => [
                         'sku_count' => $importedCount,
@@ -784,7 +804,8 @@ class StockImportService
             }
             $unmappedError = "{$countSkipped} item belum ter-mapping ke NetSuite: {$namesPreview}.";
 
-            // Otomatis daftarkan item baru yang belum terpetakan ke tabel DistributorItem (antrean mapping)
+            // Item baru didaftarkan ke antrean mapping supaya operator tinggal
+            // memetakannya, bukan mengetik ulang namanya.
             if (! $dryRun) {
                 foreach ($skippedItems as $skip) {
                     $rawName = trim($skip['item_name']);
@@ -816,26 +837,20 @@ class StockImportService
             }
         }
 
-        return [
-            'success' => $isSuccess,
-            'status' => $status,
-            'distributor' => $distributor,
-            'distributor_code' => $distributorCode,
-            'distributor_id' => $distributor->id,
-            'tanggal' => $tanggal,
+        return $this->importResult($status, $isSuccess, $distributor, $tanggal, [
             'total_rows' => $totalValidDataRows,
             'imported_rows' => $importedCount,
             'skipped_rows' => count($skippedItems),
             'skipped_items' => $skippedItems,
             'error' => $status === 'all_unmapped'
-                ? "Seluruh item (".count($uniqueSkippedNames)." item) belum ter-mapping ke NetSuite. 0 baris disimpan ke database. Harap petakan item terlebih dahulu di Master Mapping."
+                ? 'Seluruh item ('.count($uniqueSkippedNames).' item) belum ter-mapping ke NetSuite. 0 baris disimpan ke database. Harap petakan item terlebih dahulu di Master Mapping.'
                 : $unmappedError,
             'details' => [
                 'imported_count' => $importedCount,
                 'skipped_count' => count($skippedItems),
                 'unique_skipped_names' => $uniqueSkippedNames,
             ],
-        ];
+        ]);
     }
 
     /**

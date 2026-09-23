@@ -14,6 +14,7 @@ class Distributor extends Model
         'distributor_code',
         'name',
         'sender_email',
+        'template_group_id',
         'is_active',
     ];
 
@@ -22,6 +23,12 @@ class Distributor extends Model
         return [
             'is_active' => 'boolean',
         ];
+    }
+
+    /** Grup template Excel yang dipakai distributor ini (lihat DistributorTemplateGroup). */
+    public function templateGroup(): \Illuminate\Database\Eloquent\Relations\BelongsTo
+    {
+        return $this->belongsTo(DistributorTemplateGroup::class, 'template_group_id');
     }
 
     public function stockEmailLogs(): \Illuminate\Database\Eloquent\Relations\HasMany

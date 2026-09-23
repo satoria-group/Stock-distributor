@@ -6,6 +6,8 @@ use App\Models\Distributor;
 use App\Models\DistributorItem;
 use App\Models\StockEntry;
 use App\Models\StockSnapshotActivity;
+use App\Support\StockFileReader;
+use App\Support\StockRowReader;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
@@ -129,6 +131,20 @@ class Upload extends Component
      * berkas baru tetap tertinggal di database — hasilnya identik dengan mode
      * "Gabung", padahal labelnya menjanjikan hal lain.
      */
+    /**
+     * Antrian cabang dari satu berkas.
+     *
+     * Berkas UDC/KFTD bisa memuat beberapa cabang sekaligus, sementara grid
+     * ini dirancang untuk satu distributor. Daripada membongkar grid, cabang
+     * dikerjakan bergiliran: selesaikan satu, simpan, lanjut sendiri ke
+     * berikutnya.
+     *
+     * @var array<int, array<string, mixed>>
+     */
+    public array $importQueue = [];
+
+    public int $queueIndex = 0;
+
     public bool $replaceExistingSnapshot = false;
 
     public function mount(): void
@@ -255,6 +271,7 @@ class Upload extends Component
         $this->removedRowKeys = [];
         $this->skippedItems = [];
         $this->skippedRowsData = [];
+        $this->clearImportQueue();
     }
 
     public function loadExisting(): void
@@ -344,7 +361,13 @@ class Upload extends Component
             $success = $this->processSpreadsheetPath($tempClean, 'File Excel');
             if ($success && ! $this->showConflictModal) {
                 $distName = $this->distributorId ? (Distributor::find($this->distributorId)?->name ?? 'Distributor') : 'Distributor';
-                session()->flash('status', 'Import selesai: '.count($this->rows)." baris dimuat ke grid untuk {$distName} — {$this->tanggal}.");
+                $status = 'Import selesai: '.count($this->rows)." baris dimuat ke grid untuk {$distName} — {$this->tanggal}.";
+
+                if (count($this->importQueue) > 1) {
+                    $status .= ' Berkas ini berisi '.count($this->importQueue).' cabang; dikerjakan bergiliran mulai dari cabang ini.';
+                }
+
+                session()->flash('status', $status);
             }
         } finally {
             @unlink($tempClean);
@@ -362,63 +385,50 @@ class Upload extends Component
             return false;
         }
 
-        $sheet = $spreadsheet->getSheetByName('Template') ?? $spreadsheet->getActiveSheet();
-        $data = $sheet->toArray(null, true, false, false);
+        // Pemilihan cara baca dan pemecahan per cabang dikerjakan di satu
+        // tempat yang sama dengan jalur otomasi email, supaya satu berkas tidak
+        // pernah terbaca berbeda di dua jalur.
+        $importService = app(\App\Services\StockImportService::class);
+        $reading = (new StockFileReader($importService))->read($spreadsheet);
 
-        $header = array_map(fn ($h) => trim((string) $h), $data[0] ?? []);
-        $col = array_flip($header);
-
-        $requiredCols = ['Tanggal', 'ID DISTRIBUTOR', 'Distributor Item Name', 'Quantity'];
-        foreach ($requiredCols as $rc) {
-            if (! isset($col[$rc])) {
-                $this->addError('file', "Kolom '{$rc}' tidak ditemukan di sheet Template.");
-
-                return false;
-            }
-        }
-
-        $bodyRows = array_slice($data, 1);
-        $firstDataRow = null;
-        foreach ($bodyRows as $r) {
-            $codeVal = trim((string) ($r[$col['ID DISTRIBUTOR']] ?? ''));
-            if ($codeVal !== '' && strtoupper($codeVal) !== 'XXXX') {
-                $firstDataRow = $r;
-                break;
-            }
-        }
-
-        if (! $firstDataRow) {
-            foreach ($bodyRows as $r) {
-                if (! empty($r[$col['ID DISTRIBUTOR']] ?? null)) {
-                    $firstDataRow = $r;
-                    break;
-                }
-            }
-        }
-
-        if (! $firstDataRow) {
-            $this->addError('file', "Berkas ({$sourceDescription}) tidak berisi baris data.");
+        if (! $reading['ok']) {
+            $this->addError('file', $reading['error'] ?? 'Judul kolom pada berkas Excel tidak dikenali.');
 
             return false;
         }
 
-        $distributorCode = trim((string) $firstDataRow[$col['ID DISTRIBUTOR']]);
-        if (strtoupper($distributorCode) === 'XXXX') {
+        if ($reading['placeholder']) {
             $this->addError('file', "Kode distributor masih berupa format contoh ('xxxx'). Silakan ganti dengan kode distributor sebenarnya (lihat sheet 'Daftar Distributor').");
 
             return false;
         }
 
-        $distributor = Distributor::where('distributor_code', $distributorCode)->first();
+        $buckets = $reading['buckets'];
+        $reader = $reading['reader'];
 
-        if (! $distributor) {
-            $this->addError('file', "Distributor dengan kode '{$distributorCode}' belum ada di Master Distributor. Minta Admin menambahkan dulu.");
+        if ($buckets === []) {
+            $this->addError('file', "Berkas ({$sourceDescription}) tidak berisi baris data.");
 
             return false;
         }
 
-        if (! $distributor->is_active) {
-            $this->addError('file', "Distributor '{$distributor->name}' ({$distributorCode}) berstatus NON-AKTIF di Master Data. Seluruh pengunggahan data stok ditolak.");
+        // Seluruh cabang diperiksa SEBELUM satu baris pun diproses. Berkas yang
+        // separuh cabangnya masuk dan separuh ditolak jauh lebih merepotkan
+        // daripada berkas yang ditolak utuh dengan sebab yang jelas.
+        $codes = array_keys($buckets);
+        $distributors = Distributor::whereIn('distributor_code', $codes)->get()->keyBy('distributor_code');
+
+        $unknown = array_values(array_diff($codes, $distributors->keys()->all()));
+        if ($unknown !== []) {
+            $this->addError('file', 'Kode distributor berikut belum ada di Master Distributor: '.implode(', ', $unknown).'. Minta Admin menambahkannya dulu, lalu unggah ulang berkas ini.');
+
+            return false;
+        }
+
+        $inactive = $distributors->filter(fn (Distributor $d) => ! $d->is_active);
+        if ($inactive->isNotEmpty()) {
+            $names = $inactive->map(fn (Distributor $d) => $d->name.' ('.$d->distributor_code.')')->implode(', ');
+            $this->addError('file', "Distributor berikut berstatus NON-AKTIF di Master Data: {$names}. Seluruh pengunggahan data stok ditolak.");
 
             return false;
         }
@@ -433,52 +443,73 @@ class Upload extends Component
         // Yang tetap dijaga di sini: asal-usulnya dicatat ke riwayat snapshot
         // (lihat $sourceEmailFrom dan saveRows()).
 
-        $rawTanggal = $firstDataRow[$col['Tanggal']];
-        if (in_array(trim(strtoupper((string) $rawTanggal)), ['DD/MM/YYYY', 'YYYY-MM-DD', 'DD-MM-YYYY'], true)) {
-            $this->addError('file', "Tanggal snapshot masih berupa format contoh ('DD/MM/YYYY'). Silakan isi dengan tanggal yang valid (contoh: ".now()->format('d/m/Y').").");
+        $batches = [];
+        foreach ($buckets as $code => $branchRows) {
+            $batch = $this->buildBranchBatch($distributors[$code], $branchRows, $reader, $importService);
 
-            return false;
+            if ($batch === null) {
+                // Sebab kegagalannya sudah dilaporkan oleh buildBranchBatch();
+                // seluruh berkas dibatalkan, tidak ada cabang yang setengah masuk.
+                return false;
+            }
+
+            $batches[] = $batch;
         }
 
-        $tanggal = $this->parseExcelDate($rawTanggal);
-        if (! $tanggal) {
-            $this->addError('file', "Format tanggal snapshot pada berkas Excel tidak dikenali ('{$rawTanggal}'). Harap gunakan format tanggal yang valid (contoh: ".now()->format('d/m/Y').").");
+        $this->importQueue = $batches;
 
-            return false;
+        return $this->loadQueueItem(0);
+    }
+
+    /**
+     * Susun satu "batch" siap-grid untuk sebuah cabang.
+     *
+     * @param  array<int, array{row: array<int, mixed>, excel_row: int}>  $branchRows
+     * @return ?array  null bila berkas harus ditolak (sebabnya sudah dilaporkan)
+     */
+    private function buildBranchBatch(
+        Distributor $distributor,
+        array $branchRows,
+        StockRowReader $reader,
+        \App\Services\StockImportService $importService
+    ): ?array {
+        $firstRow = $branchRows[0]['row'];
+
+        $rawTanggal = $reader->rawTanggal($firstRow);
+        if (in_array(trim(strtoupper((string) $rawTanggal)), ['DD/MM/YYYY', 'YYYY-MM-DD', 'DD-MM-YYYY'], true)) {
+            $this->addError('file', "Tanggal snapshot masih berupa format contoh ('DD/MM/YYYY'). Silakan isi dengan tanggal yang valid (contoh: ".now()->format('d/m/Y').').');
+
+            return null;
+        }
+
+        $tanggal = $reader->tanggal($firstRow);
+        if (! $tanggal) {
+            $this->addError('file', "Format tanggal snapshot pada berkas Excel tidak dikenali ('{$rawTanggal}') untuk {$distributor->name}. Harap gunakan format tanggal yang valid (contoh: ".now()->format('d/m/Y').').');
+
+            return null;
         }
 
         $knownItems = DistributorItem::where('distributor_id', $distributor->id)
             ->get()
             ->keyBy(fn ($i) => mb_strtolower(trim(preg_replace('/\s+/', ' ', $i->item_name))));
 
-        $rows = [];
         $skipped = [];
         $skippedRowsData = [];
-
-        // Di-resolve sekali di luar loop: berkas stok bisa berisi ribuan baris,
-        // dan app() di dalam loop berarti resolusi container sebanyak itu pula.
-        $importService = app(\App\Services\StockImportService::class);
-
         $parsedRows = [];
-        $excelRow = 1; // baris 1 = header
 
-        foreach ($bodyRows as $r) {
-            $excelRow++;
-            $itemName = trim((string) ($r[$col['Distributor Item Name']] ?? ''));
-            if ($itemName === '' || strtoupper($itemName) === 'XXXXX XXXX') {
-                continue;
-            }
+        foreach ($branchRows as $entry) {
+            $r = $entry['row'];
+            $excelRow = $entry['excel_row'];
 
+            $itemName = $reader->itemName($r);
             $key = mb_strtolower(trim(preg_replace('/\s+/', ' ', $itemName)));
             $distItem = $knownItems->get($key);
 
-            // Satu definisi dipakai bersama dengan jalur otomasi email, supaya
-            // angka yang sama tidak pernah terbaca berbeda di dua jalur.
-            $qty = $importService->parseQuantity($r[$col['Quantity']] ?? 0);
-            $satuan = isset($col['Satuan']) ? trim((string) ($r[$col['Satuan']] ?? '')) : null;
-            $ed = isset($col['ED']) ? $this->parseExcelDate($r[$col['ED']] ?? null) : null;
+            $qty = $reader->quantity($r);
+            $satuan = $reader->satuan($r);
+            $ed = $reader->expiredDate($r);
             $edFormatted = $ed ? \Carbon\Carbon::parse($ed)->format('d/m/Y') : null;
-            $batch = isset($col['Batch No']) ? trim((string) ($r[$col['Batch No']] ?? '')) : null;
+            $batch = $reader->batchNo($r);
 
             if (! $distItem || ! $distItem->isMapped()) {
                 $skipped[] = $itemName;
@@ -531,10 +562,10 @@ class Upload extends Component
 
         if (! $grouping['ok']) {
             foreach ($grouping['errors'] as $err) {
-                $this->addError('file', $err);
+                $this->addError('file', $distributor->name.': '.$err);
             }
 
-            return false;
+            return null;
         }
 
         // Grid memakai ED berformat d/m/Y; pengelompokan bekerja dalam ISO.
@@ -551,42 +582,136 @@ class Upload extends Component
             ];
         }
 
-        $effectiveTanggal = $tanggal ?? $this->tanggal ?? now()->toDateString();
+        return [
+            'tanggal' => $tanggal,
+            'distributor_id' => $distributor->id,
+            'distributor_name' => $distributor->name,
+            'distributor_code' => $distributor->distributor_code,
+            'rows' => array_values($rows),
+            'skipped' => array_values(array_unique($skipped)),
+            'skipped_rows_data' => array_values($skippedRowsData),
+        ];
+    }
 
-        // Cek apakah sudah ada data tersimpan di DB untuk tanggal & distributor ini
+    /**
+     * Tampilkan satu cabang dari antrian ke grid.
+     *
+     * Pemeriksaan bentrok snapshot dilakukan per cabang di sini, bukan sekali
+     * di muka: cabang A bisa saja sudah punya data hari ini sementara cabang B
+     * belum, dan keduanya berhak atas pertanyaan Gabung/Ganti-nya sendiri.
+     */
+    private function loadQueueItem(int $index): bool
+    {
+        if (! isset($this->importQueue[$index])) {
+            return false;
+        }
+
+        $this->queueIndex = $index;
+        $batch = $this->importQueue[$index];
+
         $existingCount = StockEntry::query()
-            ->where('tanggal', $effectiveTanggal)
-            ->where('distributor_id', $distributor->id)
+            ->where('tanggal', $batch['tanggal'])
+            ->where('distributor_id', $batch['distributor_id'])
             ->count();
 
         if ($existingCount > 0) {
             $this->pendingImportData = [
-                'tanggal' => $effectiveTanggal,
-                'distributor_id' => $distributor->id,
-                'distributor_name' => $distributor->name,
+                'tanggal' => $batch['tanggal'],
+                'distributor_id' => $batch['distributor_id'],
+                'distributor_name' => $batch['distributor_name'],
                 'existing_count' => $existingCount,
-                'new_rows' => $rows,
-                'skipped' => array_values(array_unique($skipped)),
-                'skipped_rows_data' => array_values($skippedRowsData),
+                'new_rows' => $batch['rows'],
+                'skipped' => $batch['skipped'],
+                'skipped_rows_data' => $batch['skipped_rows_data'],
             ];
             $this->showConflictModal = true;
 
             return true;
         }
 
-        $this->tanggal = $effectiveTanggal;
-        $this->distributorId = $distributor->id;
-        $this->rows = array_values($rows);
-        $this->skippedItems = array_values(array_unique($skipped));
-        $this->skippedRowsData = array_values($skippedRowsData);
-        $this->removedRowKeys = [];
-        $this->dispatch('rows-loaded', rows: $this->rows);
-        $this->dispatch('file-imported');
+        $this->applyBatchToGrid($batch);
 
         return true;
     }
 
+    /** @param array<string, mixed> $batch */
+    private function applyBatchToGrid(array $batch): void
+    {
+        $this->tanggal = $batch['tanggal'];
+        $this->distributorId = $batch['distributor_id'];
+        $this->rows = array_values($batch['rows']);
+        $this->skippedItems = $batch['skipped'];
+        $this->skippedRowsData = $batch['skipped_rows_data'];
+        $this->removedRowKeys = [];
+        $this->replaceExistingSnapshot = false;
+        $this->dispatch('rows-loaded', rows: $this->rows);
+        $this->dispatch('file-imported');
+    }
+
+    /** Cabang berikutnya dalam antrian, atau null bila ini yang terakhir. */
+    public function getNextQueueBranchProperty(): ?string
+    {
+        return $this->importQueue[$this->queueIndex + 1]['distributor_name'] ?? null;
+    }
+
+    /** Cabang sebelumnya dalam antrian, atau null bila ini yang pertama. */
+    public function getPreviousQueueBranchProperty(): ?string
+    {
+        return $this->queueIndex > 0
+            ? ($this->importQueue[$this->queueIndex - 1]['distributor_name'] ?? null)
+            : null;
+    }
+
+    /** Lanjut ke cabang berikutnya tanpa menyimpan cabang yang sedang tampil. */
+    public function skipQueueItem(): void
+    {
+        $current = $this->importQueue[$this->queueIndex]['distributor_name'] ?? 'Cabang ini';
+
+        if (! $this->loadQueueItem($this->queueIndex + 1)) {
+            $this->clearImportQueue();
+            session()->flash('status', "{$current} dilewati. Seluruh cabang pada berkas ini sudah selesai diproses.");
+
+            return;
+        }
+
+        session()->flash('status', "{$current} dilewati tanpa disimpan.");
+    }
+
+    /**
+     * Pindah ke cabang mana pun dalam antrian, maju maupun mundur.
+     *
+     * Isi grid selalu dimuat ulang dari hasil pembacaan berkas, jadi kembali
+     * ke cabang sebelumnya berarti melihat data berkas apa adanya — bukan
+     * koreksi yang belum sempat disimpan, dan bukan pula snapshot yang sudah
+     * tersimpan. Karena itu tombolnya meminta konfirmasi.
+     */
+    public function goToQueueItem(int $index): void
+    {
+        if ($index === $this->queueIndex || ! isset($this->importQueue[$index])) {
+            return;
+        }
+
+        $target = $this->importQueue[$index]['distributor_name'];
+
+        $this->loadQueueItem($index);
+
+        session()->flash('status', "Berpindah ke cabang ".($index + 1)." dari ".count($this->importQueue).": {$target}.");
+    }
+
+    /** Kembali ke cabang sebelumnya dalam antrian. */
+    public function previousQueueItem(): void
+    {
+        $this->goToQueueItem($this->queueIndex - 1);
+    }
+
+    public function clearImportQueue(): void
+    {
+        $this->importQueue = [];
+        $this->queueIndex = 0;
+    }
+
     public function confirmImport(string $mode): void
+
     {
         if (empty($this->pendingImportData)) {
             $this->showConflictModal = false;
@@ -639,7 +764,7 @@ class Upload extends Component
             }
 
             $this->rows = array_values($mergedRows);
-            session()->flash('status', 'Import selesai (Mode Smart FEFO Merge): '.count($this->rows)." baris stok berhasil digabungkan untuk {$pending['distributor_name']} — {$this->tanggal}.");
+            session()->flash('status', 'Import selesai (Mode Gabung Data): '.count($this->rows)." baris stok berhasil digabungkan untuk {$pending['distributor_name']} — {$this->tanggal}.");
         } else {
             // Mode 'replace'
             $this->rows = array_values($pending['new_rows']);
@@ -893,6 +1018,9 @@ class Upload extends Component
     {
         $this->removedRowKeys = [];
         $this->replaceExistingSnapshot = false;
+        // Operator berpindah distributor sendiri: antrian cabang dari berkas
+        // sebelumnya tidak lagi menggambarkan apa yang ada di grid.
+        $this->clearImportQueue();
     }
 
     public function saveRows(array $rows): void
@@ -1060,6 +1188,26 @@ class Upload extends Component
         if ($deletedCount > 0) {
             $status .= " {$deletedCount} baris dihapus dari snapshot.";
         }
+
+        // Berkas berisi beberapa cabang: begitu cabang ini tersimpan, cabang
+        // berikutnya langsung dimuat ke grid supaya operator tidak perlu
+        // mengunggah ulang berkas yang sama berkali-kali.
+        if ($this->importQueue !== []) {
+            $position = $this->queueIndex + 1;
+            $total = count($this->importQueue);
+
+            if ($this->loadQueueItem($this->queueIndex + 1)) {
+                $next = $this->importQueue[$this->queueIndex]['distributor_name'];
+                $status .= " (Cabang {$position} dari {$total} selesai — lanjut ke {$next}.)";
+                session()->flash('status', $status);
+
+                return;
+            }
+
+            $this->clearImportQueue();
+            $status .= " Seluruh {$total} cabang pada berkas ini sudah selesai diproses.";
+        }
+
         session()->flash('status', $status);
         $this->loadExisting();
     }

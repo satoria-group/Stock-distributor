@@ -19,6 +19,7 @@ class RolePermissionSeeder extends Seeder
     {
         $permissions = [
             'distributors.view', 'distributors.manage',
+            'template-groups.view', 'template-groups.manage',
             'netsuite-items.view', 'netsuite-items.manage',
             'distributor-items.view', 'distributor-items.manage',
             'stock.view', 'stock.upload',
@@ -39,6 +40,7 @@ class RolePermissionSeeder extends Seeder
         $logistik = Role::firstOrCreate(['name' => User::ROLE_LOGISTIK, 'guard_name' => 'web']);
         $logistik->syncPermissions([
             'distributor-items.view',
+            'template-groups.view',
             'stock.view',
             'stock.upload',
             'dashboard.view',

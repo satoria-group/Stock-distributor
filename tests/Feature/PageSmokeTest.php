@@ -35,6 +35,7 @@ class PageSmokeTest extends TestCase
         return [
             'dashboard' => ['dashboard'],
             'distributors' => ['distributors.index'],
+            'template groups' => ['template-groups.index'],
             'netsuite items' => ['netsuite-items.index'],
             'distributor items' => ['distributor-items.index'],
             'stock upload' => ['stock.upload'],

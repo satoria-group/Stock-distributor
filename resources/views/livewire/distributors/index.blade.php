@@ -56,6 +56,7 @@
                     <th class="px-5 py-3.5 w-36">Kode</th>
                     <th class="px-5 py-3.5">Nama Distributor</th>
                     <th class="px-5 py-3.5">Email Whitelist</th>
+                    <th class="px-5 py-3.5 w-44">Grup Template</th>
                     <th class="px-5 py-3.5 w-28 text-center">Status</th>
                     <th class="px-5 py-3.5 w-32 text-right">Aksi</th>
                 </tr>
@@ -80,6 +81,16 @@
                                     <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
                                     <span class="italic">Belum diatur (bebas)</span>
                                 </span>
+                            @endif
+                        </td>
+                        <td class="px-5 py-3.5 text-xs">
+                            @if ($distributor->templateGroup)
+                                <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-teal-50 text-[#0d6d5f] border border-teal-200/80 text-[11px] font-semibold shadow-2xs">
+                                    <svg width="11" height="11" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h7"/></svg>
+                                    {{ $distributor->templateGroup->name }}
+                                </span>
+                            @else
+                                <span class="text-[11px] text-slate-400 italic">Deteksi otomatis</span>
                             @endif
                         </td>
                         <td class="px-5 py-3.5 text-center">
@@ -112,7 +123,7 @@
                     </tr>
                 @empty
                     <tr>
-                        <td colspan="5" class="px-5 py-14 text-center text-slate-400">
+                        <td colspan="6" class="px-5 py-14 text-center text-slate-400">
                             <div class="text-3xl mb-2">🏢</div>
                             <div class="font-bold text-slate-700 text-sm">Belum ada data distributor</div>
                             <div class="text-xs text-slate-400 mt-0.5">Distributor mitra belum terdaftar dalam sistem.</div>
@@ -173,6 +184,19 @@
                         Alamat email resmi yang diizinkan mengirim file laporan stok harian. Bisa masukkan satu email, beberapa email dipisah koma (<code>,</code>), atau domain wildcard seperti <code>@kftd.co.id</code>.
                     </p>
                     @error('sender_email') <p class="text-xs text-rose-600 mt-1">{{ $message }}</p> @enderror
+                </div>
+                <div>
+                    <label class="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1.5">Grup Template Excel</label>
+                    <select wire:model="template_group_id" class="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-xs text-slate-800 bg-white focus:outline-none focus:ring-2 focus:ring-[#0d6d5f]/25 focus:border-[#0d6d5f] cursor-pointer">
+                        <option value="">Deteksi otomatis (tanpa grup)</option>
+                        @foreach ($templateGroups as $g)
+                            <option value="{{ $g->id }}">{{ $g->name }}</option>
+                        @endforeach
+                    </select>
+                    <p class="text-[11px] text-slate-500 mt-1.5 leading-relaxed">
+                        Bentuk berkas Excel yang dipakai distributor ini. Satu grup dipakai bersama seluruh cabang (mis. semua cabang UDC). Atur pemetaan kolomnya di menu <b>Grup Template Excel</b>.
+                    </p>
+                    @error('template_group_id') <p class="text-xs text-rose-600 mt-1">{{ $message }}</p> @enderror
                 </div>
                 <label class="flex items-center gap-2 text-xs font-semibold text-slate-700 cursor-pointer pt-1">
                     <input type="checkbox" wire:model="is_active" class="rounded text-[#0d6d5f] focus:ring-[#0d6d5f]">

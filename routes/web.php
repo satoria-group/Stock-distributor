@@ -9,6 +9,7 @@ use App\Livewire\Emails\Index as EmailsIndex;
 use App\Livewire\NetsuiteItems\Index as NetsuiteItemsIndex;
 use App\Livewire\Stock\History as StockHistory;
 use App\Livewire\Stock\Upload as StockUpload;
+use App\Livewire\TemplateGroups\Index as TemplateGroupsIndex;
 use App\Livewire\Users\Index as UsersIndex;
 use Illuminate\Support\Facades\Route;
 
@@ -25,6 +26,7 @@ Route::middleware('auth')->group(function () {
     Route::get('/dashboard', Dashboard::class)->name('dashboard');
 
     Route::get('/distributors', DistributorsIndex::class)->name('distributors.index');
+    Route::get('/template-groups', TemplateGroupsIndex::class)->name('template-groups.index');
     Route::get('/netsuite-items', NetsuiteItemsIndex::class)->name('netsuite-items.index');
     Route::get('/distributor-items', DistributorItemsIndex::class)->name('distributor-items.index');
     Route::get('/emails', EmailsIndex::class)->name('emails.index');
