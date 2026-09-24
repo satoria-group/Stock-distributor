@@ -91,7 +91,7 @@ class Upload extends Component
 
     public string $requestItemName = '';
 
-    public string $requestSatuan = 'PCS';
+    public string $requestSatuan = '';
 
     public ?int $addItemId = null;
 
@@ -313,7 +313,7 @@ class Upload extends Component
         $this->rows = $existing->map(fn (StockEntry $e) => [
             'distributor_item_id' => $e->distributor_item_id,
             'item_name' => $e->distributorItem?->item_name ?? ('Item ID #'.$e->distributor_item_id),
-            'satuan' => $e->satuan ?: ($e->distributorItem?->satuan ?? 'PCS'),
+            'satuan' => $e->satuan ?: null,
             'quantity' => (float) $e->quantity,
             'expired_date' => optional($e->expired_date)->format('d/m/Y'),
             'batch_no' => $e->batch_no,
@@ -377,19 +377,21 @@ class Upload extends Component
 
     protected function processSpreadsheetPath(string $filePath, string $sourceDescription = 'File Excel'): bool
     {
+        // Pemilihan cara baca dan pemecahan per cabang dikerjakan di satu
+        // tempat yang sama dengan jalur otomasi email, supaya satu berkas tidak
+        // pernah terbaca berbeda di dua jalur.
+        //
+        // Nama berkas ASLI ikut diserahkan: sebagian distributor tidak menulis
+        // tanggal di dalam berkasnya sama sekali, hanya pada namanya.
+        $importService = app(\App\Services\StockImportService::class);
+
         try {
-            $spreadsheet = IOFactory::load($filePath);
+            $reading = (new StockFileReader($importService))->read($filePath, $this->sourceFilename);
         } catch (\Throwable $e) {
             $this->addError('file', "Gagal membaca {$sourceDescription}: ".$e->getMessage());
 
             return false;
         }
-
-        // Pemilihan cara baca dan pemecahan per cabang dikerjakan di satu
-        // tempat yang sama dengan jalur otomasi email, supaya satu berkas tidak
-        // pernah terbaca berbeda di dua jalur.
-        $importService = app(\App\Services\StockImportService::class);
-        $reading = (new StockFileReader($importService))->read($spreadsheet);
 
         if (! $reading['ok']) {
             $this->addError('file', $reading['error'] ?? 'Judul kolom pada berkas Excel tidak dikenali.');
@@ -404,7 +406,6 @@ class Upload extends Component
         }
 
         $buckets = $reading['buckets'];
-        $reader = $reading['reader'];
 
         if ($buckets === []) {
             $this->addError('file', "Berkas ({$sourceDescription}) tidak berisi baris data.");
@@ -445,7 +446,7 @@ class Upload extends Component
 
         $batches = [];
         foreach ($buckets as $code => $branchRows) {
-            $batch = $this->buildBranchBatch($distributors[$code], $branchRows, $reader, $importService);
+            $batch = $this->buildBranchBatch($distributors[$code], $branchRows, $importService);
 
             if ($batch === null) {
                 // Sebab kegagalannya sudah dilaporkan oleh buildBranchBatch();
@@ -470,10 +471,10 @@ class Upload extends Component
     private function buildBranchBatch(
         Distributor $distributor,
         array $branchRows,
-        StockRowReader $reader,
         \App\Services\StockImportService $importService
     ): ?array {
         $firstRow = $branchRows[0]['row'];
+        $reader = $branchRows[0]['reader'];
 
         $rawTanggal = $reader->rawTanggal($firstRow);
         if (in_array(trim(strtoupper((string) $rawTanggal)), ['DD/MM/YYYY', 'YYYY-MM-DD', 'DD-MM-YYYY'], true)) {
@@ -489,9 +490,9 @@ class Upload extends Component
             return null;
         }
 
-        $knownItems = DistributorItem::where('distributor_id', $distributor->id)
-            ->get()
-            ->keyBy(fn ($i) => mb_strtolower(trim(preg_replace('/\s+/', ' ', $i->item_name))));
+        // Pemetaan milik GRUP berlaku untuk seluruh cabangnya; baris milik
+        // cabang hanya ada sebagai pengecualian dan menimpa yang segrup.
+        $knownItems = DistributorItem::lookupFor($distributor);
 
         $skipped = [];
         $skippedRowsData = [];
@@ -500,6 +501,9 @@ class Upload extends Component
         foreach ($branchRows as $entry) {
             $r = $entry['row'];
             $excelRow = $entry['excel_row'];
+            // Tiap baris membawa pembacanya sendiri: satu berkas SDL memuat
+            // beberapa sheet, masing-masing dengan baris header sendiri.
+            $reader = $entry['reader'];
 
             $itemName = $reader->itemName($r);
             $key = mb_strtolower(trim(preg_replace('/\s+/', ' ', $itemName)));
@@ -517,7 +521,7 @@ class Upload extends Component
                 if (! isset($skippedRowsData[$key])) {
                     $skippedRowsData[$key] = [
                         'item_name' => $itemName,
-                        'satuan' => $satuan ?: ($distItem?->satuan ?: 'PCS'),
+                        'satuan' => $satuan ?: null,
                         'quantity' => $qty,
                         'expired_date' => $edFormatted,
                         'batch_no' => $batch ?: null,
@@ -548,7 +552,7 @@ class Upload extends Component
                 'item_id' => $distItem->id,
                 'item_name' => $distItem->item_name,
                 'qty' => $qty,
-                'satuan' => $satuan ?: $distItem->satuan,
+                'satuan' => $satuan ?: null,
                 'ed' => $ed,
                 'batch' => $batch,
                 'excel_row' => $excelRow,
@@ -754,7 +758,7 @@ class Upload extends Component
                     $mergedRows[$key] = [
                         'distributor_item_id' => $itemId,
                         'item_name' => $entry->distributorItem?->item_name ?? ('Item ID #'.$itemId),
-                        'satuan' => $entry->satuan ?: ($entry->distributorItem?->satuan ?? 'PCS'),
+                        'satuan' => $entry->satuan ?: null,
                         'quantity' => (float) $entry->quantity,
                         'expired_date' => optional($entry->expired_date)->format('d/m/Y'),
                         'batch_no' => $entry->batch_no,
@@ -803,7 +807,7 @@ class Upload extends Component
             ? $this->skippedRowsData
             : array_map(fn ($name) => [
                 'item_name' => $name,
-                'satuan' => 'PCS',
+                'satuan' => null,
                 'quantity' => 0,
                 'expired_date' => null,
                 'batch_no' => null,
@@ -811,57 +815,10 @@ class Upload extends Component
 
         $addedCount = 0;
         DB::transaction(function () use ($itemsToProcess, &$addedCount) {
-            $processedMasterItems = [];
+            $distributor = Distributor::find($this->distributorId);
 
             foreach ($itemsToProcess as $itemData) {
-                $rawName = trim($itemData['item_name']);
-                $normalized = mb_strtolower(trim(preg_replace('/\s+/', ' ', $rawName)));
-
-                if (isset($processedMasterItems[$normalized])) {
-                    $distItem = $processedMasterItems[$normalized];
-                } else {
-                    $existing = DistributorItem::withTrashed()
-                        ->where('distributor_id', $this->distributorId)
-                        ->whereRaw('LOWER(TRIM(item_name)) = ?', [$normalized])
-                        ->first();
-
-                    if ($existing) {
-                        if ($existing->trashed()) {
-                            $existing->restore();
-                        }
-                        if (! empty($itemData['satuan']) && empty($existing->satuan)) {
-                            $existing->update(['satuan' => $itemData['satuan']]);
-                        }
-                        $distItem = $existing;
-                    } else {
-                        // DB::transaction() bersarang = SAVEPOINT. Ini WAJIB di
-                        // PostgreSQL: begitu sebuah statement gagal, seluruh
-                        // transaksi masuk status aborted dan setiap query
-                        // berikutnya ditolak (SQLSTATE 25P02) — termasuk query
-                        // pemulihan di blok catch ini. Savepoint membuat
-                        // kegagalan insert bisa dibatalkan sendirian, sehingga
-                        // transaksi induk tetap sehat.
-                        try {
-                            $distItem = DB::transaction(fn () => DistributorItem::create([
-                                'distributor_id' => $this->distributorId,
-                                'item_name' => $rawName,
-                                'satuan' => $itemData['satuan'] ?: 'PCS',
-                                'netsuite_item_id' => null,
-                            ]));
-                        } catch (\Illuminate\Database\UniqueConstraintViolationException) {
-                            $distItem = DistributorItem::withTrashed()
-                                ->where('distributor_id', $this->distributorId)
-                                ->whereRaw('LOWER(TRIM(item_name)) = ?', [$normalized])
-                                ->first();
-                            if ($distItem && $distItem->trashed()) {
-                                $distItem->restore();
-                            }
-                        }
-                    }
-                    $processedMasterItems[$normalized] = $distItem;
-                }
-
-                if ($distItem) {
+                if (DistributorItem::queueFor($distributor, $itemData['item_name'], $itemData['satuan'] ?? null)) {
                     $addedCount++;
                 }
             }
@@ -877,7 +834,7 @@ class Upload extends Component
     public function openSingleRequestModal(): void
     {
         $this->requestItemName = '';
-        $this->requestSatuan = 'PCS';
+        $this->requestSatuan = '';
         $this->resetErrorBag(['requestItemName', 'requestSatuan']);
         $this->showSingleRequestModal = true;
     }
@@ -894,43 +851,14 @@ class Upload extends Component
 
         $this->validate([
             'requestItemName' => ['required', 'string', 'min:2', 'max:255'],
-            'requestSatuan' => ['required', 'string', 'max:50'],
+            'requestSatuan' => ['nullable', 'string', 'max:50'],
         ]);
 
-        $rawName = trim($this->requestItemName);
-        $normalized = mb_strtolower(trim(preg_replace('/\s+/', ' ', $rawName)));
-
-        $existing = DistributorItem::withTrashed()
-            ->where('distributor_id', $this->distributorId)
-            ->whereRaw('LOWER(TRIM(item_name)) = ?', [$normalized])
-            ->first();
-
-        if ($existing) {
-            if ($existing->trashed()) {
-                $existing->restore();
-            }
-            if (! empty($this->requestSatuan) && empty($existing->satuan)) {
-                $existing->update(['satuan' => trim($this->requestSatuan)]);
-            }
-            $distItem = $existing;
-        } else {
-            try {
-                $distItem = DistributorItem::create([
-                    'distributor_id' => $this->distributorId,
-                    'item_name' => $rawName,
-                    'satuan' => trim($this->requestSatuan) ?: 'PCS',
-                    'netsuite_item_id' => null,
-                ]);
-            } catch (\Illuminate\Database\UniqueConstraintViolationException) {
-                $distItem = DistributorItem::withTrashed()
-                    ->where('distributor_id', $this->distributorId)
-                    ->whereRaw('LOWER(TRIM(item_name)) = ?', [$normalized])
-                    ->first();
-                if ($distItem && $distItem->trashed()) {
-                    $distItem->restore();
-                }
-            }
-        }
+        $distItem = DistributorItem::queueFor(
+            Distributor::find($this->distributorId),
+            $this->requestItemName,
+            trim($this->requestSatuan) ?: null,
+        );
 
         $this->showSingleRequestModal = false;
         $this->reset(['requestItemName', 'requestSatuan']);
@@ -947,7 +875,7 @@ class Upload extends Component
         }
 
         $item = DistributorItem::find($this->addItemId);
-        if (! $item || $item->distributor_id !== $this->distributorId || ! $item->isMapped()) {
+        if (! $this->itemBelongsToCurrentDistributor($item) || ! $item->isMapped()) {
             return;
         }
 
@@ -965,7 +893,7 @@ class Upload extends Component
         $this->rows[] = [
             'distributor_item_id' => $item->id,
             'item_name' => $item->item_name,
-            'satuan' => $item->satuan,
+            'satuan' => null,
             'quantity' => 0,
             'expired_date' => null,
             'batch_no' => null,
@@ -1023,6 +951,28 @@ class Upload extends Component
         $this->clearImportQueue();
     }
 
+    /**
+     * Baris pemetaan ini boleh dipakai distributor yang sedang dikerjakan?
+     *
+     * Sejak pemetaan dimiliki GRUP, kepemilikan tidak lagi bisa diperiksa
+     * dengan membandingkan distributor_id: baris milik grup memang tidak punya
+     * cabang. Yang diperiksa kini: milik cabang ini sendiri, atau milik grup
+     * usahanya.
+     */
+    private function itemBelongsToCurrentDistributor(?DistributorItem $item): bool
+    {
+        if (! $item || ! $this->distributorId) {
+            return false;
+        }
+
+        if ($item->distributor_id !== null) {
+            return $item->distributor_id === $this->distributorId;
+        }
+
+        return $item->distributor_group_id !== null
+            && $item->distributor_group_id === Distributor::find($this->distributorId)?->distributor_group_id;
+    }
+
     public function saveRows(array $rows): void
     {
         Gate::authorize('create', StockEntry::class);
@@ -1059,7 +1009,7 @@ class Upload extends Component
                 }
 
                 $item = DistributorItem::find($row['distributor_item_id']);
-                if (! $item || $item->distributor_id !== $this->distributorId) {
+                if (! $this->itemBelongsToCurrentDistributor($item)) {
                     continue;
                 }
 
@@ -1074,6 +1024,10 @@ class Upload extends Component
                 StockEntry::updateOrCreate(
                     [
                         'tanggal' => $this->tanggal,
+                        // Cabang ikut jadi kunci: satu baris pemetaan milik grup
+                        // dipakai banyak cabang, jadi tanpa ini snapshot cabang
+                        // berikutnya akan menimpa yang sebelumnya.
+                        'distributor_id' => $this->distributorId,
                         'distributor_item_id' => $item->id,
                         // Batch bagian dari identitas: dua batch pada item &
                         // tanggal yang sama adalah dua baris, bukan timpa.
@@ -1082,7 +1036,7 @@ class Upload extends Component
                     [
                         'distributor_id' => $this->distributorId,
                         'quantity' => (float) ($row['quantity'] ?? 0),
-                        'satuan' => $row['satuan'] ?: $item->satuan,
+                        'satuan' => ($row['satuan'] ?? null) ?: null,
                         // Kalau tidak terbaca, simpan NULL — JANGAN teruskan
                         // string mentahnya. Kolomnya bertipe `date`, sehingga
                         // nilai seperti "ED menyusul" membuat seluruh transaksi

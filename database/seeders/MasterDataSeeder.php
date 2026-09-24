@@ -112,7 +112,6 @@ class MasterDataSeeder extends Seeder
             $itemName = trim((string) ($row[4] ?? ''));
             $satuan = $row[5] !== null ? trim((string) $row[5]) : null;
             $netsuiteId = $row[6] !== null ? trim((string) $row[6]) : null;
-            $netsuiteSatuan = $row[8] !== null ? trim((string) $row[8]) : null;
 
             $distributorId = $distributorIdByCode[$distributorCode] ?? null;
 
@@ -132,7 +131,6 @@ class MasterDataSeeder extends Seeder
                     'source_item_id' => $sourceItemId ?: null,
                     'satuan' => $satuan ?: null,
                     'netsuite_item_id' => $netsuiteItemId,
-                    'netsuite_satuan' => $netsuiteSatuan ?: null,
                 ]
             );
 

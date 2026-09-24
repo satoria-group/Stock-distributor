@@ -3,6 +3,7 @@
 namespace App\Livewire\DistributorItems;
 
 use App\Models\Distributor;
+use App\Models\DistributorGroup;
 use App\Models\DistributorItem;
 use App\Models\NetsuiteItem;
 use App\Services\ItemMatchingService;
@@ -21,9 +22,6 @@ class Index extends Component
     use WithPagination;
 
     public string $search = '';
-
-    #[Url]
-    public string $distributorFilter = '';
 
     /** all | mapped | unmapped */
     #[Url]
@@ -47,6 +45,59 @@ class Index extends Component
 
     public ?int $distributor_id = null;
 
+    /** Pemilik pemetaan pada form: 'g:<id>' grup, atau 'd:<id>' cabang. */
+    public string $owner = '';
+
+    /** Penyaring daftar dengan pengkodean yang sama. */
+    #[Url]
+    public string $ownerFilter = '';
+
+    /**
+     * Pemilik pemetaan, dikodekan 'g:<id>' untuk grup atau 'd:<id>' untuk cabang.
+     *
+     * Satu isian, bukan dua: pemetaan dimiliki grup ATAU satu cabang, tidak
+     * pernah keduanya — dua dropdown terpisah hanya akan mengundang kombinasi
+     * yang tidak punya arti.
+     *
+     * @return array{distributor_group_id?: int, distributor_id?: int}|null
+     */
+    public static function decodeOwner(?string $owner): ?array
+    {
+        if (! $owner || ! str_contains($owner, ':')) {
+            return null;
+        }
+
+        [$kind, $id] = explode(':', $owner, 2);
+        $id = (int) $id;
+
+        if ($id <= 0) {
+            return null;
+        }
+
+        return match ($kind) {
+            'g' => ['distributor_group_id' => $id],
+            'd' => ['distributor_id' => $id],
+            default => null,
+        };
+    }
+
+    public static function encodeOwner(DistributorItem $item): string
+    {
+        return $item->distributor_group_id
+            ? 'g:'.$item->distributor_group_id
+            : ($item->distributor_id ? 'd:'.$item->distributor_id : '');
+    }
+
+    /** Nama pemilik untuk ditampilkan di daftar. */
+    public static function ownerLabel(DistributorItem $item): string
+    {
+        if ($item->distributorGroup) {
+            return $item->distributorGroup->name;
+        }
+
+        return $item->distributor?->name ?? '—';
+    }
+
     public function mount(): void
     {
         Gate::authorize('viewAny', DistributorItem::class);
@@ -57,7 +108,7 @@ class Index extends Component
         $this->resetPage();
     }
 
-    public function updatedDistributorFilter(): void
+    public function updatedOwnerFilter(): void
     {
         $this->resetPage();
     }
@@ -70,7 +121,7 @@ class Index extends Component
     public function resetFilters(): void
     {
         $this->search = '';
-        $this->distributorFilter = '';
+        $this->ownerFilter = '';
         $this->mappingFilter = 'all';
         $this->resetPage();
     }
@@ -97,10 +148,7 @@ class Index extends Component
 
         $netsuite = NetsuiteItem::findOrFail($netsuiteItemId);
 
-        $item->update([
-            'netsuite_item_id' => $netsuite->id,
-            'netsuite_satuan' => $netsuite->default_satuan,
-        ]);
+        $item->update(['netsuite_item_id' => $netsuite->id]);
 
         session()->flash('status', "1-Click Berhasil: Item '{$item->item_name}' telah disetujui & dipetakan ke [{$netsuite->netsuite_id}] {$netsuite->netsuite_name}.");
     }
@@ -160,10 +208,7 @@ class Index extends Component
 
                 Gate::authorize('update', $item);
 
-                $item->update([
-                    'netsuite_item_id' => $match['best_match']->id,
-                    'netsuite_satuan' => $match['best_match']->default_satuan,
-                ]);
+                $item->update(['netsuite_item_id' => $match['best_match']->id]);
                 $approvedCount++;
             }
         });
@@ -183,7 +228,9 @@ class Index extends Component
     {
         Gate::authorize('create', DistributorItem::class);
         $this->editingId = null;
-        $this->distributor_id = $this->distributorFilter ? (int) $this->distributorFilter : null;
+        // Pemilik mengikuti penyaring yang sedang dipakai — paling sering itu
+        // memang yang dimaksud operator saat menekan Tambah.
+        $this->owner = $this->ownerFilter;
         $this->item_name = '';
         $this->satuan = '';
         $this->netsuite_item_id = null;
@@ -199,6 +246,7 @@ class Index extends Component
 
         $this->editingId = $item->id;
         $this->distributor_id = $item->distributor_id;
+        $this->owner = self::encodeOwner($item);
         $this->item_name = $item->item_name;
         $this->satuan = (string) $item->satuan;
         $this->netsuite_item_id = $item->netsuite_item_id;
@@ -212,9 +260,19 @@ class Index extends Component
 
     public function save(): void
     {
-        $distributorId = $this->editingId
-            ? DistributorItem::findOrFail($this->editingId)->distributor_id
-            : $this->distributor_id;
+        // Pemilik tidak boleh berpindah lewat form edit: memindahkan pemetaan
+        // antar grup berarti memindahkan seluruh riwayat snapshot yang
+        // menunjuknya, dan itu keputusan yang terlalu besar untuk sebuah
+        // dropdown.
+        $ownerAttrs = $this->editingId
+            ? self::decodeOwner(self::encodeOwner(DistributorItem::findOrFail($this->editingId)))
+            : self::decodeOwner($this->owner);
+
+        if (! $ownerAttrs) {
+            $this->addError('owner', 'Pilih dulu pemiliknya: sebuah grup distributor, atau satu cabang sebagai pengecualian.');
+
+            return;
+        }
 
         $rules = [
             'item_name' => [
@@ -222,7 +280,7 @@ class Index extends Component
                 'string',
                 'max:255',
                 Rule::unique('distributor_items', 'item_name')
-                    ->where('distributor_id', $distributorId)
+                    ->where(fn ($q) => $q->where($ownerAttrs))
                     ->whereNull('deleted_at')
                     ->ignore($this->editingId),
             ],
@@ -230,17 +288,9 @@ class Index extends Component
             'netsuite_item_id' => ['nullable', 'exists:netsuite_items,id'],
         ];
 
-        if (! $this->editingId) {
-            $rules['distributor_id'] = ['required', 'exists:distributors,id'];
-        }
-
         $data = $this->validate($rules, [
-            'item_name.unique' => 'Nama item ini sudah terdaftar untuk distributor tersebut.',
+            'item_name.unique' => 'Nama item ini sudah terdaftar untuk pemilik tersebut.',
         ]);
-
-        $netsuiteSatuan = $data['netsuite_item_id']
-            ? NetsuiteItem::find($data['netsuite_item_id'])?->default_satuan
-            : null;
 
         if ($this->editingId) {
             $item = DistributorItem::findOrFail($this->editingId);
@@ -251,7 +301,6 @@ class Index extends Component
                     'item_name' => $data['item_name'],
                     'satuan' => $data['satuan'],
                     'netsuite_item_id' => $data['netsuite_item_id'],
-                    'netsuite_satuan' => $netsuiteSatuan,
                 ]);
             } catch (\Illuminate\Database\UniqueConstraintViolationException) {
                 $this->addError('item_name', 'Nama item ini sudah terdaftar untuk distributor tersebut.');
@@ -262,7 +311,7 @@ class Index extends Component
             Gate::authorize('create', DistributorItem::class);
 
             $existing = DistributorItem::withTrashed()
-                ->where('distributor_id', $data['distributor_id'])
+                ->where($ownerAttrs)
                 ->whereRaw('LOWER(TRIM(item_name)) = ?', [mb_strtolower(trim($data['item_name']))])
                 ->first();
 
@@ -274,20 +323,17 @@ class Index extends Component
                     'item_name' => $data['item_name'],
                     'satuan' => $data['satuan'],
                     'netsuite_item_id' => $data['netsuite_item_id'],
-                    'netsuite_satuan' => $netsuiteSatuan,
                 ]);
             } else {
                 try {
-                    DistributorItem::create([
-                        'distributor_id' => $data['distributor_id'],
+                    DistributorItem::create($ownerAttrs + [
                         'item_name' => $data['item_name'],
                         'satuan' => $data['satuan'],
                         'netsuite_item_id' => $data['netsuite_item_id'],
-                        'netsuite_satuan' => $netsuiteSatuan,
                     ]);
                 } catch (\Illuminate\Database\UniqueConstraintViolationException) {
                     $existing = DistributorItem::withTrashed()
-                        ->where('distributor_id', $data['distributor_id'])
+                        ->where($ownerAttrs)
                         ->whereRaw('LOWER(TRIM(item_name)) = ?', [mb_strtolower(trim($data['item_name']))])
                         ->first();
                     if ($existing) {
@@ -298,7 +344,6 @@ class Index extends Component
                             'item_name' => $data['item_name'],
                             'satuan' => $data['satuan'],
                             'netsuite_item_id' => $data['netsuite_item_id'],
-                            'netsuite_satuan' => $netsuiteSatuan,
                         ]);
                     }
                 }
@@ -306,7 +351,7 @@ class Index extends Component
         }
 
         $this->showModal = false;
-        $this->reset(['editingId', 'distributor_id', 'item_name', 'satuan', 'netsuite_item_id', 'modalSuggestions']);
+        $this->reset(['editingId', 'distributor_id', 'owner', 'item_name', 'satuan', 'netsuite_item_id', 'modalSuggestions']);
         session()->flash('status', 'Mapping item tersimpan.');
     }
 
@@ -321,7 +366,7 @@ class Index extends Component
     public function render()
     {
         $items = DistributorItem::query()
-            ->with(['distributor', 'netsuiteItem'])
+            ->with(['distributor', 'distributorGroup', 'netsuiteItem'])
             ->when($this->search, function ($q) {
                 $q->where(function ($sub) {
                     $sub->where('item_name', 'ilike', Search::contains($this->search))
@@ -331,7 +376,7 @@ class Index extends Component
                         });
                 });
             })
-            ->when($this->distributorFilter, fn ($q) => $q->where('distributor_id', $this->distributorFilter))
+            ->when(self::decodeOwner($this->ownerFilter), fn ($q, $owner) => $q->where($owner))
             ->when($this->mappingFilter === 'mapped', fn ($q) => $q->mapped())
             ->when($this->mappingFilter === 'unmapped', fn ($q) => $q->unmapped())
             ->orderBy('item_name')
@@ -342,12 +387,13 @@ class Index extends Component
         $suggestions = $service->getSuggestionsForCollection($unmappedOnPage);
 
         // Bulk suggestions across all unmapped items (for toolbar badge & bulk review modal)
-        $allUnmapped = DistributorItem::unmapped()->with('distributor')->get();
+        $allUnmapped = DistributorItem::unmapped()->with(['distributor', 'distributorGroup'])->get();
         $bulkSuggestions = $service->getSuggestionsForCollection($allUnmapped);
 
         return view('livewire.distributor-items.index', [
             'items' => $items,
             'distributors' => Distributor::orderBy('name')->get(),
+            'distributorGroups' => DistributorGroup::ordered()->get(),
             'netsuiteItems' => NetsuiteItem::orderBy('netsuite_name')->get(),
             'unmappedCount' => $allUnmapped->count(),
             'suggestions' => $suggestions,

@@ -130,7 +130,7 @@ class StockSnapshotActivityTest extends TestCase
         $user = User::where('email', 'logistik@satoriagroup.co.id')->first() ?? User::first();
         $user->syncPermissions(['stock.view', 'stock.upload']);
 
-        $distributor = Distributor::where('distributor_code', 'TEST-ACT-01')->first() ?? Distributor::first();
+        $distributor = Distributor::where('distributor_code', 'TEST-ACT-01')->first() ?? Distributor::where('is_active', true)->first();
         $testDate = '2029-11-20';
 
         StockSnapshotActivity::where('distributor_id', $distributor->id)->where('tanggal', $testDate)->delete();
@@ -203,7 +203,14 @@ class StockSnapshotActivityTest extends TestCase
         $user = User::where('email', 'logistik@satoriagroup.co.id')->first() ?? User::first();
         $user->syncPermissions(['stock.view', 'stock.upload']);
 
-        $distributor = Distributor::first();
+        // Harus distributor AKTIF: penyimpanan stok memang menolak yang
+        // nonaktif, jadi memungut baris pertama apa adanya membuat test ini
+        // gagal begitu ada yang dinonaktifkan lewat UI.
+        $distributor = Distributor::where('is_active', true)->first() ?? Distributor::create([
+            'distributor_code' => 'TEST-SAVE-'.uniqid(),
+            'name' => 'Distributor Uji Simpan',
+            'is_active' => true,
+        ]);
         $testDate = '2029-12-01';
 
         $ns = NetsuiteItem::firstOrCreate([

@@ -121,8 +121,10 @@ class EmailReaderFeatureTest extends TestCase
         Livewire::actingAs($user)
             ->test(\App\Livewire\Emails\Index::class)
             ->call('openMappingForLog', $log->id)
+            // Penyaring halaman mapping kini menyebut PEMILIK pemetaan:
+            // 'd:<id>' untuk satu cabang, 'g:<id>' untuk sebuah grup.
             ->assertRedirect(route('distributor-items.index', [
-                'distributorFilter' => $dist->id,
+                'ownerFilter' => 'd:'.$dist->id,
                 'mappingFilter' => 'unmapped',
             ]));
 

@@ -15,14 +15,21 @@
                        class="w-full pl-9 pr-3 py-2 text-xs rounded-xl border border-slate-200 bg-white text-slate-800 focus:outline-none focus:ring-2 focus:ring-[#0d6d5f]/20 focus:border-[#0d6d5f] transition shadow-2xs">
             </div>
 
-            <!-- Distributor Select Filter -->
-            <div class="w-48 sm:w-52 shrink-0">
-                <select wire:model.live="distributorFilter"
+            <!-- Penyaring pemilik: grup usaha, atau satu cabang sebagai pengecualian -->
+            <div class="w-56 sm:w-64 shrink-0">
+                <select wire:model.live="ownerFilter"
                         class="w-full text-xs rounded-xl border border-slate-200 bg-white px-3 py-2 text-slate-800 focus:outline-none focus:ring-2 focus:ring-[#0d6d5f]/20 focus:border-[#0d6d5f] transition shadow-2xs truncate">
-                    <option value="">— Semua Distributor —</option>
-                    @foreach ($distributors as $d)
-                        <option value="{{ $d->id }}">{{ $d->name }}</option>
-                    @endforeach
+                    <option value="">— Semua pemilik —</option>
+                    <optgroup label="Grup distributor">
+                        @foreach ($distributorGroups as $g)
+                            <option value="g:{{ $g->id }}">{{ $g->name }}</option>
+                        @endforeach
+                    </optgroup>
+                    <optgroup label="Cabang (pengecualian)">
+                        @foreach ($distributors as $d)
+                            <option value="d:{{ $d->id }}">{{ $d->name }}</option>
+                        @endforeach
+                    </optgroup>
                 </select>
             </div>
 
@@ -44,7 +51,7 @@
 
             <!-- Tombol Reset Filter Mapping (Persegi) -->
             @php
-                $isDistItemFiltered = !empty($search) || !empty($distributorFilter) || $mappingFilter !== 'all';
+                $isDistItemFiltered = !empty($search) || !empty($ownerFilter) || $mappingFilter !== 'all';
             @endphp
             <button type="button"
                     wire:click="resetFilters"
@@ -97,9 +104,8 @@
         <table class="w-full text-xs text-left">
             <thead class="bg-slate-50/90 text-[11px] uppercase tracking-wider text-slate-500 font-bold border-b border-slate-200">
                 <tr>
-                    <th class="px-5 py-3.5">Distributor</th>
+                    <th class="px-5 py-3.5">Berlaku Untuk</th>
                     <th class="px-5 py-3.5">Nama Item (Distributor)</th>
-                    <th class="px-5 py-3.5 w-28 text-center">Satuan</th>
                     <th class="px-5 py-3.5">Produk Netsuite</th>
                     <th class="px-5 py-3.5 w-44 text-center">Status</th>
                     <th class="px-5 py-3.5 w-36 text-right">Aksi</th>
@@ -109,21 +115,31 @@
                 @forelse ($items as $item)
                     <tr class="hover:bg-slate-50/80 transition">
                         <td class="px-5 py-3.5 text-slate-700">
-                            <span class="font-bold text-slate-900 text-xs">{{ $item->distributor?->name ?? '—' }}</span>
-                            <span class="block text-[10px] font-mono text-slate-400 mt-0.5">{{ $item->distributor?->distributor_code ?? '—' }}</span>
+                            @if ($item->distributorGroup)
+                                <span class="inline-flex items-center gap-1.5">
+                                    <span class="w-2 h-2 rounded-full shrink-0" style="background: {{ $item->distributorGroup->colorOrDefault() }};"></span>
+                                    <span class="font-bold text-slate-900 text-xs">{{ $item->distributorGroup->name }}</span>
+                                </span>
+                                <span class="block text-[10px] text-slate-400 mt-0.5">seluruh cabang grup</span>
+                            @else
+                                <span class="font-bold text-slate-900 text-xs">{{ $item->distributor?->name ?? '—' }}</span>
+                                <span class="block text-[10px] font-mono text-amber-700 mt-0.5">{{ $item->distributor?->distributor_code ?? '—' }} · khusus cabang</span>
+                            @endif
                         </td>
-                        <td class="px-5 py-3.5 font-bold text-slate-900 text-xs">
-                            {{ $item->item_name }}
-                        </td>
-                        <td class="px-5 py-3.5 text-center font-mono">
-                            <span class="px-2.5 py-1 rounded-lg bg-slate-100 text-slate-700 font-semibold text-[11px] border border-slate-200/60">
-                                {{ $item->satuan ?: '—' }}
-                            </span>
+                        <td class="px-5 py-3.5">
+                            <div class="font-bold text-slate-900 text-xs">{{ $item->item_name }}</div>
+                            @if ($item->satuan)
+                                <div class="text-[10px] text-slate-500 mt-0.5">Satuan: <span class="font-mono font-semibold text-slate-700">{{ $item->satuan }}</span></div>
+                            @endif
                         </td>
                         <td class="px-5 py-3.5">
                             @if ($item->isMapped() && $item->netsuiteItem)
+                                @php $nsSatuan = $item->netsuiteItem->default_satuan; @endphp
                                 <span class="font-mono text-[10px] text-slate-500">{{ $item->netsuiteItem->netsuite_id }}</span>
                                 <div class="text-xs font-bold text-slate-900 leading-tight">{{ $item->netsuiteItem->netsuite_name }}</div>
+                                @if ($nsSatuan)
+                                    <div class="text-[10px] text-slate-500 mt-0.5">Satuan: <span class="font-mono font-semibold text-slate-700">{{ $nsSatuan }}</span></div>
+                                @endif
                             @elseif ($item->isMapped() && ! $item->netsuiteItem)
                                 <span class="inline-flex items-center gap-1 text-[10px] font-semibold text-rose-600 bg-rose-50 px-2 py-0.5 rounded-md border border-rose-200">
                                     <svg class="w-3 h-3 text-rose-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
@@ -232,7 +248,7 @@
                     </tr>
                 @empty
                     <tr>
-                        <td colspan="6" class="px-5 py-14 text-center text-slate-400">
+                        <td colspan="5" class="px-5 py-14 text-center text-slate-400">
                             <div class="text-3xl mb-2">🔍</div>
                             <div class="font-bold text-slate-700 text-sm">Tidak ada data mapping item</div>
                             <div class="text-xs text-slate-400 mt-0.5">Silakan sesuaikan kata kunci pencarian atau pilih distributor lain.</div>
@@ -305,7 +321,7 @@
                                             </td>
                                             <td class="py-3 px-3 font-semibold text-slate-900">
                                                 {{ $distItem->item_name }}
-                                                <span class="block text-[10px] text-slate-400 font-mono font-normal mt-0.5">{{ $distItem->distributor?->name ?? '—' }} ({{ $distItem->distributor?->distributor_code ?? '—' }})</span>
+                                                <span class="block text-[10px] text-slate-400 font-mono font-normal mt-0.5">{{ $distItem->distributorGroup?->name ?? $distItem->distributor?->name ?? '—' }}</span>
                                             </td>
                                             <td class="py-3 px-3">
                                                 <span class="font-mono text-[10px] text-slate-500">{{ $res['best_match']->netsuite_id }}</span>
@@ -372,14 +388,24 @@
             <form wire:submit="save" class="space-y-4 text-xs">
                 @if (! $editingId)
                 <div>
-                    <label class="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1.5">Distributor</label>
-                    <select wire:model="distributor_id" class="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-[#0d6d5f]/25 focus:border-[#0d6d5f]">
-                        <option value="">— Pilih Distributor —</option>
-                        @foreach ($distributors as $d)
-                            <option value="{{ $d->id }}">{{ $d->name }} ({{ $d->distributor_code }})</option>
-                        @endforeach
+                    <label class="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1.5">Berlaku Untuk</label>
+                    <select wire:model="owner" class="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-[#0d6d5f]/25 focus:border-[#0d6d5f]">
+                        <option value="">— Pilih pemilik —</option>
+                        <optgroup label="Grup distributor (seluruh cabangnya)">
+                            @foreach ($distributorGroups as $g)
+                                <option value="g:{{ $g->id }}">{{ $g->name }}</option>
+                            @endforeach
+                        </optgroup>
+                        <optgroup label="Satu cabang saja (pengecualian)">
+                            @foreach ($distributors as $d)
+                                <option value="d:{{ $d->id }}">{{ $d->name }} ({{ $d->distributor_code }})</option>
+                            @endforeach
+                        </optgroup>
                     </select>
-                    @error('distributor_id') <p class="text-xs text-rose-600 mt-1">{{ $message }}</p> @enderror
+                    <p class="text-[11px] text-slate-500 mt-1.5 leading-relaxed">
+                        Pilih <b>grup</b> untuk pemetaan yang berlaku di seluruh cabangnya — inilah yang biasanya benar, karena satu berkas memuat semua cabang dengan nama item yang sama. Pilih satu cabang hanya bila item itu memang cuma ada di sana.
+                    </p>
+                    @error('owner') <p class="text-xs text-rose-600 mt-1">{{ $message }}</p> @enderror
                 </div>
                 @endif
 

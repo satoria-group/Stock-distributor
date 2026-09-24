@@ -195,7 +195,7 @@ class History extends Component
             'distributor_id' => $distributor->id,
             'distributor_name' => $distributor->name,
             'distributor_code' => $distributor->distributor_code,
-            'group' => Dashboard::getDistributorGroup($distributor->distributor_code),
+            'group' => Dashboard::getDistributorGroup($distributor),
             'total_sku' => $entries->count(),
             'total_quantity' => (float) $entries->sum('quantity'),
             'total_btl' => $totalBtl,

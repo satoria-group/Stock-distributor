@@ -177,6 +177,8 @@ class DistributorTemplateGroup extends Model
         'is_active',
         'notes',
         'column_map',
+        'code_map',
+        'fill_down',
         'header_row',
         'sheet_name',
         'date_mode',
@@ -190,6 +192,8 @@ class DistributorTemplateGroup extends Model
     {
         return [
             'column_map' => 'array',
+            'code_map' => 'array',
+            'fill_down' => 'array',
             'header_row' => 'integer',
             'skip_nonpositive_qty' => 'boolean',
             'is_active' => 'boolean',
@@ -208,6 +212,18 @@ class DistributorTemplateGroup extends Model
         return $query->where('is_active', true);
     }
 
+    /** Grup usaha yang memakai bentuk berkas ini. */
+    public function distributorGroups(): HasMany
+    {
+        return $this->hasMany(DistributorGroup::class, 'template_group_id');
+    }
+
+    /**
+     * Distributor yang memakai bentuk berkas ini sebagai PENGECUALIAN.
+     *
+     * Keanggotaan normal ada di level grup usaha; relasi ini hanya memuat
+     * cabang yang formatnya menyimpang dari grupnya.
+     */
     public function distributors(): HasMany
     {
         return $this->hasMany(Distributor::class, 'template_group_id');
@@ -246,6 +262,46 @@ class DistributorTemplateGroup extends Model
     }
 
     /**
+     * Pemetaan kode distributor: kode versi distributor sendiri (yang muncul
+     * di kolom ID DISTRIBUTOR pada berkasnya) => distributor_code resmi di
+     * Master Distributor.
+     *
+     * @return array<string, string>
+     */
+    public function codeMap(): array
+    {
+        $out = [];
+        foreach ((array) ($this->code_map ?? []) as $alias => $official) {
+            $alias = trim((string) $alias);
+            $official = trim((string) $official);
+            if ($alias === '' || $official === '') {
+                continue;
+            }
+            $out[mb_strtoupper($alias)] = mb_strtoupper($official);
+        }
+
+        return $out;
+    }
+
+    /**
+     * Terjemahkan kode mentah dari berkas ke distributor_code resmi.
+     *
+     * Beberapa distributor menulis kode internal mereka sendiri di kolom ID
+     * DISTRIBUTOR, bukan distributor_code yang terdaftar di Master Distributor.
+     * Kalau kodenya tidak ada di pemetaan, dikembalikan apa adanya — supaya
+     * distributor yang memang sudah menulis kode resmi tetap berjalan normal.
+     */
+    public function resolveDistributorCode(string $rawCode): string
+    {
+        $raw = trim($rawCode);
+        if ($raw === '') {
+            return $raw;
+        }
+
+        return $this->codeMap()[mb_strtoupper($raw)] ?? $raw;
+    }
+
+    /**
      * Cara membaca kolom Tanggal — DISIMPULKAN, bukan disetel terpisah.
      *
      * Format yang dipilih sudah menyatakan segalanya: format bulan/tahun
@@ -253,6 +309,37 @@ class DistributorTemplateGroup extends Model
      * format berarti deteksi otomatis. Setelan terpisah hanya akan menjadi
      * sumber kebenaran kedua yang bisa bertentangan dengan yang pertama.
      */
+    /**
+     * Kolom kanonik yang nilainya diwarisi dari baris di atasnya bila kosong.
+     *
+     * @return array<int, string>
+     */
+    public function fillDownColumns(): array
+    {
+        return array_values(array_intersect(
+            (array) ($this->fill_down ?? []),
+            StockTemplateColumns::all()
+        ));
+    }
+
+    /**
+     * Nama sheet yang dipakai grup ini cocok dengan sheet bernama ini?
+     *
+     * Nilainya boleh berupa nama persis atau pola ber-tanda bintang — berkas
+     * SDL memuat satu sheet per cabang ('SDL KRIAN', 'SDL SEMARANG', …), dan
+     * cabang baru tidak boleh menuntut setelan diubah.
+     */
+    public function matchesSheet(string $sheetName): bool
+    {
+        $pattern = trim((string) ($this->sheet_name ?? ''));
+
+        if ($pattern === '') {
+            return false;
+        }
+
+        return fnmatch(mb_strtolower($pattern), mb_strtolower($sheetName));
+    }
+
     public function dateMode(): string
     {
         if ($this->date_format) {

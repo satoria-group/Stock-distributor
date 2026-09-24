@@ -20,12 +20,26 @@ use Carbon\Carbon;
  */
 class StockRowReader
 {
-    /** @param array{col: array<string,int>, index_by_header: array<string,int>, recipes: array<string,StockColumnRecipe>} $resolved */
+    /**
+     * @param  array{col: array<string,int>, index_by_header: array<string,int>, recipes: array<string,StockColumnRecipe>}  $resolved
+     * @param  array{sheet?: string, file?: string, cells?: array<string, string>}  $context
+     *         Nilai yang berasal dari BERKAS, bukan dari baris: nama sheet,
+     *         nama berkas, dan isi sel tetap seperti judul laporan. Banyak
+     *         berkas distributor tidak punya kolom tanggal sama sekali dan
+     *         hanya menuliskannya di situ.
+     */
     public function __construct(
         private readonly array $resolved,
         private readonly ?DistributorTemplateGroup $group,
         private readonly StockImportService $importService,
+        private readonly array $context = [],
     ) {}
+
+    /** @return array{sheet?: string, file?: string, cells?: array<string, string>} */
+    public function context(): array
+    {
+        return $this->context;
+    }
 
     /** Kolom kanonik ini bisa dibaca dari berkas? */
     public function has(string $canonical): bool
@@ -43,7 +57,7 @@ class StockRowReader
     {
         $recipe = $this->resolved['recipes'][$canonical] ?? null;
         if ($recipe) {
-            return $recipe->value($row, $this->resolved['index_by_header']);
+            return $recipe->value($row, $this->resolved['index_by_header'], $this->context);
         }
 
         $idx = $this->resolved['col'][$canonical] ?? null;
@@ -65,7 +79,11 @@ class StockRowReader
     /** @param array<int, mixed> $row */
     public function distributorCode(array $row): string
     {
-        return trim((string) $this->raw($row, 'ID DISTRIBUTOR'));
+        $raw = trim((string) $this->raw($row, 'ID DISTRIBUTOR'));
+
+        // Sebagian distributor menulis kode internal mereka sendiri, bukan
+        // distributor_code resmi — lihat DistributorTemplateGroup::code_map().
+        return $this->group?->resolveDistributorCode($raw) ?? $raw;
     }
 
     /** @param array<int, mixed> $row */
@@ -181,6 +199,14 @@ class StockRowReader
         $rawValue = $this->rawTanggal($row);
         if ($rawValue === null || $rawValue === '') {
             return null;
+        }
+
+        // Tanggal yang berasal dari judul laporan atau nama berkas selalu
+        // berupa kalimat — 'Tgl/Periode: 01-09-2026 s/d 22-09-2026' — jadi
+        // tanggalnya digali dari teks, bukan dibaca apa adanya. Rentang
+        // memberikan tanggal AKHIR: itulah posisi stok yang dilaporkan.
+        if ($recipe?->usesFileContext()) {
+            return DateFromText::find((string) $rawValue);
         }
 
         if ($mode === DistributorTemplateGroup::DATE_MONTH) {

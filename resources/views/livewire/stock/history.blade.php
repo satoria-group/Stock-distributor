@@ -238,15 +238,10 @@
                 <tbody class="divide-y divide-slate-100 bg-white">
                     @forelse ($snapshots as $idx => $s)
                         @php
-                            $grp = \App\Livewire\Dashboard::getDistributorGroup($s->distributor?->distributor_code);
-                            $groupBadges = [
-                                'KFTD' => 'bg-blue-50 text-blue-800 border border-blue-200',
-                                'SDL' => 'bg-orange-50 text-orange-800 border border-orange-200',
-                                'UDC' => 'bg-purple-50 text-purple-800 border border-purple-200',
-                                'GMP' => 'bg-emerald-50 text-emerald-800 border border-emerald-200',
-                                'MAM' => 'bg-cyan-50 text-cyan-800 border border-cyan-200',
-                                'OTHER' => 'bg-amber-50 text-amber-800 border border-amber-200',
-                            ];
+                            // Warna lencana mengikuti warna grup di master, sehingga
+                            // grup baru tidak perlu didaftarkan ulang di sini.
+                            $grp = \App\Livewire\Dashboard::getDistributorGroup($s->distributor);
+                            $grpColor = \App\Livewire\Dashboard::getDistributorGroupColor($grp);
                             $dateKey = $s->tanggal->format('Y-m-d');
                         @endphp
                         <tr class="hover:bg-slate-50/70 transition">
@@ -265,8 +260,9 @@
                                 </div>
                             </td>
                             <td class="text-center py-3.5 px-4">
-                                <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-bold {{ $groupBadges[$grp] ?? 'bg-slate-100 text-slate-700 border border-slate-200' }}">
-                                    {{ $grp === 'OTHER' ? 'Lainnya' : $grp }}
+                                <span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-slate-50 text-slate-700 border border-slate-200">
+                                    <span class="w-1.5 h-1.5 rounded-full shrink-0" style="background: {{ $grpColor }};"></span>
+                                    {{ \App\Livewire\Dashboard::getDistributorGroupLabel($grp) }}
                                 </span>
                             </td>
                             <td class="text-center py-3.5 px-4">

@@ -3,6 +3,7 @@
 namespace App\Livewire;
 
 use App\Models\Distributor;
+use App\Models\DistributorGroup;
 use App\Models\StockEntry;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Carbon;
@@ -410,45 +411,72 @@ class Dashboard extends Component
         $this->resetPage();
     }
 
-    public static function getDistributorGroup(?string $code): string
+    /**
+     * Grup usaha aktif, dibaca sekali per permintaan.
+     *
+     * Dulu pengelompokan ditebak dari awalan kode distributor lewat daftar yang
+     * ditulis tetap di sini — akibatnya 202 dari 289 distributor jatuh ke
+     * keranjang 'OTHER', termasuk grup besar seperti RNI, PPI, dan TSJ yang
+     * sama sekali tidak terlihat di dashboard. Sekarang pengelompokan dibaca
+     * dari tabel: menambah grup tidak lagi berarti mengubah kode.
+     *
+     * @return \Illuminate\Support\Collection<string, DistributorGroup>  nama grup => grup
+     */
+    public static function distributorGroups(): \Illuminate\Support\Collection
     {
-        if (! $code) {
-            return 'OTHER';
-        }
-        $code = strtoupper(trim($code));
-        if (str_starts_with($code, 'KFTD')) {
-            return 'KFTD';
-        }
-        if (str_starts_with($code, 'SDL')) {
-            return 'SDL';
-        }
-        if (str_starts_with($code, 'UDC')) {
-            return 'UDC';
-        }
-        if (str_starts_with($code, 'GMP')) {
-            return 'GMP';
-        }
-        if (str_starts_with($code, 'MAM')) {
-            return 'MAM';
+        // Memo SEPANJANG SATU PERMINTAAN: satu render dashboard memanggilnya
+        // ribuan kali dari dalam filter koleksi.
+        //
+        // Disimpan di container, bukan variabel static: static bertahan selama
+        // proses hidup, sehingga grup yang baru dibuat tidak akan terlihat pada
+        // proses berumur panjang — pekerja antrean, Octane, dan rangkaian test
+        // yang berbagi satu proses.
+        $key = 'dashboard.distributor-groups';
+
+        if (app()->bound($key)) {
+            return app($key);
         }
 
-        return 'OTHER';
+        $groups = DistributorGroup::active()->ordered()->get()->keyBy('name');
+        app()->instance($key, $groups);
+
+        return $groups;
     }
 
     /**
-     * Palet warna seragam & konsisten antar semua chart (Stacked Bar, Donut, List).
+     * Kunci grup yang dipakai filter dan chart: nama grup, atau 'OTHER' untuk
+     * distributor yang memang belum/tidak bergrup.
+     *
+     * @return array<int, string>
+     */
+    public static function groupKeys(): array
+    {
+        return array_merge(self::distributorGroups()->keys()->all(), ['OTHER']);
+    }
+
+    /** Nama grup untuk satu distributor. */
+    public static function getDistributorGroup(?Distributor $distributor): string
+    {
+        $name = $distributor?->group?->name;
+
+        // Grup yang dinonaktifkan tidak lagi muncul sebagai kategori sendiri;
+        // anggotanya ikut 'Lainnya' supaya angkanya tidak hilang diam-diam.
+        return ($name && self::distributorGroups()->has($name)) ? $name : 'OTHER';
+    }
+
+    /** Label yang ditampilkan untuk sebuah kunci grup. */
+    public static function getDistributorGroupLabel(string $group): string
+    {
+        return $group === 'OTHER' ? DistributorGroup::UNGROUPED_LABEL : $group;
+    }
+
+    /**
+     * Warna seragam & konsisten antar semua chart (Stacked Bar, Donut, List).
      */
     public static function getDistributorGroupColor(string $group): string
     {
-        return match ($group) {
-            'KFTD' => '#3b82f6',  // Blue
-            'SDL' => '#f97316',   // Orange
-            'UDC' => '#a855f7',   // Purple
-            'GMP' => '#84cc16',   // Lime/Green
-            'MAM' => '#06b6d4',   // Cyan
-            'OTHER' => '#eab308', // Amber/Yellow
-            default => '#64748b', // Slate
-        };
+        return self::distributorGroups()->get($group)?->colorOrDefault()
+            ?? DistributorGroup::UNGROUPED_COLOR;
     }
 
     /**
@@ -488,15 +516,19 @@ class Dashboard extends Component
             return $query;
         }
 
+        // 'OTHER' = belum bergrup, termasuk anggota grup yang dinonaktifkan.
         if ($this->selectedGroup === 'OTHER') {
-            foreach (['KFTD', 'SDL', 'UDC', 'GMP', 'MAM'] as $prefix) {
-                $query->where('distributor_code', 'not ilike', $prefix.'%');
-            }
-
-            return $query;
+            return $query->where(function ($q) {
+                $q->whereNull('distributor_group_id')
+                    ->orWhereNotIn('distributor_group_id', self::distributorGroups()->pluck('id')->all() ?: [0]);
+            });
         }
 
-        return $query->where('distributor_code', 'ilike', "{$this->selectedGroup}%");
+        $groupId = self::distributorGroups()->get($this->selectedGroup)?->id;
+
+        // Grup yang tidak dikenal (mis. dihapus setelah filter tersimpan di
+        // URL) tidak boleh diam-diam berubah makna jadi "semua distributor".
+        return $query->where('distributor_group_id', $groupId ?? 0);
     }
 
     /**
@@ -604,7 +636,7 @@ class Dashboard extends Component
         }
 
         return StockEntry::query()
-            ->with(['distributor', 'distributorItem.netsuiteItem.dplPrice'])
+            ->with(['distributor.group', 'distributorItem.netsuiteItem.dplPrice'])
             ->where(function ($query) use ($latestPerDist) {
                 foreach ($latestPerDist as $ld) {
                     $query->orWhere(function ($sub) use ($ld) {
@@ -1064,16 +1096,16 @@ class Dashboard extends Component
                 $entityMapping[$lbl] = $groupedByBranch->get($lbl, collect());
             }
             if (empty($labels)) {
-                $labels = [$this->selectedGroup === 'OTHER' ? 'Distributor Lainnya' : $this->selectedGroup];
+                $labels = [self::getDistributorGroupLabel($this->selectedGroup)];
                 $entityMapping[$labels[0]] = collect();
             }
         } else {
             // Tampilan Nasional: 6 Grup Distributor
-            $labels = ['KFTD', 'SDL', 'UDC', 'GMP', 'MAM', 'OTHER'];
+            $labels = self::groupKeys();
             $entityMapping = [];
             foreach ($labels as $grp) {
                 $entityMapping[$grp] = $matchingEntries->filter(function ($e) use ($grp) {
-                    return self::getDistributorGroup($e->distributor?->distributor_code) === $grp;
+                    return self::getDistributorGroup($e->distributor) === $grp;
                 });
             }
         }
@@ -1480,19 +1512,19 @@ class Dashboard extends Component
 
         if ($isNationalSummary) {
             // Stacked Bar Chart per Distributor Group (Looker Studio Style)
-            $distGroups = ['KFTD', 'SDL', 'UDC', 'GMP', 'MAM', 'OTHER'];
+            $distGroups = self::groupKeys();
 
             foreach ($distGroups as $dg) {
                 $dataPoints = [];
                 foreach ($topProductsMap as $productName => $pData) {
                     $qtyInGroup = $pData['entries']
-                        ->filter(fn ($e) => self::getDistributorGroup($e->distributor?->distributor_code) === $dg)
+                        ->filter(fn ($e) => self::getDistributorGroup($e->distributor) === $dg)
                         ->sum('quantity');
                     $dataPoints[] = (float) $qtyInGroup;
                 }
 
                 $chartTopProducts['datasets'][] = [
-                    'label' => $dg === 'OTHER' ? 'Lainnya' : $dg,
+                    'label' => self::getDistributorGroupLabel($dg),
                     'data' => $dataPoints,
                     'backgroundColor' => self::getDistributorGroupColor($dg),
                     'stack' => 'stack0',
@@ -1505,7 +1537,7 @@ class Dashboard extends Component
                 $dataPoints[] = (float) $pData['total'];
             }
 
-            $labelName = ($this->selectedGroup === 'OTHER' ? 'Distributor Lainnya' : $this->selectedGroup);
+            $labelName = self::getDistributorGroupLabel($this->selectedGroup);
 
             $chartTopProducts['datasets'][] = [
                 'label' => 'Total Qty (' . $labelName . ')',
@@ -1527,11 +1559,11 @@ class Dashboard extends Component
         $totalDonut = 0.0;
 
         if ($isNationalSummary) {
-            $distGroups = ['KFTD', 'SDL', 'UDC', 'GMP', 'MAM', 'OTHER'];
+            $distGroups = self::groupKeys();
             $totals = [];
 
             foreach ($distGroups as $dg) {
-                $entriesForGroup = $allCurrentEntries->filter(fn ($e) => self::getDistributorGroup($e->distributor?->distributor_code) === $dg);
+                $entriesForGroup = $allCurrentEntries->filter(fn ($e) => self::getDistributorGroup($e->distributor) === $dg);
                 if ($this->donutMetric === 'value') {
                     $sum = (float) $entriesForGroup->sum(function ($e) {
                         $unitPrice = (float) ($e->distributorItem?->netsuiteItem?->unit_price ?? 0.0);
@@ -1546,7 +1578,7 @@ class Dashboard extends Component
 
             foreach ($distGroups as $dg) {
                 if ($totals[$dg] > 0) {
-                    $chartDonut['labels'][] = $dg === 'OTHER' ? 'Lainnya' : $dg;
+                    $chartDonut['labels'][] = self::getDistributorGroupLabel($dg);
                     $chartDonut['data'][] = round((float) $totals[$dg], 2);
                     $chartDonut['colors'][] = self::getDistributorGroupColor($dg);
                 }
@@ -1611,7 +1643,7 @@ class Dashboard extends Component
             $qty = (float) $entries->sum('quantity');
             $metricVal = $this->donutMetric === 'value' ? $val : $qty;
             $pct = $totalUniverse > 0 ? round(($metricVal / $totalUniverse) * 100, 1) : 0.0;
-            $grp = self::getDistributorGroup($dist?->distributor_code);
+            $grp = self::getDistributorGroup($dist);
 
             return (object) [
                 'id' => $dist?->id,
@@ -2252,7 +2284,7 @@ class Dashboard extends Component
                 $e = $r->entry;
                 $ns = $e->distributorItem?->netsuiteItem;
                 fputcsv($handle, [
-                    self::getDistributorGroup($e->distributor?->distributor_code),
+                    self::getDistributorGroup($e->distributor),
                     $e->distributor?->distributor_code,
                     $e->distributor?->name,
                     $e->distributorItem?->item_name ?? '—',

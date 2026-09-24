@@ -38,7 +38,9 @@ class TemplateGroupMappingTest extends TestCase
         $group = DistributorTemplateGroup::create([
             'name' => 'UDC uji '.uniqid(),
             'column_map' => [
+                'Tanggal' => 'TGL',
                 'ID DISTRIBUTOR' => 'CAB',
+                'Distributor Item Name' => 'NAMA BARANG',
                 'Quantity' => 'SISA',
             ],
         ]);
@@ -70,6 +72,15 @@ class TemplateGroupMappingTest extends TestCase
         $group = DistributorTemplateGroup::create([
             'name' => 'KFTD uji '.uniqid(),
             'header_row' => 2,
+            // Grup selalu memetakan manual, tidak ada tebakan sinonim — jadi
+            // baris headernya sendiri juga harus dipetakan penuh di sini agar
+            // baris paksaan ini benar-benar bisa dibaca.
+            'column_map' => [
+                'Tanggal' => 'TGL',
+                'ID DISTRIBUTOR' => 'KODE CABANG',
+                'Distributor Item Name' => 'NAMA BARANG',
+                'Quantity' => 'STOK AKHIR',
+            ],
         ]);
 
         $data = [

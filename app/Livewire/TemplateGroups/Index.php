@@ -3,11 +3,13 @@
 namespace App\Livewire\TemplateGroups;
 
 use App\Models\Distributor;
+use App\Models\DistributorGroup;
 use App\Models\DistributorItem;
 use App\Models\DistributorTemplateGroup;
 use App\Services\StockImportService;
 use App\Support\Search;
 use App\Support\StockColumnRecipe;
+use App\Support\StockFileReader;
 use App\Support\StockHeaderResolver;
 use App\Support\StockRowReader;
 use App\Support\StockTemplateColumns;
@@ -20,24 +22,22 @@ use Livewire\WithPagination;
 use PhpOffice\PhpSpreadsheet\IOFactory;
 
 /**
- * Pengelolaan Grup Template Excel.
+ * Pengelolaan Format Berkas Excel.
  *
  * Satu grup = satu bentuk berkas Excel yang dipakai bersama oleh sekelompok
  * distributor (mis. seluruh cabang UDC). Operator menyusun "resep" tiap kolom
  * sistem dari kolom-kolom berkas milik grup itu, sehingga distributor tidak
  * perlu lagi dipaksa memakai template baku kita.
  *
- * Berkas contoh yang diunggah tidak disimpan — hanya judul kolom dan beberapa
- * baris pertamanya yang ditahan di memori komponen, supaya pratinjau bisa
- * memperlihatkan hasil resep secara langsung sambil diedit.
+ * Resep disusun dengan mengetik judul kolom apa adanya, lalu dibuktikan lewat
+ * Uji Coba: berkas sungguhan dibaca dengan resep yang sedang tampil di form,
+ * dan hasil tiap kolom diperlihatkan apa adanya. Tidak ada contoh karangan —
+ * yang dinilai selalu berkas nyata.
  */
-#[Layout('layouts.app', ['title' => 'Grup Template Excel', 'subtitle' => 'Petakan judul kolom berkas Excel tiap grup distributor ke kolom standar sistem.'])]
+#[Layout('layouts.app', ['title' => 'Format Berkas Excel', 'subtitle' => 'Petakan judul kolom berkas Excel tiap grup distributor ke kolom standar sistem.'])]
 class Index extends Component
 {
     use WithFileUploads, WithPagination;
-
-    /** Banyaknya baris contoh yang ditahan untuk pratinjau. */
-    private const PREVIEW_ROWS = 50;
 
     public string $search = '';
 
@@ -61,6 +61,9 @@ class Index extends Component
 
     public bool $skip_nonpositive_qty = false;
 
+    /** @var array<int, string> kolom kanonik yang nilainya diwarisi bila kosong */
+    public array $fill_down = [];
+
     /**
      * Resep tiap kolom kanonik, dalam bentuk yang enak diikat ke form.
      *
@@ -72,24 +75,16 @@ class Index extends Component
      */
     public array $columnMap = [];
 
-    /** @var array<int, int> id distributor yang memakai grup ini */
-    public array $selectedDistributors = [];
+    /** @var array<int, int> id grup distributor yang memakai bentuk berkas ini */
+    public array $selectedGroups = [];
 
-    /** Berkas contoh untuk membaca judul kolom (tidak ikut disimpan). */
-    public $sampleFile = null;
-
-    /** @var array<int, string> judul kolom hasil baca berkas contoh */
-    public array $sampleHeaders = [];
-
-    /** @var array<int, string> nama sheet pada berkas contoh */
-    public array $sampleSheets = [];
-
-    /** @var array<int, array<int, string>> beberapa baris pertama untuk pratinjau */
-    public array $sampleRows = [];
-
-    public ?string $sampleInfo = null;
-
-    public bool $sampleOk = false;
+    /**
+     * Pemetaan kode distributor: baris {alias, official} — kode versi
+     * distributor sendiri di berkas dipetakan ke distributor_code resmi.
+     *
+     * @var array<int, array{alias: string, official: string}>
+     */
+    public array $codeMap = [];
 
     /** Status aktif grup; grup nonaktif tidak ikut dicobakan saat membaca berkas. */
     public bool $is_active = true;
@@ -139,13 +134,18 @@ class Index extends Component
         $this->ed_format = $group->ed_format;
         $this->default_batch = $group->default_batch;
         $this->skip_nonpositive_qty = (bool) $group->skip_nonpositive_qty;
+        $this->fill_down = $group->fillDownColumns();
 
         foreach ($group->recipes() as $canonical => $recipe) {
             $parts = [];
             foreach ($recipe->parts as $part) {
-                $parts[] = isset($part['column'])
-                    ? ['type' => 'column', 'value' => $part['column']]
-                    : ['type' => 'text', 'value' => $part['text']];
+                $parts[] = match (true) {
+                    isset($part['column']) => ['type' => 'column', 'value' => $part['column']],
+                    isset($part['cell']) => ['type' => 'cell', 'value' => $part['cell']],
+                    isset($part['sheet']) => ['type' => 'sheet', 'value' => ''],
+                    isset($part['file']) => ['type' => 'file', 'value' => ''],
+                    default => ['type' => 'text', 'value' => $part['text'] ?? ''],
+                };
             }
 
             $this->columnMap[$canonical] = [
@@ -155,8 +155,25 @@ class Index extends Component
             ];
         }
 
-        $this->selectedDistributors = $group->distributors()->pluck('distributors.id')->all();
+        $this->selectedGroups = DistributorGroup::where('template_group_id', $group->id)->pluck('id')->all();
+
+        $this->codeMap = [];
+        foreach ((array) ($group->code_map ?? []) as $alias => $official) {
+            $this->codeMap[] = ['alias' => (string) $alias, 'official' => (string) $official];
+        }
+
         $this->showModal = true;
+    }
+
+    public function addCodeMapRow(): void
+    {
+        $this->codeMap[] = ['alias' => '', 'official' => ''];
+    }
+
+    public function removeCodeMapRow(int $index): void
+    {
+        unset($this->codeMap[$index]);
+        $this->codeMap = array_values($this->codeMap);
     }
 
     public function addPart(string $canonical, string $type = 'column'): void
@@ -166,7 +183,7 @@ class Index extends Component
         }
 
         $this->columnMap[$canonical]['parts'][] = [
-            'type' => $type === 'text' ? 'text' : 'column',
+            'type' => in_array($type, ['text', 'cell', 'sheet', 'file'], true) ? $type : 'column',
             'value' => '',
         ];
     }
@@ -175,85 +192,6 @@ class Index extends Component
     {
         unset($this->columnMap[$canonical]['parts'][$index]);
         $this->columnMap[$canonical]['parts'] = array_values($this->columnMap[$canonical]['parts']);
-    }
-
-    /**
-     * Membaca berkas contoh: judul kolom, daftar sheet, dan beberapa baris
-     * pertama untuk pratinjau.
-     *
-     * Pengisian resep otomatis memakai resolver yang sama dengan proses upload,
-     * jadi apa yang terlihat di sini persis apa yang nanti dikenali saat impor.
-     */
-    public function updatedSampleFile(): void
-    {
-        $this->validate([
-            'sampleFile' => ['required', 'file', 'mimes:xlsx,xls', 'max:20480'],
-        ], [], ['sampleFile' => 'berkas contoh']);
-
-        try {
-            $spreadsheet = $this->loadSpreadsheet($this->sampleFile);
-        } catch (\Throwable $e) {
-            $this->addError('sampleFile', 'Berkas contoh gagal dibaca: '.$e->getMessage());
-            $this->sampleFile = null;
-
-            return;
-        }
-
-        $this->sampleSheets = $spreadsheet->getSheetNames();
-
-        $sheet = ($this->sheet_name ? $spreadsheet->getSheetByName($this->sheet_name) : null)
-            ?? $spreadsheet->getSheetByName('Template')
-            ?? $spreadsheet->getActiveSheet();
-
-        $data = $sheet->toArray(null, true, false, false);
-        $resolved = (new StockHeaderResolver)->resolve($data, $this->previewGroup());
-
-        $this->sampleHeaders = array_values(array_unique(array_filter(
-            array_map('trim', $resolved['headers']),
-            fn ($h) => $h !== ''
-        )));
-
-        if ($this->sampleHeaders === []) {
-            $this->addError('sampleFile', 'Tidak ada judul kolom yang terbaca pada berkas contoh.');
-            $this->sampleFile = null;
-
-            return;
-        }
-
-        // Isi otomatis hanya kolom yang resepnya masih kosong: susunan yang
-        // sudah dirakit operator lebih tahu daripada tebakan sinonim.
-        foreach ($resolved['col'] as $canonical => $idx) {
-            if ($idx < 0 || ($this->columnMap[$canonical]['parts'] ?? []) !== []) {
-                continue;
-            }
-
-            $header = trim((string) ($resolved['headers'][$idx] ?? ''));
-            if ($header !== '') {
-                $this->columnMap[$canonical]['parts'] = [['type' => 'column', 'value' => $header]];
-            }
-        }
-
-        $this->sheet_name = $this->sheet_name ?: $sheet->getTitle();
-        $this->header_row = (string) ($resolved['header_row'] + 1);
-
-        // Baris contoh disimpan sebagai teks: pratinjau hanya perlu
-        // memperlihatkan hasil, dan array teks aman dibawa bolak-balik
-        // Livewire tanpa tipe aneh dari PhpSpreadsheet.
-        $this->sampleRows = [];
-        foreach (array_slice($data, $resolved['header_row'] + 1, self::PREVIEW_ROWS) as $row) {
-            if (! is_array($row)) {
-                continue;
-            }
-            $this->sampleRows[] = array_map(fn ($v) => $v === null ? '' : (string) $v, $row);
-        }
-
-        $missing = $resolved['missing'];
-        $this->sampleOk = $missing === [];
-        $this->sampleInfo = $this->sampleOk
-            ? 'Semua kolom wajib terdeteksi pada baris '.$this->header_row.' sheet "'.$sheet->getTitle().'".'
-            : 'Kolom wajib belum terdeteksi: '.implode(', ', $missing).'. Susun resepnya secara manual di bawah.';
-
-        $this->sampleFile = null;
     }
 
     /** Grup sementara (belum tersimpan) supaya pratinjau memakai isian form saat ini. */
@@ -271,104 +209,33 @@ class Index extends Component
         $group->ed_format = $this->ed_format;
         $group->default_batch = $this->default_batch;
         $group->skip_nonpositive_qty = $this->skip_nonpositive_qty;
+        $group->fill_down = $this->fill_down;
+        $group->code_map = $this->buildCodeMap();
 
         return $group;
     }
 
     /**
-     * Hasil pembacaan baris contoh memakai resep yang sedang disusun.
+     * Terjemahkan isian form menjadi bentuk simpan code_map.
      *
-     * Inilah jawaban atas pertanyaan yang paling mudah salah: kode distributor
-     * seperti apa yang sebenarnya terbentuk, dan apakah kode itu ada di Master
-     * Distributor. Tanpa pratinjau, selisih seperti UDCSURABAYA vs UDC-SURABAYA
-     * baru ketahuan saat upload gagal.
-     *
-     * @return array<int, array{code: string, tanggal: ?string, item: string, qty: float, batch: ?string, known: bool, distributor: ?string, rows: int}>
+     * @return array<string, string>
      */
-    public function getPreviewProperty(): array
+    private function buildCodeMap(): array
     {
-        if ($this->sampleRows === [] || $this->sampleHeaders === []) {
-            return [];
-        }
+        $map = [];
 
-        $group = $this->previewGroup();
+        foreach ($this->codeMap as $row) {
+            $alias = mb_strtoupper(trim((string) ($row['alias'] ?? '')));
+            $official = mb_strtoupper(trim((string) ($row['official'] ?? '')));
 
-        // Judul kolom contoh disusun ulang jadi bentuk yang sama dengan hasil
-        // resolver, supaya resep mengambil index kolom yang benar.
-        $indexByHeader = [];
-        foreach ($this->sampleHeaders as $idx => $header) {
-            $indexByHeader[StockTemplateColumns::normalize($header)] ??= $idx;
-        }
-
-        $col = [];
-        foreach ($group->recipes() as $canonical => $recipe) {
-            $columns = $recipe->columns();
-            if ($columns === []) {
-                $col[$canonical] = -1;
-
-                continue;
-            }
-            $idx = $indexByHeader[StockTemplateColumns::normalize($columns[0])] ?? null;
-            if ($idx !== null) {
-                $col[$canonical] = $idx;
-            }
-        }
-
-        $reader = new StockRowReader(
-            ['col' => $col, 'index_by_header' => $indexByHeader, 'recipes' => $group->recipes()],
-            $group,
-            app(StockImportService::class),
-        );
-
-        $byCode = [];
-        foreach ($this->sampleRows as $row) {
-            if ($reader->shouldSkip($row)) {
+            if ($alias === '' || $official === '') {
                 continue;
             }
 
-            $code = $reader->distributorCode($row);
-            if ($code === '') {
-                continue;
-            }
-
-            if (! isset($byCode[$code])) {
-                $byCode[$code] = [
-                    'code' => $code,
-                    'tanggal' => $reader->tanggal($row),
-                    'item' => $reader->itemName($row),
-                    'qty' => $reader->quantity($row),
-                    'batch' => $reader->batchNo($row),
-                    'rows' => 0,
-                ];
-            }
-
-            $byCode[$code]['rows']++;
+            $map[$alias] = $official;
         }
 
-        if ($byCode === []) {
-            return [];
-        }
-
-        $known = Distributor::whereIn('distributor_code', array_keys($byCode))
-            ->pluck('name', 'distributor_code');
-
-        return array_values(array_map(function (array $entry) use ($known) {
-            $entry['known'] = $known->has($entry['code']);
-            $entry['distributor'] = $known->get($entry['code']);
-
-            return $entry;
-        }, $byCode));
-    }
-
-    public function clearSample(): void
-    {
-        $this->sampleHeaders = [];
-        $this->sampleSheets = [];
-        $this->sampleRows = [];
-        $this->sampleInfo = null;
-        $this->sampleOk = false;
-        $this->sampleFile = null;
-        $this->resetErrorBag('sampleFile');
+        return $map;
     }
 
     /**
@@ -385,13 +252,31 @@ class Index extends Component
             $parts = [];
 
             foreach ((array) ($entry['parts'] ?? []) as $part) {
+                $type = $part['type'] ?? 'column';
                 $value = trim((string) ($part['value'] ?? ''));
+
+                // Nama sheet dan nama berkas tidak punya nilai untuk diketik:
+                // keduanya diambil dari berkas yang sedang dibaca.
+                if ($type === 'sheet') {
+                    $parts[] = ['sheet' => true];
+
+                    continue;
+                }
+                if ($type === 'file') {
+                    $parts[] = ['file' => true];
+
+                    continue;
+                }
+
                 if ($value === '') {
                     continue;
                 }
-                $parts[] = ($part['type'] ?? 'column') === 'text'
-                    ? ['text' => $value]
-                    : ['column' => $value];
+
+                $parts[] = match ($type) {
+                    'text' => ['text' => $value],
+                    'cell' => ['cell' => mb_strtoupper($value)],
+                    default => ['column' => $value],
+                };
             }
 
             if ($parts === []) {
@@ -410,34 +295,6 @@ class Index extends Component
         }
 
         return $map;
-    }
-
-    /**
-     * Muat berkas unggahan sementara menjadi Spreadsheet.
-     *
-     * Berkas sementara Livewire tidak selalu berakhiran .xlsx, sementara
-     * PhpSpreadsheet menentukan pembacanya dari ekstensi — tanpa disalin ke
-     * nama bereksntensi benar, berkas yang sah pun ditolak dengan pesan
-     * 'Unable to identify a reader for this file'.
-     *
-     * tempnam() sudah membuat berkas dan mengembalikan path-nya; menambahkan
-     * ekstensi menghasilkan path BERBEDA, jadi keduanya dihapus bersama.
-     */
-    private function loadSpreadsheet($file): \PhpOffice\PhpSpreadsheet\Spreadsheet
-    {
-        $ext = strtolower($file->getClientOriginalExtension());
-        $cleanExt = in_array($ext, ['xlsx', 'xls'], true) ? $ext : 'xlsx';
-
-        $tempBase = tempnam(sys_get_temp_dir(), 'satoria_tpl_');
-        $tempFile = $tempBase.'.'.$cleanExt;
-        copy($file->getRealPath(), $tempFile);
-
-        try {
-            return IOFactory::load($tempFile);
-        } finally {
-            @unlink($tempFile);
-            @unlink($tempBase);
-        }
     }
 
     /**
@@ -467,102 +324,48 @@ class Index extends Component
             'testFile' => ['required', 'file', 'mimes:xlsx,xls', 'max:20480'],
         ], [], ['testFile' => 'berkas uji']);
 
+        // Berkas disalin ke nama bereksntensi benar: PhpSpreadsheet memilih
+        // pembacanya dari ekstensi, sementara berkas sementara Livewire tidak
+        // selalu punya.
+        $ext = strtolower($this->testFile->getClientOriginalExtension());
+        $tempBase = tempnam(sys_get_temp_dir(), 'satoria_uji_');
+        $tempFile = $tempBase.'.'.(in_array($ext, ['xlsx', 'xls'], true) ? $ext : 'xlsx');
+        copy($this->testFile->getRealPath(), $tempFile);
+
         try {
-            $spreadsheet = $this->loadSpreadsheet($this->testFile);
+            // Mesin yang sama persis dengan proses impor — termasuk pemilihan
+            // sheet, pembersihan baris, dan penjagaan memori. Resep yang diuji
+            // adalah yang SEDANG DISUSUN di form ini, bukan yang tersimpan.
+            $reading = (new StockFileReader(app(StockImportService::class)))->read(
+                $tempFile,
+                $this->testFile->getClientOriginalName(),
+                $this->previewGroup(),
+            );
         } catch (\Throwable $e) {
             $this->addError('testFile', 'Berkas gagal dibaca: '.$e->getMessage());
 
             return;
+        } finally {
+            @unlink($tempFile);
+            @unlink($tempBase);
         }
 
-        $group = $this->previewGroup();
+        if (! $reading['ok']) {
+            $sheets = $reading['sheets'] ?? [];
 
-        $sheet = ($group->sheet_name ? $spreadsheet->getSheetByName($group->sheet_name) : null)
-            ?? $spreadsheet->getSheetByName('Template')
-            ?? $spreadsheet->getActiveSheet();
-
-        if ($group->sheet_name && ! $spreadsheet->getSheetByName($group->sheet_name)) {
             $this->testReport = [
                 'ok' => false,
-                'error' => 'Sheet "'.$group->sheet_name.'" tidak ada pada berkas ini. Sheet yang tersedia: '
-                    .implode(', ', $spreadsheet->getSheetNames()).'.',
+                'error' => ($reading['error'] ?? 'Berkas tidak bisa dibaca dengan resep ini.')
+                    .($sheets === [] ? '' : ' Sheet pada berkas ini: '.implode(', ', $sheets).'.'),
                 'branches' => [],
             ];
 
             return;
         }
 
-        $data = $sheet->toArray(null, true, false, false);
-        $resolved = (new StockHeaderResolver)->resolve($data, $group);
+        $buckets = $reading['buckets'];
 
-        if (! $resolved['ok']) {
-            $others = array_values(array_diff($spreadsheet->getSheetNames(), [$sheet->getTitle()]));
-
-            // Sheet yang dibaca disebutkan terang-terangan: penyebab tersering
-            // kegagalan di sini bukan resep yang salah, melainkan sheet yang
-            // keliru — berkas distributor kerap punya sheet ringkasan di depan.
-            $this->testReport = [
-                'ok' => false,
-                'error' => 'Sheet yang dibaca: "'.$sheet->getTitle().'". '.$resolved['error']
-                    .($others === [] ? '' : ' Sheet lain pada berkas ini: '.implode(', ', $others).' — bila datanya ada di salah satu sheet itu, pilih pada setelan "Sheet yang dibaca".'),
-                'branches' => [],
-            ];
-
-            return;
-        }
-
-        $reader = new StockRowReader($resolved, $group, app(StockImportService::class));
-
-        $branches = [];
-        $skippedZero = 0;
-        $totalRows = 0;
-
-        foreach (array_slice($data, $resolved['header_row'] + 1) as $row) {
-            if (! is_array($row)) {
-                continue;
-            }
-
-            $code = $reader->distributorCode($row);
-            $itemName = $reader->itemName($row);
-
-            if ($code === '' || $itemName === '') {
-                continue;
-            }
-
-            if ($reader->shouldSkip($row)) {
-                $skippedZero++;
-
-                continue;
-            }
-
-            $totalRows++;
-
-            $branches[$code] ??= [
-                'code' => $code,
-                'rows' => 0,
-                'tanggal' => $reader->tanggal($row),
-                'no_tanggal' => 0,
-                'no_ed' => 0,
-                'no_batch' => 0,
-                'items' => [],
-            ];
-
-            $branches[$code]['rows']++;
-
-            if (! $reader->tanggal($row)) {
-                $branches[$code]['no_tanggal']++;
-            }
-            if (! $reader->expiredDate($row)) {
-                $branches[$code]['no_ed']++;
-            }
-            if (! $reader->batchNo($row)) {
-                $branches[$code]['no_batch']++;
-            }
-
-            $branches[$code]['items'][mb_strtolower(trim(preg_replace('/\s+/', ' ', $itemName)))] = $itemName;
-        }
-
-        if ($branches === []) {
+        if ($buckets === []) {
             $this->testReport = [
                 'ok' => false,
                 'error' => 'Tidak ada baris data yang terbaca. Periksa susunan kolom ID Distributor dan Nama Item.',
@@ -572,26 +375,55 @@ class Index extends Component
             return;
         }
 
-        $distributors = Distributor::whereIn('distributor_code', array_keys($branches))
+        $distributors = Distributor::whereIn('distributor_code', array_keys($buckets))
             ->get()
             ->keyBy('distributor_code');
 
-        foreach ($branches as $code => $branch) {
-            $distributor = $distributors->get($code);
+        $branches = [];
+        $totalRows = 0;
 
-            $branch['known'] = $distributor !== null;
-            $branch['distributor'] = $distributor?->name;
-            $branch['inactive'] = $distributor !== null && ! $distributor->is_active;
+        foreach ($buckets as $code => $rows) {
+            $distributor = $distributors->get($code);
+            $reader = $rows[0]['reader'];
+
+            $branch = [
+                'code' => $code,
+                'rows' => count($rows),
+                'tanggal' => $reader->tanggal($rows[0]['row']),
+                'no_tanggal' => 0,
+                'no_ed' => 0,
+                'no_batch' => 0,
+                'known' => $distributor !== null,
+                'distributor' => $distributor?->name,
+                'inactive' => $distributor !== null && ! $distributor->is_active,
+                'unmapped' => [],
+            ];
+
+            $names = [];
+            foreach ($rows as $entry) {
+                $rowReader = $entry['reader'];
+                $totalRows++;
+
+                if (! $rowReader->tanggal($entry['row'])) {
+                    $branch['no_tanggal']++;
+                }
+                if (! $rowReader->expiredDate($entry['row'])) {
+                    $branch['no_ed']++;
+                }
+                if (! $rowReader->batchNo($entry['row'])) {
+                    $branch['no_batch']++;
+                }
+
+                $name = $rowReader->itemName($entry['row']);
+                $names[DistributorItem::normalizeName($name)] = $name;
+            }
 
             // Item yang belum ter-mapping ke NetSuite tidak akan tersimpan saat
             // impor — inilah angka yang paling sering mengejutkan operator.
-            $branch['unmapped'] = [];
             if ($distributor) {
-                $known = DistributorItem::where('distributor_id', $distributor->id)
-                    ->get()
-                    ->keyBy(fn ($i) => mb_strtolower(trim(preg_replace('/\s+/', ' ', $i->item_name))));
+                $known = DistributorItem::lookupFor($distributor);
 
-                foreach ($branch['items'] as $key => $name) {
+                foreach ($names as $key => $name) {
                     $item = $known->get($key);
                     if (! $item || ! $item->isMapped()) {
                         $branch['unmapped'][] = $name;
@@ -599,21 +431,114 @@ class Index extends Component
                 }
             }
 
-            $branch['item_count'] = count($branch['items']);
-            unset($branch['items']);
-
-            $branches[$code] = $branch;
+            $branch['item_count'] = count($names);
+            $branches[] = $branch;
         }
+
+        $firstEntry = $buckets[array_key_first($buckets)][0];
 
         $this->testReport = [
             'ok' => true,
             'error' => null,
-            'sheet' => $sheet->getTitle(),
-            'header_row' => $resolved['header_row'] + 1,
+            'columns' => $this->columnPreview($firstEntry),
+            'sample_code' => array_key_first($buckets),
+            'file' => $this->testFile?->getClientOriginalName(),
+            'sheet' => implode(', ', $reading['sheets'] ?? []),
+            'header_row' => ($reading['resolved']['header_row'] ?? 0) + 1,
             'total_rows' => $totalRows,
-            'skipped_zero' => $skippedZero,
-            'branches' => array_values($branches),
+            'skipped_zero' => 0,
+            'branches' => $branches,
         ];
+    }
+
+    /**
+     * Hasil tiap kolom sistem untuk satu baris nyata dari berkas uji.
+     *
+     * Inilah jurang yang paling sering membuat resep terlihat benar padahal
+     * hasilnya lain: operator menyusun "GMP" + kolom Cabang, lalu baru tahu
+     * bentuk akhirnya saat impor gagal. Di sini ditampilkan apa adanya — isi
+     * mentahnya, lalu nilai setelah diolah.
+     *
+     * @param  array{row: array, reader: StockRowReader}  $entry
+     * @return array<int, array<string, mixed>>
+     */
+    private function columnPreview(array $entry): array
+    {
+        $reader = $entry['reader'];
+        $row = $entry['row'];
+
+        $out = [];
+
+        foreach (StockTemplateColumns::definitions() as $canonical => $def) {
+            $parts = $this->columnMap[$canonical]['parts'] ?? [];
+
+            // Nilai akhir: hasil setelah tanggal digali, format dipaksakan,
+            // angka dibaca, dan batch pengganti diterapkan.
+            $value = match ($canonical) {
+                'Tanggal' => $reader->tanggal($row),
+                'ED' => $reader->expiredDate($row),
+                'Quantity' => rtrim(rtrim(number_format($reader->quantity($row), 2, ',', '.'), '0'), ','),
+                'Batch No' => $reader->batchNo($row),
+                'ID DISTRIBUTOR' => $reader->distributorCode($row),
+                'Distributor Item Name' => $reader->itemName($row),
+                default => $reader->raw($row, $canonical),
+            };
+
+            $raw = $reader->raw($row, $canonical);
+
+            // Isi mentah hanya ditampilkan bila BERMAKNA berbeda dari hasil
+            // akhirnya — untuk tanggal yang digali dari kalimat, justru itu yang
+            // menjelaskan kenapa hasilnya begitu. Perbedaan yang cuma soal
+            // penulisan angka (2293 vs 2.293) hanya menambah kebisingan.
+            $rawShown = ($raw !== null && trim((string) $raw) !== ''
+                && $this->normalizeForCompare((string) $raw) !== $this->normalizeForCompare((string) $value))
+                ? (string) $raw
+                : null;
+
+            $out[] = [
+                'canonical' => $canonical,
+                'label' => $def['label'],
+                'required' => $def['required'],
+                'recipe' => $this->describeRecipe($parts),
+                'raw' => $rawShown,
+                'value' => ($value === null || $value === '') ? null : (string) $value,
+            ];
+        }
+
+        return $out;
+    }
+
+    /** Bentuk pembanding longgar: beda pemisah ribuan bukan beda nilai. */
+    private function normalizeForCompare(string $value): string
+    {
+        return mb_strtolower(preg_replace('/[^a-z0-9]/i', '', $value) ?? $value);
+    }
+
+    /**
+     * Rangkaian resep dalam bahasa manusia, mis. '"GMP" + kolom Cabang'.
+     *
+     * @param  array<int, array{type?: string, value?: string}>  $parts
+     */
+    private function describeRecipe(array $parts): string
+    {
+        if ($parts === []) {
+            return 'otomatis';
+        }
+
+        $pieces = [];
+        foreach ($parts as $part) {
+            $value = trim((string) ($part['value'] ?? ''));
+
+            $pieces[] = match ($part['type'] ?? 'column') {
+                'text' => '"'.$value.'"',
+                'cell' => 'sel '.$value,
+                'sheet' => 'nama sheet',
+                'file' => 'nama berkas',
+                default => $value !== '' ? $value : '(kolom kosong)',
+            };
+        }
+
+        return implode(' + ', $pieces);
     }
 
     public function clearTest(): void
@@ -661,6 +586,8 @@ class Index extends Component
             'ed_format' => ['nullable', 'string', 'max:50', $this->formatRule()],
             'default_batch' => ['nullable', 'string', 'max:100'],
             'skip_nonpositive_qty' => ['boolean'],
+            'fill_down' => ['array'],
+            'fill_down.*' => [Rule::in(StockTemplateColumns::all())],
             'is_active' => ['boolean'],
         ], [], [
             'name' => 'nama grup',
@@ -693,6 +620,26 @@ class Index extends Component
             return;
         }
 
+        $codeMap = $this->buildCodeMap();
+
+        if ($codeMap !== []) {
+            // Kode resmi wajib aktif dan berasal dari grup usaha yang sedang
+            // dipilih — sama seperti daftar yang ditampilkan di dropdown form,
+            // supaya validasi tidak pernah menolak nilai yang justru baru saja
+            // dipilih operator dari situ.
+            $knownCodes = $this->codeMapDistributors()
+                ->pluck('distributor_code')
+                ->map(fn ($c) => mb_strtoupper($c))
+                ->all();
+
+            $unknown = array_values(array_diff(array_values($codeMap), $knownCodes));
+            if ($unknown !== []) {
+                $this->addError('codeMap', 'Kode distributor resmi berikut tidak ditemukan di Master Distributor: '.implode(', ', array_unique($unknown)).'.');
+
+                return;
+            }
+        }
+
         $data = [
             'name' => $this->name,
             'is_active' => $this->is_active,
@@ -700,6 +647,7 @@ class Index extends Component
             'sheet_name' => $this->sheet_name ?: null,
             'header_row' => ($this->header_row !== null && $this->header_row !== '') ? (int) $this->header_row : null,
             'column_map' => $map ?: null,
+            'code_map' => $codeMap ?: null,
             'date_format' => $this->date_format ?: null,
             'ed_format' => $this->ed_format ?: null,
             // Cara membaca tanggal disimpulkan dari formatnya (lihat dateMode());
@@ -707,6 +655,7 @@ class Index extends Component
             'date_mode' => DistributorTemplateGroup::DATE_AUTO,
             'default_batch' => $this->default_batch ?: null,
             'skip_nonpositive_qty' => $this->skip_nonpositive_qty,
+            'fill_down' => $this->fill_down ?: null,
         ];
 
         if ($this->editingId) {
@@ -718,13 +667,14 @@ class Index extends Component
             $group = DistributorTemplateGroup::create($data);
         }
 
-        // Keanggotaan disinkronkan dua arah: yang dicentang ditempel ke grup
-        // ini, yang tidak dicentang tapi sebelumnya milik grup ini dilepas.
-        $ids = array_values(array_filter(array_map('intval', $this->selectedDistributors)));
+        // Keanggotaan ditetapkan di level GRUP USAHA, bukan per distributor:
+        // seluruh cabang satu grup mengirim berkas yang sama, jadi menandai 25
+        // cabang UDC satu per satu hanya mengundang kelalaian.
+        $ids = array_values(array_filter(array_map('intval', $this->selectedGroups)));
         if ($ids !== []) {
-            Distributor::whereIn('id', $ids)->update(['template_group_id' => $group->id]);
+            DistributorGroup::whereIn('id', $ids)->update(['template_group_id' => $group->id]);
         }
-        Distributor::where('template_group_id', $group->id)
+        DistributorGroup::where('template_group_id', $group->id)
             ->when($ids !== [], fn ($q) => $q->whereNotIn('id', $ids))
             ->update(['template_group_id' => null]);
 
@@ -741,6 +691,7 @@ class Index extends Component
         // Distributor tidak ikut terhapus — cukup dilepas dari grup, supaya
         // menghapus grup tidak pernah berarti kehilangan master distributor.
         $group->distributors()->update(['template_group_id' => null]);
+        DistributorGroup::where('template_group_id', $group->id)->update(['template_group_id' => null]);
         $group->delete();
 
         session()->flash('status', 'Grup template dihapus. Distributor anggotanya kembali memakai deteksi otomatis.');
@@ -758,14 +709,15 @@ class Index extends Component
         $this->ed_format = null;
         $this->default_batch = null;
         $this->skip_nonpositive_qty = false;
-        $this->selectedDistributors = [];
+        $this->fill_down = [];
+        $this->selectedGroups = [];
+        $this->codeMap = [];
 
         $this->columnMap = [];
         foreach (StockTemplateColumns::all() as $canonical) {
             $this->columnMap[$canonical] = ['parts' => [], 'nospace' => false, 'upper' => false];
         }
 
-        $this->clearSample();
         $this->clearTest();
         $this->resetErrorBag();
     }
@@ -773,7 +725,7 @@ class Index extends Component
     public function render()
     {
         $groups = DistributorTemplateGroup::query()
-            ->withCount('distributors')
+            ->withCount(['distributors', 'distributorGroups'])
             ->when($this->search, fn ($q) => $q->where(function ($sub) {
                 $sub->where('name', 'ilike', Search::contains($this->search))
                     ->orWhere('notes', 'ilike', Search::contains($this->search));
@@ -784,8 +736,33 @@ class Index extends Component
         return view('livewire.template-groups.index', [
             'groups' => $groups,
             'definitions' => StockTemplateColumns::definitions(),
-            'allDistributors' => Distributor::orderBy('name')->get(['id', 'name', 'distributor_code', 'template_group_id']),
-            'preview' => $this->preview,
+            'allGroups' => DistributorGroup::ordered()->withCount('distributors')->get(),
+            'codeMapDistributors' => $this->codeMapDistributors(),
         ]);
+    }
+
+    /**
+     * Distributor yang layak dipetakan sebagai "kode resmi" pada dropdown
+     * Pemetaan Kode Distributor: aktif, milik grup usaha yang sedang dipilih
+     * di form ini, dan belum punya Grup Template sendiri yang lain (supaya
+     * pemetaan tidak diam-diam menimpa pengecualian format milik cabang lain).
+     *
+     * Belum ter-mapping ke grup MANA PUN (baik lewat pemetaan kode di grup
+     * ini maupun grup template lain) juga difilter di sisi lain — di sini
+     * cukup dibatasi ke grup usaha yang sedang dicentang.
+     */
+    private function codeMapDistributors()
+    {
+        $groupIds = array_values(array_filter(array_map('intval', $this->selectedGroups)));
+
+        if ($groupIds === []) {
+            return collect();
+        }
+
+        return Distributor::query()
+            ->where('is_active', true)
+            ->whereIn('distributor_group_id', $groupIds)
+            ->orderBy('name')
+            ->get(['id', 'distributor_code', 'name']);
     }
 }

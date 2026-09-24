@@ -315,7 +315,8 @@ class StockImportService
         ?string $fromEmail = null,
         ?int $uploadedBy = null,
         bool $dryRun = false,
-        bool $isEmailAutomation = false
+        bool $isEmailAutomation = false,
+        ?string $originalName = null
     ): array {
         if (! file_exists($filePath) || ! is_readable($filePath)) {
             return [
@@ -334,29 +335,16 @@ class StockImportService
             ];
         }
 
-        try {
-            $spreadsheet = IOFactory::load($filePath);
-        } catch (\Throwable $e) {
-            return [
-                'success' => false,
-                'status' => 'invalid_template',
-                'distributor' => null,
-                'distributor_code' => null,
-                'distributor_id' => null,
-                'tanggal' => null,
-                'total_rows' => 0,
-                'imported_rows' => 0,
-                'skipped_rows' => 0,
-                'skipped_items' => [],
-                'error' => 'Berkas bukan berkas spreadsheet Excel (.xlsx / .xls) yang valid: '.$e->getMessage(),
-                'details' => [],
-            ];
-        }
-
         // Pemilihan cara baca dan pemecahan per cabang dikerjakan di kelas yang
         // sama dengan jalur upload manual — satu berkas tidak boleh terbaca
         // berbeda hanya karena datang lewat email.
-        $reading = (new StockFileReader($this))->read($spreadsheet, true);
+        try {
+            $reading = (new StockFileReader($this))->read($filePath, $originalName);
+        } catch (\Throwable $e) {
+            return $this->importResult('invalid_template', false, null, null, [
+                'error' => 'Berkas bukan berkas spreadsheet Excel (.xlsx / .xls) yang valid: '.$e->getMessage(),
+            ]);
+        }
 
         if (! $reading['ok']) {
             return $this->importResult('invalid_template', false, null, null, [
@@ -375,7 +363,6 @@ class StockImportService
         }
 
         $buckets = $reading['buckets'];
-        $reader = $reading['reader'];
 
         if ($buckets === []) {
             return $this->importResult('invalid_template', false, null, null, [
@@ -423,12 +410,11 @@ class StockImportService
         $failure = null;
 
         try {
-            DB::transaction(function () use ($buckets, $distributors, $reader, $fromEmail, $uploadedBy, $dryRun, $isEmailAutomation, &$branchResults, &$failure) {
+            DB::transaction(function () use ($buckets, $distributors, $fromEmail, $uploadedBy, $dryRun, $isEmailAutomation, &$branchResults, &$failure) {
                 foreach ($buckets as $code => $branchRows) {
                     $result = $this->importBranchRows(
                         $distributors[$code],
                         $branchRows,
-                        $reader,
                         $fromEmail,
                         $uploadedBy,
                         $dryRun,
@@ -493,11 +479,15 @@ class StockImportService
      */
     private function senderRejection(Distributor $distributor, string $distributorCode, string $fromEmail): ?array
     {
-        $senderEmailConfig = trim((string) ($distributor->sender_email ?? ''));
+        // Whitelist yang berlaku: milik cabang bila diisi, kalau tidak milik
+        // grupnya — satu berkas berisi banyak cabang selalu datang dari satu
+        // alamat, jadi mewajibkan tiap cabang mengisinya hanya mengundang
+        // penolakan berkas yang sah.
+        $senderEmailConfig = trim((string) ($distributor->effectiveSenderEmail() ?? ''));
 
         if ($senderEmailConfig === '') {
             return $this->importResult('unauthorized_sender', false, $distributor, null, [
-                'error' => "Distributor '{$distributor->name}' ({$distributorCode}) belum mendaftarkan email whitelist resmi di Master Distributor. Pengiriman dari '{$fromEmail}' ditolak demi keamanan data.",
+                'error' => "Distributor '{$distributor->name}' ({$distributorCode}) belum mendaftarkan email whitelist resmi — baik di grup usahanya maupun di Master Distributor. Pengiriman dari '{$fromEmail}' ditolak demi keamanan data.",
                 'details' => [
                     'from_email' => $fromEmail,
                     'expected_sender' => null,
@@ -526,7 +516,7 @@ class StockImportService
             'error' => "Pengirim email ('{$fromEmail}') tidak terdaftar pada whitelist resmi distributor '{$distributor->name}' ({$distributorCode}).",
             'details' => [
                 'from_email' => $fromEmail,
-                'expected_sender' => $distributor->sender_email,
+                'expected_sender' => $distributor->effectiveSenderEmail(),
                 'reason' => 'sender_not_in_whitelist',
             ],
         ]);
@@ -615,7 +605,6 @@ class StockImportService
     private function importBranchRows(
         Distributor $distributor,
         array $branchRows,
-        StockRowReader $reader,
         ?string $fromEmail,
         ?int $uploadedBy,
         bool $dryRun,
@@ -623,6 +612,7 @@ class StockImportService
     ): array {
         $distributorCode = $distributor->distributor_code;
         $firstRow = $branchRows[0]['row'];
+        $reader = $branchRows[0]['reader'];
 
         $rawTanggal = $reader->rawTanggal($firstRow);
         if (in_array(trim(strtoupper((string) $rawTanggal)), ['DD/MM/YYYY', 'YYYY-MM-DD', 'DD-MM-YYYY'], true)) {
@@ -661,9 +651,9 @@ class StockImportService
             }
         }
 
-        $knownItems = DistributorItem::where('distributor_id', $distributor->id)
-            ->get()
-            ->keyBy(fn ($i) => mb_strtolower(trim(preg_replace('/\s+/', ' ', $i->item_name))));
+        // Pemetaan milik GRUP berlaku untuk seluruh cabangnya; baris milik
+        // cabang hanya ada sebagai pengecualian dan menimpa yang segrup.
+        $knownItems = DistributorItem::lookupFor($distributor);
 
         $parsedRows = [];
         $skippedItems = [];
@@ -671,6 +661,9 @@ class StockImportService
 
         foreach ($branchRows as $entry) {
             $r = $entry['row'];
+            // Tiap baris membawa pembacanya sendiri: satu berkas bisa memuat
+            // beberapa sheet dengan baris header masing-masing.
+            $reader = $entry['reader'];
             $itemName = $reader->itemName($r);
             $totalValidDataRows++;
 
@@ -685,7 +678,7 @@ class StockImportService
             if (! $distItem || ! $distItem->isMapped()) {
                 $skippedItems[] = [
                     'item_name' => $itemName,
-                    'satuan' => $satuan ?: ($distItem?->satuan ?: 'PCS'),
+                    'satuan' => $satuan ?: null,
                     'quantity' => $qty,
                     'expired_date' => $ed,
                     'batch_no' => $batch ?: null,
@@ -711,7 +704,9 @@ class StockImportService
                 'item_id' => $distItem->id,
                 'item_name' => $itemName,
                 'qty' => $qty,
-                'satuan' => $satuan ?: $distItem->satuan,
+                // Satuan hanya dari berkas ini sendiri — tidak meminjam satuan
+                // master item yang berasal dari berkas lain.
+                'satuan' => $satuan ?: null,
                 'ed' => $ed,
                 'batch' => $batch,
                 'excel_row' => $entry['excel_row'],
@@ -745,6 +740,11 @@ class StockImportService
                     StockEntry::updateOrCreate(
                         [
                             'tanggal' => $tanggal,
+                            // Cabang ikut jadi kunci: sejak pemetaan item
+                            // dimiliki GRUP, satu baris pemetaan dipakai banyak
+                            // cabang — tanpa ini, snapshot cabang kedua akan
+                            // menimpa snapshot cabang pertama.
+                            'distributor_id' => $distributor->id,
                             'distributor_item_id' => $row['distributor_item_id'],
                             // Batch kini bagian dari identitas snapshot: dua
                             // batch pada item & tanggal yang sama adalah dua
@@ -808,31 +808,10 @@ class StockImportService
             // memetakannya, bukan mengetik ulang namanya.
             if (! $dryRun) {
                 foreach ($skippedItems as $skip) {
-                    $rawName = trim($skip['item_name']);
-                    $norm = mb_strtolower(trim(preg_replace('/\s+/', ' ', $rawName)));
-                    if (! $knownItems->has($norm)) {
-                        $existing = DistributorItem::withTrashed()
-                            ->where('distributor_id', $distributor->id)
-                            ->whereRaw('LOWER(TRIM(item_name)) = ?', [$norm])
-                            ->first();
-
-                        if ($existing) {
-                            if ($existing->trashed()) {
-                                $existing->restore();
-                            }
-                        } else {
-                            try {
-                                DistributorItem::create([
-                                    'distributor_id' => $distributor->id,
-                                    'item_name' => $rawName,
-                                    'satuan' => $skip['satuan'] ?: 'PCS',
-                                    'netsuite_item_id' => null,
-                                ]);
-                            } catch (\Throwable) {
-                                // Abaikan jika terjadi race condition insert
-                            }
-                        }
-                    }
+                    // Satu pintu untuk semua jalur yang menemukan item baru —
+                    // termasuk aturan bahwa baris yang pernah dihapus dipulihkan
+                    // TANPA pemetaan lamanya.
+                    DistributorItem::queueFor($distributor, $skip['item_name'], $skip['satuan'] ?: null);
                 }
             }
         }
@@ -879,7 +858,7 @@ class StockImportService
         file_put_contents($tempFile, $binaryContent);
 
         try {
-            $result = $this->parseAndImportSpreadsheet($tempFile, $fromEmail, null, $dryRun, true);
+            $result = $this->parseAndImportSpreadsheet($tempFile, $fromEmail, null, $dryRun, true, $filename);
 
             // Record to StockEmailLog
             StockEmailLog::create([

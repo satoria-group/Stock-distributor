@@ -73,35 +73,18 @@ class Index extends Component
     {
         $log = StockEmailLog::find($logId);
         if ($log && ! empty($log->details['unique_skipped_names']) && $log->distributor_id) {
-            foreach ($log->details['unique_skipped_names'] as $itemName) {
-                $rawName = trim($itemName);
-                $norm = mb_strtolower(trim(preg_replace('/\s+/', ' ', $rawName)));
-                $existing = DistributorItem::withTrashed()
-                    ->where('distributor_id', $log->distributor_id)
-                    ->whereRaw('LOWER(TRIM(item_name)) = ?', [$norm])
-                    ->first();
+            $distributor = \App\Models\Distributor::find($log->distributor_id);
 
-                if ($existing) {
-                    if ($existing->trashed()) {
-                        $existing->restore();
-                    }
-                } else {
-                    try {
-                        DistributorItem::create([
-                            'distributor_id' => $log->distributor_id,
-                            'item_name' => $rawName,
-                            'satuan' => 'PCS',
-                            'netsuite_item_id' => null,
-                        ]);
-                    } catch (\Throwable) {
-                        // Abaikan race condition
-                    }
-                }
+            foreach ($log->details['unique_skipped_names'] as $itemName) {
+                // Satu pintu untuk semua jalur yang menemukan item baru: antrean
+                // milik grup bila distributornya bergrup, dan baris yang pernah
+                // dihapus dipulihkan TANPA pemetaan lamanya.
+                DistributorItem::queueFor($distributor, (string) $itemName);
             }
         }
 
         return redirect()->route('distributor-items.index', [
-            'distributorFilter' => $log?->distributor_id,
+            'ownerFilter' => $log?->distributor_id ? 'd:'.$log->distributor_id : '',
             'mappingFilter' => 'unmapped',
         ]);
     }

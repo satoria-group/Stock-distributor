@@ -16,6 +16,7 @@ class DatabaseSeeder extends Seeder
             DemoUserSeeder::class,
             MasterDataSeeder::class,
             DistributorTemplateGroupSeeder::class,
+            DistributorGroupSeeder::class,
         ]);
     }
 }

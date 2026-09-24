@@ -59,6 +59,12 @@ class StockColumnRecipe
                 $parts[] = ['column' => trim((string) $part['column'])];
             } elseif (isset($part['text']) && (string) $part['text'] !== '') {
                 $parts[] = ['text' => (string) $part['text']];
+            } elseif (isset($part['cell']) && trim((string) $part['cell']) !== '') {
+                $parts[] = ['cell' => mb_strtoupper(trim((string) $part['cell']))];
+            } elseif (! empty($part['sheet'])) {
+                $parts[] = ['sheet' => true];
+            } elseif (! empty($part['file'])) {
+                $parts[] = ['file' => true];
             }
         }
 
@@ -89,6 +95,25 @@ class StockColumnRecipe
         }
 
         return $out;
+    }
+
+    /**
+     * Resep ini mengambil nilai dari luar baris (sel tetap, nama sheet, nama
+     * berkas)?
+     *
+     * Nilai seperti itu hampir selalu berupa kalimat bebas — 'Tgl : 23/09/2026',
+     * bukan sel tanggal — jadi pemanggil perlu tahu bahwa isinya harus digali
+     * dulu, bukan dibaca apa adanya.
+     */
+    public function usesFileContext(): bool
+    {
+        foreach ($this->parts as $part) {
+            if (isset($part['cell']) || isset($part['sheet']) || isset($part['file'])) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /** Resep tanpa satu pun kolom (murni teks tetap) selalu bisa dihitung. */
@@ -124,7 +149,7 @@ class StockColumnRecipe
      *                  dibedakan dari string kosong supaya pemanggil bisa
      *                  membedakan "kolomnya tidak ada" dari "selnya kosong".
      */
-    public function value(array $row, array $indexByHeader): ?string
+    public function value(array $row, array $indexByHeader, array $context = []): ?string
     {
         $pieces = [];
         $sawColumnValue = false;
@@ -132,6 +157,25 @@ class StockColumnRecipe
         foreach ($this->parts as $part) {
             if (isset($part['text'])) {
                 $pieces[] = $part['text'];
+
+                continue;
+            }
+
+            // Bahan yang nilainya berasal dari berkas, bukan dari baris:
+            // banyak berkas menaruh tanggal di judul laporan, dan menaruh
+            // cabang pada nama sheet-nya.
+            if (isset($part['cell'])) {
+                $pieces[] = (string) ($context['cells'][$part['cell']] ?? '');
+
+                continue;
+            }
+            if (isset($part['sheet'])) {
+                $pieces[] = (string) ($context['sheet'] ?? '');
+
+                continue;
+            }
+            if (isset($part['file'])) {
+                $pieces[] = (string) ($context['file'] ?? '');
 
                 continue;
             }
@@ -164,6 +208,19 @@ class StockColumnRecipe
         }
 
         return trim($value);
+    }
+
+    /** Sel tetap yang dibutuhkan resep ini, mis. ['B1', 'A3']. */
+    public function cells(): array
+    {
+        $out = [];
+        foreach ($this->parts as $part) {
+            if (isset($part['cell'])) {
+                $out[] = $part['cell'];
+            }
+        }
+
+        return $out;
     }
 
     /**

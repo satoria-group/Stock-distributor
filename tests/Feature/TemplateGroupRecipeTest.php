@@ -316,4 +316,32 @@ class TemplateGroupRecipeTest extends TestCase
         $this->assertTrue($m::formatIsMonthOnly('mm/yyyy'));
         $this->assertFalse($m::formatIsMonthOnly('dd/mm/yyyy'));
     }
+
+    public function test_kode_distributor_dipetakan_lewat_code_map(): void
+    {
+        $group = DistributorTemplateGroup::create([
+            'name' => 'Kode Sendiri'.$this->suffix,
+            'code_map' => ['D001' => 'SDLSURABAYA', 'd002' => 'sdlbogor'],
+            'column_map' => [
+                'ID DISTRIBUTOR' => 'CABANG',
+                'Distributor Item Name' => 'Nama Barang',
+                'Quantity' => 'Qty',
+            ],
+        ]);
+
+        $data = [
+            ['CABANG', 'Nama Barang', 'Qty'],
+            ['D001', 'SUSU 400G', '10'],
+            ['d002', 'SUSU 400G', '5'],
+            ['KODE-LAIN', 'SUSU 400G', '3'],
+        ];
+
+        [, $reader] = $this->read($data, $group);
+
+        // Kode alias dipetakan ke kode resmi, tanpa peduli besar-kecil huruf.
+        $this->assertSame('SDLSURABAYA', $reader->distributorCode($data[1]));
+        $this->assertSame('SDLBOGOR', $reader->distributorCode($data[2]));
+        // Kode yang tidak ada di pemetaan diteruskan apa adanya.
+        $this->assertSame('KODE-LAIN', $reader->distributorCode($data[3]));
+    }
 }

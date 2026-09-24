@@ -23,7 +23,7 @@
                     @if ($selectedGroup === 'ALL')
                         Stock On Hand Harian Distributor
                     @else
-                        Stock Harian {{ $selectedGroup === 'OTHER' ? 'Distributor Lainnya' : $selectedGroup }}
+                        Stock Harian {{ \App\Livewire\Dashboard::getDistributorGroupLabel($selectedGroup) }}
                         @if ($selectedBranchId)
                             <span class="text-emerald-200 font-normal text-xl md:text-2xl">· {{ $availableBranches->firstWhere('id', $selectedBranchId)?->name }}</span>
                         @endif
@@ -57,21 +57,24 @@
                 <div class="p-1.5 rounded-2xl flex items-center gap-1 flex-wrap shadow-sm"
                      style="background: rgba(0, 0, 0, 0.35); border: 1px solid rgba(255, 255, 255, 0.18); backdrop-filter: blur(10px);">
                     @php
-                        $groups = [
-                            'ALL' => 'Ringkasan',
-                            'GMP' => 'GMP',
-                            'KFTD' => 'KFTD',
-                            'MAM' => 'MAM',
-                            'SDL' => 'SDL',
-                            'UDC' => 'UDC',
-                            'OTHER' => 'Lainnya',
-                        ];
+                        // Daftar grup dibaca dari master Grup Distributor, bukan ditulis
+                        // tetap di sini: menambah grup tidak boleh menuntut perubahan kode.
+                        $groups = ['ALL' => 'Ringkasan'];
+                        foreach (\App\Livewire\Dashboard::distributorGroups() as $g) {
+                            $groups[$g->name] = $g->name;
+                        }
+                        $groups['OTHER'] = \App\Models\DistributorGroup::UNGROUPED_LABEL;
                     @endphp
                     @foreach ($groups as $gKey => $gLabel)
                         <button type="button" wire:click="setGroup('{{ $gKey }}')"
                                 class="px-3.5 py-2 rounded-xl text-xs font-bold transition duration-150 cursor-pointer"
                                 style="{{ $selectedGroup === $gKey ? 'background: #ffffff; color: #07352d; box-shadow: 0 2px 8px rgba(0,0,0,0.18); font-weight: 800;' : 'color: #d1fae5; background: transparent;' }}">
-                            {{ $gLabel }}
+                            <span class="inline-flex items-center gap-1.5">
+                                @if ($gKey !== 'ALL')
+                                    <span class="w-2 h-2 rounded-full shrink-0" style="background: {{ \App\Livewire\Dashboard::getDistributorGroupColor($gKey) }};"></span>
+                                @endif
+                                {{ $gLabel }}
+                            </span>
                         </button>
                     @endforeach
                 </div>
@@ -210,7 +213,7 @@
                             @if ($selectedGroup === 'ALL')
                                 Akumulasi volume kuantitas produk secara nasional dengan breakdown grup distributor
                             @else
-                                Akumulasi kuantitas produk pada {{ $selectedGroup === 'OTHER' ? 'Distributor Lainnya' : $selectedGroup }}
+                                Akumulasi kuantitas produk pada {{ \App\Livewire\Dashboard::getDistributorGroupLabel($selectedGroup) }}
                             @endif
                         </p>
                     </div>
@@ -252,7 +255,7 @@
                             @else
                                 <span>Komposisi Sediaan</span>
                                 <span class="block text-[11px] font-normal text-slate-500 mt-0.5">
-                                    ({{ $selectedGroup === 'OTHER' ? 'Distributor Lainnya' : $selectedGroup }})
+                                    ({{ \App\Livewire\Dashboard::getDistributorGroupLabel($selectedGroup) }})
                                 </span>
                             @endif
                         </h3>
@@ -534,7 +537,7 @@
                                 @if ($selectedBranchId)
                                     <span class="inline-block ml-1 text-emerald-700 font-medium">&bull; {{ $availableBranches->firstWhere('id', $selectedBranchId)?->name }}</span>
                                 @elseif ($selectedGroup !== 'ALL')
-                                    <span class="inline-block ml-1 text-emerald-700 font-medium">&bull; {{ $selectedGroup === 'OTHER' ? 'Distributor Lainnya' : $selectedGroup }}</span>
+                                    <span class="inline-block ml-1 text-emerald-700 font-medium">&bull; {{ \App\Livewire\Dashboard::getDistributorGroupLabel($selectedGroup) }}</span>
                                 @endif
                                 @if ($batchFilter)
                                     <span class="inline-block ml-1 text-emerald-700 font-mono font-medium">&bull; Batch: {{ $batchFilter }}</span>
@@ -1166,7 +1169,7 @@
                                     @elseif ($selectedBranchId)
                                         &bull; <span class="text-rose-700 font-medium">{{ $availableBranches->firstWhere('id', $selectedBranchId)?->name }}</span>
                                     @elseif ($selectedGroup !== 'ALL')
-                                        &bull; <span class="text-rose-700 font-medium">{{ $selectedGroup === 'OTHER' ? 'Distributor Lainnya' : $selectedGroup }}</span>
+                                        &bull; <span class="text-rose-700 font-medium">{{ \App\Livewire\Dashboard::getDistributorGroupLabel($selectedGroup) }}</span>
                                     @endif
                                 </p>
                             </div>
@@ -1769,7 +1772,7 @@
                                 </td>
                                 <td class="py-3.5 px-4 text-center">
                                     <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold bg-slate-100 text-slate-700 border border-slate-200">
-                                        {{ \App\Livewire\Dashboard::getDistributorGroup($row->distributor->distributor_code) }}
+                                        {{ \App\Livewire\Dashboard::getDistributorGroupLabel(\App\Livewire\Dashboard::getDistributorGroup($row->distributor)) }}
                                     </span>
                                 </td>
                                 <td class="py-3.5 px-4 text-center">

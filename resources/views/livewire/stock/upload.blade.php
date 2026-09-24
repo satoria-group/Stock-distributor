@@ -267,7 +267,7 @@
     </div>
 
         @if (! empty($skippedItems))
-            <div class="mt-4 rounded-xl border border-amber-300 bg-amber-50/90 p-5 shadow-sm">
+            <div class="my-2 rounded-xl border border-amber-300 bg-amber-50/90 p-5 shadow-sm">
                 <div class="flex items-start gap-3 mb-3">
                     <div class="w-8 h-8 rounded-full bg-amber-100 text-amber-700 flex items-center justify-center shrink-0 mt-0.5">
                         <svg width="16" height="16" style="width: 16px; height: 16px; min-width: 16px; max-width: 16px; flex-shrink: 0;" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -300,13 +300,13 @@
                             @php
                                 $displayRows = ! empty($skippedRowsData)
                                     ? $skippedRowsData
-                                    : array_map(fn($n) => ['item_name' => $n, 'satuan' => 'PCS', 'quantity' => 0, 'expired_date' => null, 'batch_no' => null], $skippedItems);
+                                    : array_map(fn($n) => ['item_name' => $n, 'satuan' => null, 'quantity' => 0, 'expired_date' => null, 'batch_no' => null], $skippedItems);
                             @endphp
                             @foreach ($displayRows as $idx => $item)
                                 <tr class="hover:bg-amber-50/50">
                                     <td class="text-center px-3 py-2 text-gray-400 font-mono">{{ $idx + 1 }}</td>
                                     <td class="px-3 py-2 font-medium text-gray-900">{{ $item['item_name'] }}</td>
-                                    <td class="px-3 py-2 font-mono text-gray-600">{{ $item['satuan'] ?? 'PCS' }}</td>
+                                    <td class="px-3 py-2 font-mono text-gray-600">{{ ($item['satuan'] ?? null) ?: '—' }}</td>
                                     <td class="px-3 py-2 text-right font-mono font-semibold text-gray-900">{{ number_format($item['quantity'] ?? 0, 0, ',', '.') }}</td>
                                     <td class="px-3 py-2 font-mono text-gray-500">
                                         {{ !empty($item['expired_date']) ? $item['expired_date'] : '—' }}
@@ -862,7 +862,7 @@
             const itemId = Number(selectEl.value);
             const selectedOpt = selectEl.options[selectEl.selectedIndex];
             const itemName = selectedOpt.getAttribute('data-name');
-            const satuan = selectedOpt.getAttribute('data-satuan') || 'PCS';
+            const satuan = null;
             const isMapped = selectedOpt.getAttribute('data-mapped') === '1';
 
             // Check if already in grid

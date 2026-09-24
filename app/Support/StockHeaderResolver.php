@@ -48,6 +48,15 @@ class StockHeaderResolver
     {
         $recipes = $group?->recipes() ?? [];
 
+        // Sinonim bawaan (Lapis 2 & 3 di mapHeaders()) hanya dipakai untuk
+        // deteksi otomatis TANPA grup. Begitu sebuah Grup Template dipilih,
+        // setiap kolom kanonik WAJIB didefinisikan manual di resepnya — kolom
+        // yang dibiarkan kosong di form harus tetap kosong di sini, bukan
+        // diam-diam tertebak dari judul yang mirip. Ini mencegah resep yang
+        // sebenarnya belum lengkap terlihat "jalan" karena kebetulan cocok
+        // dengan tebakan sinonim, lalu berubah begitu berkasnya sedikit lain.
+        $autoDetect = $group === null;
+
         $forcedRow = $group?->header_row ? ((int) $group->header_row - 1) : null;
         $candidateRows = $forcedRow !== null
             ? [$forcedRow]
@@ -65,7 +74,7 @@ class StockHeaderResolver
                 $headers[$idx] = trim((string) $value);
             }
 
-            $mapped = $this->mapHeaders($headers, $recipes);
+            $mapped = $this->mapHeaders($headers, $recipes, $autoDetect);
             $score = $this->score($mapped['col']);
 
             if ($best === null || $score > $best['score']) {
@@ -116,9 +125,12 @@ class StockHeaderResolver
      *
      * @param  array<int, string>  $headers  index kolom => judul mentah
      * @param  array<string, StockColumnRecipe>  $recipes  resep milik grup
+     * @param  bool  $autoDetect  sinonim bawaan (Lapis 2 & 3) boleh dipakai?
+     *         Hanya benar untuk deteksi otomatis tanpa grup — lihat catatan
+     *         pada resolve().
      * @return array{col: array<string, int>, index_by_header: array<string, int>}
      */
-    public function mapHeaders(array $headers, array $recipes = []): array
+    public function mapHeaders(array $headers, array $recipes = [], bool $autoDetect = true): array
     {
         $normalized = [];
         $indexByHeader = [];
@@ -162,6 +174,10 @@ class StockHeaderResolver
             $col[$canonical] = $anchor ?? -1;
         }
 
+        if (! $autoDetect) {
+            return ['col' => $col, 'index_by_header' => $indexByHeader];
+        }
+
         // Lapis 2: kecocokan persis dengan sinonim bawaan.
         foreach (StockTemplateColumns::definitions() as $canonical => $def) {
             if (isset($col[$canonical])) {
@@ -201,8 +217,15 @@ class StockHeaderResolver
                 if (isset($taken[$idx])) {
                     continue;
                 }
+                // Judul kolom yang sangat pendek ('No', 'ED') tidak pernah ikut
+                // pencocokan sebagian: 'No' terkandung di dalam 'batch no', dan
+                // karenanya kolom nomor urut SDL pernah terpilih sebagai Batch.
+                if (mb_strlen($n) < 4) {
+                    continue;
+                }
+
                 foreach ($needles as $needle) {
-                    // Sinonim sangat pendek ('ed', 'qty') terlalu mudah muncul
+                    // Sinonim sangat pendek ('ed', 'qty') pun terlalu mudah muncul
                     // di tengah kata lain, jadi tidak ikut pencocokan sebagian.
                     if (mb_strlen($needle) < 4) {
                         continue;
@@ -250,8 +273,8 @@ class StockHeaderResolver
         $msg = 'Kolom wajib tidak ditemukan: '.implode(', ', $missing).'. Judul kolom yang terbaca di berkas: '.$foundText.'.';
 
         $msg .= $group
-            ? ' Perbarui pemetaan kolom pada Grup Template "'.$group->name.'" di menu Grup Template Excel.'
-            : ' Distributor ini belum punya Grup Template. Daftarkan template-nya di menu Grup Template Excel agar judul kolom khas ini dikenali.';
+            ? ' Perbarui pemetaan kolom pada Grup Template "'.$group->name.'" di menu Format Berkas Excel.'
+            : ' Distributor ini belum punya Grup Template. Daftarkan template-nya di menu Format Berkas Excel agar judul kolom khas ini dikenali.';
 
         return $msg;
     }
