@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Auth\AuthController;
 use App\Http\Controllers\EmailAttachmentController;
+use App\Livewire\ApiClients\Index as ApiClientsIndex;
 use App\Livewire\Dashboard;
 use App\Livewire\DistributorItems\Index as DistributorItemsIndex;
 use App\Livewire\Distributors\Index as DistributorsIndex;
@@ -48,4 +49,5 @@ Route::middleware('auth')->group(function () {
     Route::get('/stock/upload', StockUpload::class)->name('stock.upload');
     Route::get('/stock/history', StockHistory::class)->name('stock.history');
     Route::get('/users', UsersIndex::class)->name('users.index');
+    Route::get('/api-clients', ApiClientsIndex::class)->name('api-clients.index');
 });

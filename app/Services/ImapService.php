@@ -120,8 +120,21 @@ class ImapService
 
                 // Query messages descending by newest first
                 // Use PEEK mode (leaveUnread) to never alter read status
-                $query = $folder->query()->all()->leaveUnread()->setFetchOrder('desc');
+                //
+                // setFetchBody(false) WAJIB: default Webklex mengunduh isi email
+                // LENGKAP beserta seluruh lampiran Excel-nya untuk tiap pesan —
+                // opsi 'fetch_body' di getClient() tidak berlaku untuk query.
+                // Terukur: 20 email ±95 detik (sering diputus proxy IMAP dengan
+                // "empty response") vs ±3 detik tanpa body. Daftar inbox hanya
+                // butuh header; isi & lampiran diambil saat email dibuka.
+                $query = $folder->query()->all()->leaveUnread()->setFetchBody(false)->setFetchOrder('desc');
                 $paginator = $query->paginate($perPage, $page, 'page');
+
+                $uids = [];
+                foreach ($paginator as $message) {
+                    $uids[] = (int) $message->getUid();
+                }
+                $attachmentCounts = $this->attachmentCounts($client, $uids);
 
                 $items = [];
                 foreach ($paginator as $message) {
@@ -136,7 +149,10 @@ class ImapService
                     $dateCarbon = $date ? Carbon::parse($date->first() ?? $date) : null;
 
                     $uid = (string) $message->getUid();
-                    $hasAttachments = (bool) $message->hasAttachments();
+                    // Tanpa body, hasAttachments() selalu false — jumlahnya
+                    // dibaca dari BODYSTRUCTURE (lihat attachmentCounts()).
+                    $attachmentCount = $attachmentCounts[(int) $uid] ?? 0;
+                    $hasAttachments = $attachmentCount > 0;
 
                     $flags = $message->getFlags();
                     $isSeen = $flags ? ($flags->has('seen') || $flags->contains('Seen') || $flags->contains('\\Seen')) : false;
@@ -151,7 +167,7 @@ class ImapService
                         'date_display' => $dateCarbon ? $dateCarbon->translatedFormat('d M Y, H:i') : '—',
                         'is_read' => $isSeen,
                         'has_attachments' => $hasAttachments,
-                        'attachment_count' => $hasAttachments ? count($message->getAttachments()) : 0,
+                        'attachment_count' => $attachmentCount,
                     ];
                 }
 
@@ -208,6 +224,47 @@ class ImapService
         }
 
         return $result;
+    }
+
+    /**
+     * Jumlah lampiran per UID, dibaca dari BODYSTRUCTURE dalam SATU perintah
+     * FETCH untuk seluruh halaman (±0,15 detik untuk 20 email) — tanpa
+     * mengunduh isi email maupun lampirannya.
+     *
+     * Parser Webklex tidak mengurai BODYSTRUCTURE bersarang dengan rapi, jadi
+     * yang dicari cukup parameter NAME / FILENAME: setiap bagian berkas
+     * (lampiran maupun gambar inline) selalu membawanya. Nama yang sama dalam
+     * satu email dihitung sekali, karena satu bagian biasanya menyebut NAME
+     * dan FILENAME sekaligus.
+     *
+     * Gagal membaca struktur tidak boleh menggagalkan daftar inbox: jumlah
+     * lampiran jadi 0 dan tercatat di log.
+     *
+     * @param  array<int, int>  $uids
+     * @return array<int, int>
+     */
+    protected function attachmentCounts($client, array $uids): array
+    {
+        if ($uids === []) {
+            return [];
+        }
+
+        try {
+            $structures = $client->getConnection()->fetch(['BODYSTRUCTURE'], $uids)->validatedData();
+        } catch (\Throwable $e) {
+            Log::warning('mail.imap.bodystructure_failed', ['error' => $e->getMessage()]);
+
+            return [];
+        }
+
+        $counts = [];
+        foreach ((array) $structures as $uid => $structure) {
+            $flat = json_encode($structure) ?: '';
+            preg_match_all('/"(?:FILENAME|NAME)","([^"\\\\]+)/i', $flat, $m);
+            $counts[(int) $uid] = count(array_unique(array_map('mb_strtolower', $m[1])));
+        }
+
+        return $counts;
     }
 
     /**

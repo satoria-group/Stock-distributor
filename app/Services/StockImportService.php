@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\Distributor;
+use App\Models\DistributorGroup;
 use App\Models\DistributorItem;
 use App\Models\StockEmailLog;
 use App\Models\StockEntry;
@@ -673,6 +674,45 @@ class StockImportService
             }
         }
 
+        $rows = [];
+        foreach ($branchRows as $entry) {
+            // Tiap baris membawa pembacanya sendiri: satu berkas bisa memuat
+            // beberapa sheet dengan baris header masing-masing.
+            $reader = $entry['reader'];
+            $r = $entry['row'];
+            $rows[] = [
+                'item_name' => $reader->itemName($r),
+                'qty' => $reader->quantity($r),
+                'satuan' => $reader->satuan($r),
+                'ed' => $reader->expiredDate($r),
+                'batch' => $reader->batchNo($r),
+                'excel_row' => $entry['excel_row'],
+            ];
+        }
+
+        return $this->importNormalizedRows($distributor, $tanggal, $rows, $uploadedBy, $dryRun, 'email');
+    }
+
+    /**
+     * Inti impor SATU cabang untuk satu tanggal, terlepas dari asal datanya
+     * (berkas Excel/email atau API). Mapping item, konversi satuan, validasi
+     * batch, penyimpanan snapshot, dan antrean mapping hanya ada di sini,
+     * supaya data yang sama tidak pernah tersimpan berbeda karena jalurnya.
+     *
+     * @param  array<int, array{item_name: string, qty: float, satuan: ?string, ed: ?string, batch: ?string, excel_row: int}>  $rows
+     * @param  'email'|'api'  $source
+     * @param  bool  $replaceExisting  hapus snapshot lama cabang ini pada tanggal tsb. sebelum menyimpan
+     * @return array<string, mixed>
+     */
+    private function importNormalizedRows(
+        Distributor $distributor,
+        string $tanggal,
+        array $rows,
+        ?int $uploadedBy,
+        bool $dryRun,
+        string $source,
+        bool $replaceExisting = false
+    ): array {
         // Pemetaan milik GRUP berlaku untuk seluruh cabangnya; baris milik
         // cabang hanya ada sebagai pengecualian dan menimpa yang segrup.
         $knownItems = DistributorItem::lookupFor($distributor);
@@ -681,21 +721,17 @@ class StockImportService
         $skippedItems = [];
         $totalValidDataRows = 0;
 
-        foreach ($branchRows as $entry) {
-            $r = $entry['row'];
-            // Tiap baris membawa pembacanya sendiri: satu berkas bisa memuat
-            // beberapa sheet dengan baris header masing-masing.
-            $reader = $entry['reader'];
-            $itemName = $reader->itemName($r);
+        foreach ($rows as $entry) {
+            $itemName = $entry['item_name'];
             $totalValidDataRows++;
 
             $key = mb_strtolower(trim(preg_replace('/\s+/', ' ', $itemName)));
             $distItem = $knownItems->get($key);
 
-            $qty = $reader->quantity($r);
-            $satuan = $reader->satuan($r);
-            $ed = $reader->expiredDate($r);
-            $batch = $reader->batchNo($r);
+            $qty = $entry['qty'];
+            $satuan = $entry['satuan'];
+            $ed = $entry['ed'];
+            $batch = $entry['batch'];
 
             if (! $distItem || ! $distItem->isMapped()) {
                 $skippedItems[] = [
@@ -757,7 +793,17 @@ class StockImportService
         $importedCount = 0;
 
         if (! $dryRun && count($validRowsToSave) > 0) {
-            DB::transaction(function () use ($validRowsToSave, $distributor, $tanggal, $uploadedBy, $skippedItems, &$importedCount) {
+            DB::transaction(function () use ($validRowsToSave, $distributor, $tanggal, $uploadedBy, $skippedItems, $source, $replaceExisting, &$importedCount) {
+                $replacedCount = 0;
+                if ($replaceExisting) {
+                    // Kiriman terbaru menggantikan snapshot cabang ini seutuhnya:
+                    // batch yang tidak disebut lagi berarti stoknya sudah habis.
+                    $replacedCount = StockEntry::query()
+                        ->where('distributor_id', $distributor->id)
+                        ->where('tanggal', $tanggal)
+                        ->delete();
+                }
+
                 foreach ($validRowsToSave as $row) {
                     StockEntry::updateOrCreate(
                         [
@@ -787,19 +833,26 @@ class StockImportService
                     $importedCount++;
                 }
 
+                $metadata = [
+                    'sku_count' => $importedCount,
+                    'source' => $source,
+                    'skipped_count' => count($skippedItems),
+                ];
+                if ($replaceExisting) {
+                    $metadata['replaced_count'] = $replacedCount;
+                }
+
                 StockSnapshotActivity::create([
                     'tanggal' => $tanggal,
                     'distributor_id' => $distributor->id,
                     'user_id' => $uploadedBy,
                     'action' => $uploadedBy ? 'upload' : 'automation',
-                    'description' => $uploadedBy
-                        ? 'Upload dari email oleh '.(\App\Models\User::find($uploadedBy)?->name ?? 'User')." ({$importedCount} SKU)"
-                        : "Import otomatis via Email ({$importedCount} SKU)",
-                    'metadata' => [
-                        'sku_count' => $importedCount,
-                        'source' => 'email',
-                        'skipped_count' => count($skippedItems),
-                    ],
+                    'description' => match (true) {
+                        $source === 'api' => "Import otomatis via API ({$importedCount} SKU)",
+                        $uploadedBy !== null => 'Upload dari email oleh '.(\App\Models\User::find($uploadedBy)?->name ?? 'User')." ({$importedCount} SKU)",
+                        default => "Import otomatis via Email ({$importedCount} SKU)",
+                    },
+                    'metadata' => $metadata,
                 ]);
             });
         } elseif ($dryRun) {
@@ -854,6 +907,85 @@ class StockImportService
                 'unique_skipped_names' => $uniqueSkippedNames,
             ],
         ]);
+    }
+
+    /**
+     * Impor kiriman stok dari API (push) milik satu grup usaha.
+     *
+     * Aturannya sama dengan berkas Excel — satu transaksi untuk seluruh
+     * cabang, cabang tak dikenal/non-aktif menolak kiriman utuh — dengan dua
+     * perbedaan yang disengaja:
+     *  - cabang wajib milik grup pemegang token, dan
+     *  - kiriman baru MENGGANTI snapshot yang sudah ada pada tanggal itu,
+     *    karena sistem distributor adalah sumber datanya.
+     *
+     * @param  array<string, array<int, array{item_name: string, qty: float, satuan: ?string, ed: ?string, batch: ?string}>>  $branches  kode cabang => item
+     * @return array<string, mixed>
+     */
+    public function importFromApi(DistributorGroup $group, string $tanggal, array $branches): array
+    {
+        $codes = array_map('strval', array_keys($branches));
+        $distributors = Distributor::whereIn('distributor_code', $codes)->get()->keyBy('distributor_code');
+
+        $unknown = array_values(array_diff($codes, $distributors->keys()->all()));
+        if ($unknown !== []) {
+            return $this->importResult('unknown_distributor', false, null, $tanggal, [
+                'error' => 'Kode distributor berikut belum terdaftar di Master Distributor: '.implode(', ', $unknown).'.',
+                'details' => ['unknown_codes' => $unknown],
+                'distributor_code' => $unknown[0],
+            ]);
+        }
+
+        $foreign = $distributors->filter(fn ($d) => $d->distributor_group_id !== $group->id)->keys()->values()->all();
+        if ($foreign !== []) {
+            return $this->importResult('forbidden_distributor', false, null, $tanggal, [
+                'error' => 'Kode distributor berikut bukan milik grup '.$group->name.': '.implode(', ', $foreign).'.',
+                'details' => ['forbidden_codes' => $foreign],
+                'distributor_code' => $foreign[0],
+            ]);
+        }
+
+        foreach ($distributors as $code => $distributor) {
+            if (! $distributor->is_active) {
+                return $this->importResult('inactive_distributor', false, $distributor, $tanggal, [
+                    'error' => "Distributor '{$distributor->name}' ({$code}) berstatus NON-AKTIF di Master Data. Seluruh kiriman ditolak.",
+                    'details' => ['distributor_code' => $code, 'is_active' => false],
+                ]);
+            }
+        }
+
+        $branchResults = [];
+        $failure = null;
+
+        try {
+            DB::transaction(function () use ($branches, $distributors, $tanggal, &$branchResults, &$failure) {
+                foreach ($branches as $code => $items) {
+                    $rows = [];
+                    foreach (array_values($items) as $i => $item) {
+                        // Nomor urut item (mulai 1) menggantikan nomor baris
+                        // Excel pada pesan validasi batch.
+                        $rows[] = $item + ['excel_row' => $i + 1];
+                    }
+
+                    $result = $this->importNormalizedRows($distributors[(string) $code], $tanggal, $rows, null, false, 'api', true);
+
+                    if (! $result['success']) {
+                        $failure = $result;
+                        throw new \RuntimeException('branch_import_failed');
+                    }
+
+                    $branchResults[] = $result;
+                }
+            });
+        } catch (\RuntimeException $e) {
+            if ($e->getMessage() !== 'branch_import_failed') {
+                throw $e;
+            }
+
+            return $failure;
+        }
+
+        return $this->mergeBranchResults($branchResults);
     }
 
     /**

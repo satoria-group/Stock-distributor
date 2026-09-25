@@ -28,6 +28,7 @@ class AccessPages
             ['key' => 'emails', 'label' => 'Inbox Email Distributor', 'route' => 'emails.index', 'view' => 'emails.view', 'manage' => null],
             ['key' => 'stock-upload', 'label' => 'Upload Stock Harian', 'route' => 'stock.upload', 'view' => 'stock.upload', 'manage' => null],
             ['key' => 'stock-history', 'label' => 'Riwayat Stok', 'route' => 'stock.history', 'view' => 'stock.view', 'manage' => null],
+            ['key' => 'api-clients', 'label' => 'Akses API Distributor', 'route' => 'api-clients.index', 'view' => 'api-clients.manage', 'manage' => null],
             ['key' => 'users', 'label' => 'Manajemen User & Hak Akses', 'route' => 'users.index', 'view' => 'users.manage', 'manage' => null],
         ];
     }

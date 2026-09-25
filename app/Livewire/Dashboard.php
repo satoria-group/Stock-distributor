@@ -55,6 +55,13 @@ class Dashboard extends Component
 
     public ?int $selectedBranchId = null;
 
+    /**
+     * Filter cabang untuk ringkasan di atas (kartu KPI + dua grafik utama).
+     * Sengaja terpisah dari $selectedBranchId milik tabel, supaya menyaring
+     * ringkasan tidak ikut menyaring tabel dan sebaliknya.
+     */
+    public ?int $overviewBranchId = null;
+
     public string $search = '';
 
     public string $satuanFilter = '';
@@ -364,6 +371,7 @@ class Dashboard extends Component
 
     public function updatedSelectedGroup(): void
     {
+        $this->overviewBranchId = null;
         $this->selectedBranchId = null;
         $this->fefoBranchId = null;
         $this->stagnantBranchId = null;
@@ -389,6 +397,7 @@ class Dashboard extends Component
         }
 
         $this->selectedGroup = $group;
+        $this->overviewBranchId = null;
         $this->selectedBranchId = null;
         $this->fefoBranchId = null;
         $this->stagnantBranchId = null;
@@ -1453,20 +1462,29 @@ class Dashboard extends Component
             }
         }
 
+        // Ringkasan atas (KPI + dua grafik) bisa disaring ke satu cabang lewat
+        // $overviewBranchId. Cabang yang tidak termasuk grup aktif diabaikan.
+        $overviewBranch = $this->overviewBranchId
+            ? $availableBranches->firstWhere('id', $this->overviewBranchId)
+            : null;
+        $overviewEntries = $overviewBranch
+            ? $allCurrentEntries->filter(fn ($e) => (int) $e->distributor_id === (int) $overviewBranch->id)->values()
+            : $allCurrentEntries;
+
         // 5. Perhitungan KPI Satuan Farmasi & Metrik Operasional
         $kpi = [
             'total_all' => 0,
             'total_btl' => 0,
             'total_amp' => 0,
             'total_pcs' => 0,
-            'total_sku' => $allCurrentEntries->pluck('distributor_item_id')->unique()->count(),
-            'total_branches' => $allCurrentEntries->pluck('distributor_id')->unique()->count(),
+            'total_sku' => $overviewEntries->pluck('distributor_item_id')->unique()->count(),
+            'total_branches' => $overviewEntries->pluck('distributor_id')->unique()->count(),
             'expiring_soon' => 0,
             'unmapped' => 0,
             'total_value' => 0.0,
         ];
 
-        foreach ($allCurrentEntries as $entry) {
+        foreach ($overviewEntries as $entry) {
             $sat = strtoupper(trim((string) $entry->displayUnit()));
             $q = (float) $entry->quantity;
             $unitPrice = (float) ($entry->distributorItem?->netsuiteItem?->unit_price ?? 0.0);
@@ -1491,7 +1509,7 @@ class Dashboard extends Component
         }
 
         // 6. Data Grafik: Top 10 Produk Berdasarkan Kuantitas (Terkonsolidasi Master Netsuite)
-        $topProductsMap = $allCurrentEntries
+        $topProductsMap = $overviewEntries
             ->groupBy(function ($e) {
                 $ns = $e->distributorItem?->netsuiteItem;
                 if ($ns && ! empty($ns->netsuite_name)) {
@@ -1512,7 +1530,9 @@ class Dashboard extends Component
             'datasets' => [],
         ];
 
-        $isNationalSummary = ($this->selectedGroup === 'ALL');
+        // Satu cabang hanya milik satu grup, jadi breakdown per grup (batang
+        // bertumpuk & donut per grup) tidak bermakna saat cabang dipilih.
+        $isNationalSummary = ($this->selectedGroup === 'ALL') && ! $overviewBranch;
 
         if ($isNationalSummary) {
             // Stacked Bar Chart per Distributor Group (Looker Studio Style)
@@ -1541,7 +1561,9 @@ class Dashboard extends Component
                 $dataPoints[] = (float) $pData['total'];
             }
 
-            $labelName = self::getDistributorGroupLabel($this->selectedGroup);
+            $labelName = $overviewBranch
+                ? self::formatBranchDisplayName($overviewBranch->name, $overviewBranch->distributor_code)
+                : self::getDistributorGroupLabel($this->selectedGroup);
 
             $chartTopProducts['datasets'][] = [
                 'label' => 'Total Qty (' . $labelName . ')',
@@ -1567,7 +1589,7 @@ class Dashboard extends Component
             $totals = [];
 
             foreach ($distGroups as $dg) {
-                $entriesForGroup = $allCurrentEntries->filter(fn ($e) => self::getDistributorGroup($e->distributor) === $dg);
+                $entriesForGroup = $overviewEntries->filter(fn ($e) => self::getDistributorGroup($e->distributor) === $dg);
                 if ($this->donutMetric === 'value') {
                     $sum = (float) $entriesForGroup->sum(function ($e) {
                         $unitPrice = (float) ($e->distributorItem?->netsuiteItem?->unit_price ?? 0.0);
@@ -1590,17 +1612,17 @@ class Dashboard extends Component
         } else {
             // Jika memilih 1 distributor grup, tampilkan komposisi per sediaan yang ada stoknya (> 0)
             if ($this->donutMetric === 'value') {
-                $valBtl = (float) $allCurrentEntries->filter(function ($e) {
+                $valBtl = (float) $overviewEntries->filter(function ($e) {
                     $sat = strtoupper(trim((string) $e->displayUnit()));
                     return str_contains($sat, 'BTL') || str_contains($sat, 'BOTOL');
                 })->sum(fn ($e) => (float) $e->quantity * (float) ($e->distributorItem?->netsuiteItem?->unit_price ?? 0.0));
 
-                $valAmp = (float) $allCurrentEntries->filter(function ($e) {
+                $valAmp = (float) $overviewEntries->filter(function ($e) {
                     $sat = strtoupper(trim((string) $e->displayUnit()));
                     return str_contains($sat, 'AMP');
                 })->sum(fn ($e) => (float) $e->quantity * (float) ($e->distributorItem?->netsuiteItem?->unit_price ?? 0.0));
 
-                $valPcs = (float) $allCurrentEntries->filter(function ($e) {
+                $valPcs = (float) $overviewEntries->filter(function ($e) {
                     $sat = strtoupper(trim((string) $e->displayUnit()));
                     return ! str_contains($sat, 'BTL') && ! str_contains($sat, 'BOTOL') && ! str_contains($sat, 'AMP');
                 })->sum(fn ($e) => (float) $e->quantity * (float) ($e->distributorItem?->netsuiteItem?->unit_price ?? 0.0));
@@ -1636,10 +1658,10 @@ class Dashboard extends Component
         $chartDonut['total'] = $totalDonut;
 
         // 7b. Ranking Top 5 Cabang Terbesar (Branch Capital / Physical Allocation)
-        $branchGroups = $allCurrentEntries->groupBy('distributor_id');
+        $branchGroups = $overviewEntries->groupBy('distributor_id');
         $totalUniverse = $this->donutMetric === 'value'
-            ? (float) $allCurrentEntries->sum(fn ($e) => (float) $e->quantity * (float) ($e->distributorItem?->netsuiteItem?->unit_price ?? 0.0))
-            : (float) $allCurrentEntries->sum('quantity');
+            ? (float) $overviewEntries->sum(fn ($e) => (float) $e->quantity * (float) ($e->distributorItem?->netsuiteItem?->unit_price ?? 0.0))
+            : (float) $overviewEntries->sum('quantity');
 
         $topBranches = $branchGroups->map(function ($entries) use ($totalUniverse) {
             $dist = $entries->first()->distributor;
@@ -2102,6 +2124,11 @@ class Dashboard extends Component
             'kpi' => $kpi,
             'latestDate' => $latestSnapshotDate,
             'availableBranches' => $availableBranches,
+            'overviewBranch' => $overviewBranch,
+            // Label judul ringkasan: nama cabang terpilih, atau nama grupnya.
+            'overviewScopeLabel' => $overviewBranch
+                ? self::formatBranchDisplayName($overviewBranch->name, $overviewBranch->distributor_code)
+                : self::getDistributorGroupLabel($this->selectedGroup),
             'stockTable' => $stockTablePaginated,
             'chartTopProducts' => $chartTopProducts,
             'chartDonut' => $chartDonut,

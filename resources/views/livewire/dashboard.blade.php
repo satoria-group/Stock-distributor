@@ -24,9 +24,9 @@
                         Stock On Hand Harian Distributor
                     @else
                         Stock Harian {{ \App\Livewire\Dashboard::getDistributorGroupLabel($selectedGroup) }}
-                        @if ($selectedBranchId)
-                            <span class="text-emerald-200 font-normal text-xl md:text-2xl">· {{ $availableBranches->firstWhere('id', $selectedBranchId)?->name }}</span>
-                        @endif
+                    @endif
+                    @if ($overviewBranch)
+                        <span class="block text-emerald-200 font-semibold text-lg md:text-xl mt-1">{{ $overviewBranch->name }}</span>
                     @endif
                 </h1>
 
@@ -77,6 +77,31 @@
                             </span>
                         </button>
                     @endforeach
+                </div>
+
+                <!-- Filter cabang untuk ringkasan (kartu KPI + dua grafik utama) -->
+                <div class="text-[11px] font-mono uppercase tracking-wider text-emerald-200 font-bold mt-4 mb-2 lg:text-right">
+                    Filter Cabang
+                </div>
+                <div class="flex items-center gap-1.5 lg:justify-end">
+                    <div class="relative w-full lg:w-80">
+                        <select id="overview-branch" wire:model.live="overviewBranchId"
+                                class="w-full appearance-none rounded-xl pl-3.5 pr-9 py-2.5 text-xs font-bold cursor-pointer focus:outline-none focus:ring-2 focus:ring-emerald-300/50"
+                                style="background: rgba(0, 0, 0, 0.35); border: 1px solid rgba(255, 255, 255, 0.18); color: #ffffff; backdrop-filter: blur(10px);">
+                            <option value="" style="color: #0f172a;">Semua cabang{{ $selectedGroup === 'ALL' ? '' : ' '.\App\Livewire\Dashboard::getDistributorGroupLabel($selectedGroup) }}</option>
+                            @foreach ($availableBranches as $b)
+                                <option value="{{ $b->id }}" style="color: #0f172a;">{{ \App\Livewire\Dashboard::formatBranchDisplayName($b->name, $b->distributor_code) }}</option>
+                            @endforeach
+                        </select>
+                        <svg class="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-emerald-200" width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.2" d="M19 9l-7 7-7-7"/></svg>
+                    </div>
+                    @if ($overviewBranch)
+                        <button type="button" wire:click="$set('overviewBranchId', null)" title="Tampilkan semua cabang"
+                                class="w-[38px] h-[38px] flex items-center justify-center rounded-xl transition cursor-pointer shrink-0 hover:bg-white/20"
+                                style="background: rgba(255, 255, 255, 0.14); border: 1px solid rgba(255, 255, 255, 0.22); color: #ffffff;">
+                            <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.2" d="M6 18L18 6M6 6l12 12"/></svg>
+                        </button>
+                    @endif
                 </div>
             </div>
         </div>
@@ -210,17 +235,17 @@
                     <div>
                         <h3 class="text-sm font-bold text-slate-900 tracking-tight">Top 10 Produk Berdasarkan Kuantitas</h3>
                         <p class="text-xs text-slate-500 mt-0.5">
-                            @if ($selectedGroup === 'ALL')
+                            @if ($selectedGroup === 'ALL' && ! $overviewBranch)
                                 Akumulasi volume kuantitas produk secara nasional dengan breakdown grup distributor
                             @else
-                                Akumulasi kuantitas produk pada {{ \App\Livewire\Dashboard::getDistributorGroupLabel($selectedGroup) }}
+                                Akumulasi kuantitas produk pada {{ $overviewScopeLabel }}
                             @endif
                         </p>
                     </div>
                 </div>
                 <div class="relative" style="height: 385px;">
                     {{-- Overlay HARUS di luar wire:ignore agar tetap dikendalikan Livewire. --}}
-                    <div wire:loading wire:target="setGroup"
+                    <div wire:loading wire:target="setGroup,overviewBranchId"
                          class="absolute inset-0 bg-white/75 backdrop-blur-[1.5px] flex items-center justify-center z-20 rounded-xl transition-all">
                         <div class="inline-flex items-center gap-2.5 px-3.5 py-2 rounded-xl bg-slate-900/90 text-white text-xs font-semibold shadow-lg backdrop-blur-md">
                             <svg class="animate-spin h-3.5 w-3.5 text-emerald-400 shrink-0" fill="none" viewBox="0 0 24 24">
@@ -250,12 +275,12 @@
                 <div class="flex items-center justify-between gap-2 mb-2">
                     <div>
                         <h3 class="text-sm font-bold text-slate-900 tracking-tight">
-                            @if ($selectedGroup === 'ALL')
+                            @if ($selectedGroup === 'ALL' && ! $overviewBranch)
                                 Distribusi Alokasi Stok
                             @else
                                 <span>Komposisi Sediaan</span>
                                 <span class="block text-[11px] font-normal text-slate-500 mt-0.5">
-                                    ({{ \App\Livewire\Dashboard::getDistributorGroupLabel($selectedGroup) }})
+                                    ({{ $overviewScopeLabel }})
                                 </span>
                             @endif
                         </h3>
@@ -301,7 +326,9 @@
                     </div>
                 </div>
 
-                <!-- Top 5 Cabang Terbesar (Branch Capital Allocation) -->
+                <!-- Top 5 Cabang Terbesar (Branch Capital Allocation). Disembunyikan saat
+                     satu cabang dipilih — daftarnya hanya berisi cabang itu sendiri. -->
+                @unless ($overviewBranch)
                 <div class="mt-3.5 pt-3 border-t border-slate-100">
                     <div class="flex items-center justify-between mb-2">
                         <span class="text-[11px] font-bold uppercase tracking-wider text-slate-600 flex items-center gap-1.5">
@@ -351,6 +378,7 @@
                         </div>
                     @endif
                 </div>
+                @endunless
             </div>
 
             <!-- Bottom Total Summary -->

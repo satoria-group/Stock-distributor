@@ -10,8 +10,8 @@
             $queuePrevious = $queueIndex > 0 ? ($importQueue[$queueIndex - 1]['distributor_name'] ?? null) : null;
         @endphp
         <div class="mb-5 bg-amber-50/80 border border-amber-200 rounded-2xl p-4 shadow-2xs">
-            <div class="flex flex-wrap items-center justify-between gap-3">
-                <div class="flex items-start gap-3">
+            <div class="flex flex-wrap items-start justify-between gap-3">
+                <div class="flex items-start gap-3 flex-1 min-w-0">
                     <div class="w-8 h-8 rounded-xl flex items-center justify-center text-white shrink-0 mt-0.5 bg-amber-500">
                         <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"/>
@@ -33,18 +33,6 @@
                 </div>
 
                 <div class="flex items-center gap-3 shrink-0">
-                    <!-- Tiap titik bisa diklik: berpindah ke cabang mana pun, maju maupun mundur -->
-                    <div class="flex items-center gap-1">
-                        @for ($i = 0; $i < $queueTotal; $i++)
-                            <button type="button"
-                                    wire:click="goToQueueItem({{ $i }})"
-                                    @disabled($i === $queueIndex)
-                                    wire:confirm="Pindah ke {{ $importQueue[$i]['distributor_name'] ?? 'cabang ini' }}? Koreksi pada grid yang belum disimpan akan hilang."
-                                    title="Cabang {{ $i + 1 }}: {{ $importQueue[$i]['distributor_name'] ?? '' }}"
-                                    class="w-6 h-1.5 rounded-full transition {{ $i === $queueIndex ? 'bg-amber-500 cursor-default' : ($i < $queueIndex ? 'bg-emerald-500 hover:bg-emerald-600 cursor-pointer' : 'bg-amber-200 hover:bg-amber-300 cursor-pointer') }}"></button>
-                        @endfor
-                    </div>
-
                     <div class="flex items-center gap-1.5">
                         <button type="button" wire:click="previousQueueItem"
                                 @disabled($queueIndex === 0)
@@ -65,6 +53,23 @@
                         </button>
                     </div>
                 </div>
+            </div>
+
+            <!-- Progres per cabang: baris sendiri selebar kartu, titik menyesuaikan
+                 lebar supaya berkas berisi puluhan cabang tidak meluber. Tiap titik
+                 bisa diklik untuk berpindah ke cabang mana pun. -->
+            <div class="flex items-center gap-3 mt-3">
+                <div class="flex items-center gap-1 flex-1 min-w-0">
+                    @for ($i = 0; $i < $queueTotal; $i++)
+                        <button type="button"
+                                wire:click="goToQueueItem({{ $i }})"
+                                @disabled($i === $queueIndex)
+                                wire:confirm="Pindah ke {{ $importQueue[$i]['distributor_name'] ?? 'cabang ini' }}? Koreksi pada grid yang belum disimpan akan hilang."
+                                title="Cabang {{ $i + 1 }}: {{ $importQueue[$i]['distributor_name'] ?? '' }}"
+                                class="flex-1 min-w-[3px] max-w-6 h-1.5 rounded-full transition {{ $i === $queueIndex ? 'bg-amber-500 cursor-default' : ($i < $queueIndex ? 'bg-emerald-500 hover:bg-emerald-600 cursor-pointer' : 'bg-amber-200 hover:bg-amber-300 cursor-pointer') }}"></button>
+                    @endfor
+                </div>
+                <span class="text-[11px] font-mono font-bold text-amber-900 shrink-0">{{ $queuePosition }}/{{ $queueTotal }}</span>
             </div>
         </div>
     @endif

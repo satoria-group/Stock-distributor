@@ -145,6 +145,18 @@
                     </a>
                     @endcan
 
+                    <!-- Akses API Distributor -->
+                    @can('api-clients.manage')
+                    <a href="{{ route('api-clients.index') }}"
+                       class="flex items-center gap-3 px-3.5 py-2.5 rounded-xl transition duration-150 {{ request()->routeIs('api-clients.*') ? 'font-bold shadow-2xs' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50 font-medium' }}"
+                       style="{{ request()->routeIs('api-clients.*') ? 'background: #eaf4f2; color: #07352d;' : '' }}">
+                        <svg width="18" height="18" style="width: 18px; height: 18px; min-width: 18px; flex-shrink: 0;" class="{{ request()->routeIs('api-clients.*') ? 'text-[#0d6d5f]' : 'text-slate-400' }}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z"/>
+                        </svg>
+                        <span>Akses API Distributor</span>
+                    </a>
+                    @endcan
+
                     <!-- User Management -->
                     @can('users.manage')
                     <a href="{{ route('users.index') }}"
