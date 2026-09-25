@@ -144,7 +144,8 @@ class StockTemplateDownloadTest extends TestCase
             ->test(Upload::class)
             ->set('file', $uploadedFile)
             ->call('importFile')
-            ->assertHasNoErrors();
+            ->assertHasNoErrors()
+            ->call('startQueue');
 
         // Verify rows array has 1 item and expired_date is formatted as DD/MM/YYYY
         $rows = $test->get('rows');

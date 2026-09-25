@@ -95,13 +95,18 @@ class Upload extends Component
 
     public ?int $addItemId = null;
 
-    public bool $showSuccessModal = false;
-
     public bool $showConflictModal = false;
 
     public array $pendingImportData = [];
 
-    public array $saveSummary = [];
+    /** Modal Ringkasan Berkas, tampil sebelum cabang pertama dimuat ke grid. */
+    public bool $showSummaryModal = false;
+
+    /** @var array{file?: ?string, branches?: array, unmapped?: array<string, array>} */
+    public array $fileSummary = [];
+
+    /** @var array<int, string> kunci item belum ter-mapping yang dicentang untuk diajukan */
+    public array $summarySelected = [];
 
     /**
      * Asal-usul data yang sedang dimuat di grid, ikut disimpan ke
@@ -217,11 +222,6 @@ class Upload extends Component
             if ($success) {
                 // Tandai email sebagai terbaca setelah berhasil diproses
                 $imapService->markAsRead($emailUid);
-
-                if (! $this->showConflictModal) {
-                    $distName = $this->distributorId ? (Distributor::find($this->distributorId)?->name ?? 'Distributor') : 'Distributor';
-                    session()->flash('status', "Lampiran berkas '{$filename}' dari email berhasil dimuat ke grid: ".count($this->rows)." baris untuk {$distName}.");
-                }
             }
         } finally {
             @unlink($tempClean);
@@ -360,17 +360,8 @@ class Upload extends Component
         copy($this->file->getRealPath(), $tempClean);
 
         try {
-            $success = $this->processSpreadsheetPath($tempClean, 'File Excel');
-            if ($success && ! $this->showConflictModal) {
-                $distName = $this->distributorId ? (Distributor::find($this->distributorId)?->name ?? 'Distributor') : 'Distributor';
-                $status = 'Import selesai: '.count($this->rows)." baris dimuat ke grid untuk {$distName} — {$this->tanggal}.";
-
-                if (count($this->importQueue) > 1) {
-                    $status .= ' Berkas ini berisi '.count($this->importQueue).' cabang; dikerjakan bergiliran mulai dari cabang ini.';
-                }
-
-                session()->flash('status', $status);
-            }
+            // Hasilnya tampil di modal Ringkasan Berkas (lihat startQueue()).
+            $this->processSpreadsheetPath($tempClean, 'File Excel');
         } finally {
             @unlink($tempClean);
             @unlink($tempBase);
@@ -460,8 +451,210 @@ class Upload extends Component
         }
 
         $this->importQueue = $batches;
+        $this->queueIndex = 0;
 
-        return $this->loadQueueItem(0);
+        // Ringkasan seisi berkas dulu — cabang pertama baru dimuat ke grid
+        // setelah operator menekan "Mulai" (startQueue()).
+        $this->fileSummary = $this->buildFileSummary($batches, $sourceDescription);
+        $this->fileSummary['format'] = $reading['group']?->name;
+        $this->summarySelected = array_keys(array_filter(
+            $this->fileSummary['unmapped'],
+            fn ($u) => ! $u['queued']
+        ));
+        $this->showSummaryModal = true;
+
+        return true;
+    }
+
+    /**
+     * Ringkasan berkas untuk modal awal: per cabang, plus satu daftar gabungan
+     * item belum ter-mapping dari SEMUA cabang.
+     *
+     * Item digabung per PEMILIK mapping (grup atau cabang), sama seperti
+     * DistributorItem::queueFor() — nama yang sama di empat cabang SDL cukup
+     * jadi satu baris, karena memang hanya satu baris antrean yang akan dibuat.
+     *
+     * @param  array<int, array<string, mixed>>  $batches
+     * @return array{file: ?string, branches: array, unmapped: array<string, array>}
+     */
+    private function buildFileSummary(array $batches, string $sourceDescription): array
+    {
+        $distributors = Distributor::with('group')
+            ->whereIn('id', array_column($batches, 'distributor_id'))
+            ->get()
+            ->keyBy('id');
+
+        $branches = [];
+        $unmapped = [];
+
+        foreach ($batches as $i => $batch) {
+            $dist = $distributors[$batch['distributor_id']] ?? null;
+
+            $existing = StockEntry::where('tanggal', $batch['tanggal'])
+                ->where('distributor_id', $batch['distributor_id'])
+                ->count();
+
+            $branches[] = [
+                'index' => $i,
+                'code' => $batch['distributor_code'],
+                'name' => $batch['distributor_name'],
+                'tanggal' => $batch['tanggal'],
+                'rows' => count($batch['rows']),
+                // Satu item bisa punya beberapa baris batch.
+                'items' => count(array_unique(array_column($batch['rows'], 'distributor_item_id'))),
+                'unmapped' => count($batch['skipped_rows_data']),
+                'existing' => $existing,
+            ];
+
+            $ownerKey = $dist?->distributor_group_id ? 'g'.$dist->distributor_group_id : 'd'.$batch['distributor_id'];
+            $ownerLabel = $dist?->group?->name ? 'Grup '.$dist->group->name : $batch['distributor_name'];
+
+            foreach ($batch['skipped_rows_data'] as $item) {
+                $key = $ownerKey.'|'.DistributorItem::normalizeName($item['item_name']);
+
+                if (! isset($unmapped[$key])) {
+                    $unmapped[$key] = [
+                        'key' => $key,
+                        'item_name' => $item['item_name'],
+                        'satuan' => $item['satuan'] ?? null,
+                        'quantity' => 0,
+                        'owner' => $ownerLabel,
+                        'distributor_id' => $batch['distributor_id'],
+                        'branches' => [],
+                        'queued' => (bool) ($item['queued'] ?? false),
+                    ];
+                }
+
+                $unmapped[$key]['quantity'] += (float) ($item['quantity'] ?? 0);
+                $unmapped[$key]['branches'][] = $batch['distributor_code'];
+                $unmapped[$key]['satuan'] ??= $item['satuan'] ?? null;
+            }
+        }
+
+        foreach ($unmapped as &$u) {
+            $u['branches'] = array_values(array_unique($u['branches']));
+        }
+        unset($u);
+
+        // Contoh: baris pertama yang benar-benar akan masuk grid.
+        $sample = null;
+        foreach ($batches as $batch) {
+            if ($batch['rows'] !== []) {
+                $row = array_values($batch['rows'])[0];
+                $sample = [
+                    'branch' => $batch['distributor_code'],
+                    'fields' => [
+                        ['label' => 'Tanggal Snapshot', 'value' => $batch['tanggal']],
+                        ['label' => 'Kode Distributor', 'value' => $batch['distributor_code']],
+                        ['label' => 'Nama Item Distributor', 'value' => $row['item_name']],
+                        [
+                            'label' => 'Quantity',
+                            'value' => rtrim(rtrim(number_format((float) $row['quantity'], 2, ',', '.'), '0'), ','),
+                            'note' => ! empty($row['satuan_asli'])
+                                ? 'dikonversi dari '.rtrim(rtrim(number_format((float) $row['quantity_asli'], 2, ',', '.'), '0'), ',').' '.$row['satuan_asli']
+                                : null,
+                        ],
+                        ['label' => 'Satuan (UOM)', 'value' => $row['satuan'] ?? null],
+                        ['label' => 'Expired Date', 'value' => $row['expired_date'] ?? null],
+                        ['label' => 'Batch / Lot', 'value' => $row['batch_no'] ?? null],
+                    ],
+                ];
+                break;
+            }
+        }
+
+        return [
+            'file' => $this->sourceFilename ?: $sourceDescription,
+            'branches' => $branches,
+            'unmapped' => $unmapped,
+            'sample' => $sample,
+        ];
+    }
+
+    /** Ajukan item yang dicentang di modal ringkasan ke antrean mapping. */
+    public function submitSummaryMapping(): void
+    {
+        Gate::authorize('create', StockEntry::class);
+
+        $selected = array_intersect_key($this->fileSummary['unmapped'] ?? [], array_flip($this->summarySelected));
+        $added = 0;
+
+        DB::transaction(function () use ($selected, &$added) {
+            foreach ($selected as $key => $u) {
+                if ($u['queued']) {
+                    continue;
+                }
+
+                $distributor = Distributor::find($u['distributor_id']);
+                if ($distributor && DistributorItem::queueFor($distributor, $u['item_name'], $u['satuan'] ?: null)) {
+                    $this->fileSummary['unmapped'][$key]['queued'] = true;
+                    $added++;
+                }
+            }
+        });
+
+        $this->markQueuedInBatches();
+        $this->summarySelected = [];
+
+        $this->dispatch('toast',
+            variant: 'success',
+            title: "{$added} item diajukan ke antrean mapping",
+            message: 'Admin tinggal memetakannya ke produk NetSuite di Master Mapping.',
+        );
+    }
+
+    /**
+     * Tandai item yang sudah diajukan pada tiap cabang di antrian, supaya
+     * panel "belum ter-mapping" per cabang tidak menawarkan pengajuan ulang.
+     */
+    private function markQueuedInBatches(): void
+    {
+        $queued = [];
+        foreach ($this->fileSummary['unmapped'] ?? [] as $u) {
+            if ($u['queued']) {
+                $queued[DistributorItem::normalizeName($u['item_name'])] = true;
+            }
+        }
+
+        foreach ($this->importQueue as &$batch) {
+            foreach ($batch['skipped_rows_data'] as &$item) {
+                if (isset($queued[DistributorItem::normalizeName($item['item_name'])])) {
+                    $item['queued'] = true;
+                }
+            }
+            unset($item);
+        }
+        unset($batch);
+    }
+
+    /** Tutup ringkasan dan mulai kerjakan cabang pertama. */
+    public function startQueue(): void
+    {
+        $this->showSummaryModal = false;
+
+        if (! $this->loadQueueItem(0)) {
+            return;
+        }
+
+        if (! $this->showConflictModal) {
+            $total = count($this->importQueue);
+            $this->dispatch('toast',
+                variant: 'info',
+                title: 'Berkas dimuat ke grid',
+                message: $total > 1
+                    ? "Cabang 1 dari {$total}: {$this->importQueue[0]['distributor_name']}."
+                    : count($this->rows)." baris dimuat untuk {$this->importQueue[0]['distributor_name']}.",
+            );
+        }
+    }
+
+    /** Batalkan berkas dari modal ringkasan. */
+    public function cancelSummary(): void
+    {
+        $this->showSummaryModal = false;
+        $this->fileSummary = [];
+        $this->summarySelected = [];
+        $this->clearImportQueue();
     }
 
     /**
@@ -527,6 +720,8 @@ class Upload extends Component
                         'quantity' => $qty,
                         'expired_date' => $edFormatted,
                         'batch_no' => $batch ?: null,
+                        // Sudah ada di Master Mapping, tinggal dipetakan Admin.
+                        'queued' => $distItem !== null,
                     ];
                 } else {
                     $skippedRowsData[$key]['quantity'] += $qty;
@@ -676,8 +871,8 @@ class Upload extends Component
         $current = $this->importQueue[$this->queueIndex]['distributor_name'] ?? 'Cabang ini';
 
         if (! $this->loadQueueItem($this->queueIndex + 1)) {
-            $this->clearImportQueue();
-            session()->flash('status', "{$current} dilewati. Seluruh cabang pada berkas ini sudah selesai diproses.");
+            $this->resetAfterImport();
+            $this->dispatch('toast', variant: 'info', title: "{$current} dilewati", message: 'Seluruh cabang pada berkas ini sudah selesai diproses.');
 
             return;
         }
@@ -795,6 +990,39 @@ class Upload extends Component
         $this->showConflictModal = false;
         $this->replaceExistingSnapshot = false;
         $this->pendingImportData = [];
+    }
+
+    /**
+     * Tombol "Lewati" pada pilihan Gabung/Timpa: cabang ini tidak dimuat ke
+     * grid. Masih ada cabang berikutnya -> lanjut ke sana; ini cabang terakhir
+     * (atau satu-satunya) -> antrian selesai dan grid dikosongkan.
+     */
+    public function skipConflict(): void
+    {
+        $skipped = $this->pendingImportData['distributor_name'] ?? 'Cabang ini';
+        $this->cancelConflictModal();
+
+        if ($this->importQueue !== [] && $this->loadQueueItem($this->queueIndex + 1)) {
+            if (! $this->showConflictModal) {
+                $this->dispatch('toast',
+                    variant: 'info',
+                    title: "{$skipped} dilewati",
+                    message: 'Lanjut ke cabang '.($this->queueIndex + 1).' dari '.count($this->importQueue).": {$this->importQueue[$this->queueIndex]['distributor_name']}.",
+                );
+            }
+
+            return;
+        }
+
+        // Cabang terakhir: tidak ada yang dimuat, dan sisa isi grid dari cabang
+        // sebelumnya tidak boleh terlihat seolah milik cabang yang dilewati.
+        $this->resetAfterImport();
+
+        $this->dispatch('toast',
+            variant: 'info',
+            title: "{$skipped} dilewati",
+            message: 'Tidak ada data yang dimuat ke grid. Data lama di database tidak berubah.',
+        );
     }
 
     public function openRequestModal(): void
@@ -1146,24 +1374,21 @@ class Upload extends Component
         });
 
         $dist = Distributor::find($this->distributorId);
-        $this->saveSummary = [
-            'tanggal' => $this->tanggal,
-            'distributor_name' => $dist?->name ?? '—',
-            'distributor_code' => $dist?->distributor_code ?? '—',
-            'total' => $mappedCount,
-            'mapped' => $mappedCount,
-            'unmapped' => $unmappedCount,
-            'deleted' => $deletedCount,
-        ];
-        $this->showSuccessModal = true;
+        $tanggalLabel = \Illuminate\Support\Carbon::parse($this->tanggal)->translatedFormat('d M Y');
 
-        $status = "Tersimpan: {$mappedCount} item ter-mapping ke database.";
+        $details = ["{$mappedCount} item tersimpan · {$tanggalLabel}"];
         if ($unmappedCount > 0) {
-            $status .= " ({$unmappedCount} item belum ter-mapping dilewati dan tidak disimpan).";
+            $details[] = "{$unmappedCount} item belum ter-mapping dilewati";
         }
         if ($deletedCount > 0) {
-            $status .= " {$deletedCount} baris dihapus dari snapshot.";
+            $details[] = "{$deletedCount} baris dihapus";
         }
+
+        $toast = [
+            'variant' => $unmappedCount > 0 ? 'warning' : 'success',
+            'title' => ($dist?->name ?? 'Stock').' tersimpan',
+            'message' => implode(' · ', $details),
+        ];
 
         // Berkas berisi beberapa cabang: begitu cabang ini tersimpan, cabang
         // berikutnya langsung dimuat ke grid supaya operator tidak perlu
@@ -1174,18 +1399,38 @@ class Upload extends Component
 
             if ($this->loadQueueItem($this->queueIndex + 1)) {
                 $next = $this->importQueue[$this->queueIndex]['distributor_name'];
-                $status .= " (Cabang {$position} dari {$total} selesai — lanjut ke {$next}.)";
-                session()->flash('status', $status);
+                $toast['message'] .= "\nCabang {$position}/{$total} selesai — lanjut ke {$next}.";
+                $this->dispatch('toast', ...$toast);
 
                 return;
             }
 
-            $this->clearImportQueue();
-            $status .= " Seluruh {$total} cabang pada berkas ini sudah selesai diproses.";
+            $toast['message'] .= "\nSeluruh {$total} cabang pada berkas ini sudah selesai.";
+            $this->dispatch('toast', ...$toast);
+
+            // Berkas selesai: halaman kembali bersih, siap untuk berkas berikutnya.
+            $this->resetAfterImport();
+
+            return;
         }
 
-        session()->flash('status', $status);
+        // Simpan dari "Muat Data Manual": tetap di data yang sedang dikerjakan.
+        $this->dispatch('toast', ...$toast);
         $this->loadExisting();
+    }
+
+    /** Kosongkan grid, antrian, berkas, dan pilihan — kembali ke tab Import. */
+    private function resetAfterImport(): void
+    {
+        $this->resetManualForm();
+        $this->clearSourceEmail();
+        $this->reset(['file', 'fileSummary', 'summarySelected', 'showSummaryModal', 'pendingImportData', 'showConflictModal']);
+        $this->replaceExistingSnapshot = false;
+        $this->activeTab = 'import';
+        $this->resetErrorBag();
+
+        $this->dispatch('rows-loaded', rows: []);
+        $this->dispatch('file-imported');
     }
 
     public function downloadTemplate(): StreamedResponse

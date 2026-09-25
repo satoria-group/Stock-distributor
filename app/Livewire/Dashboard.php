@@ -717,8 +717,8 @@ class Dashboard extends Component
                     $valB = (float) $b->total_value;
                     break;
                 case 'item_name':
-                    $valA = strtolower((string) ($a->entry->distributorItem?->item_name ?? ''));
-                    $valB = strtolower((string) ($b->entry->distributorItem?->item_name ?? ''));
+                    $valA = strtolower($a->entry->displayName());
+                    $valB = strtolower($b->entry->displayName());
                     break;
                 case 'distributor':
                     $valA = strtolower((string) ($a->entry->distributor?->name ?? ''));
@@ -789,24 +789,28 @@ class Dashboard extends Component
         }
         $this->trendUnit = $unit;
 
+        // Satuan yang sama dengan yang tampil di tabel (StockEntry::displayUnit()):
+        // Satuan Default NetSuite, bila kosong satuan baris stok.
+        $unitSql = "UPPER(COALESCE(NULLIF((SELECT n.default_satuan FROM distributor_items di JOIN netsuite_items n ON n.id = di.netsuite_item_id WHERE di.id = stock_entries.distributor_item_id), ''), stock_entries.satuan, ''))";
+
         if ($unit === 'ALL') {
             $unitLabel = 'Semua Satuan';
         } elseif ($unit === 'BTL') {
-            $trendQuery->where(function ($q) {
-                $q->whereRaw('UPPER(satuan) LIKE ?', ['%BTL%'])
-                  ->orWhereRaw('UPPER(satuan) LIKE ?', ['%BOTOL%']);
+            $trendQuery->where(function ($q) use ($unitSql) {
+                $q->whereRaw("{$unitSql} LIKE ?", ['%BTL%'])
+                  ->orWhereRaw("{$unitSql} LIKE ?", ['%BOTOL%']);
             });
             $unitLabel = 'Botol (BTL)';
         } elseif ($unit === 'AMP') {
-            $trendQuery->where(function ($q) {
-                $q->whereRaw('UPPER(satuan) LIKE ?', ['%AMP%']);
+            $trendQuery->where(function ($q) use ($unitSql) {
+                $q->whereRaw("{$unitSql} LIKE ?", ['%AMP%']);
             });
             $unitLabel = 'Ampul (AMP)';
         } else {
-            $trendQuery->where(function ($q) {
-                $q->whereRaw('UPPER(satuan) NOT LIKE ?', ['%BTL%'])
-                  ->whereRaw('UPPER(satuan) NOT LIKE ?', ['%BOTOL%'])
-                  ->whereRaw('UPPER(satuan) NOT LIKE ?', ['%AMP%']);
+            $trendQuery->where(function ($q) use ($unitSql) {
+                $q->whereRaw("{$unitSql} NOT LIKE ?", ['%BTL%'])
+                  ->whereRaw("{$unitSql} NOT LIKE ?", ['%BOTOL%'])
+                  ->whereRaw("{$unitSql} NOT LIKE ?", ['%AMP%']);
             });
             $unitLabel = 'Pcs / Box (PCS)';
         }
@@ -996,7 +1000,7 @@ class Dashboard extends Component
             if ($unit === 'ALL') {
                 return true;
             }
-            $sat = strtoupper(trim((string) $entry->satuan));
+            $sat = strtoupper(trim((string) $entry->displayUnit()));
             if ($unit === 'BTL') {
                 return str_contains($sat, 'BTL') || str_contains($sat, 'BOTOL');
             } elseif ($unit === 'AMP') {
@@ -1314,7 +1318,7 @@ class Dashboard extends Component
 
         if ($this->stagnantSatuanFilter) {
             $rows = $rows->filter(function ($r) {
-                $sat = strtoupper(trim((string) $r->entry->satuan));
+                $sat = strtoupper(trim((string) $r->entry->displayUnit()));
                 if ($this->stagnantSatuanFilter === 'BTL') {
                     return str_contains($sat, 'BTL') || str_contains($sat, 'BOTOL');
                 }
@@ -1391,8 +1395,8 @@ class Dashboard extends Component
                     break;
                 case 'item_name':
                 default:
-                    $valA = strtolower((string) ($a->distributorItem?->item_name ?? ''));
-                    $valB = strtolower((string) ($b->distributorItem?->item_name ?? ''));
+                    $valA = strtolower($a->entry->displayName());
+                    $valB = strtolower($b->entry->displayName());
                     break;
             }
 
@@ -1463,7 +1467,7 @@ class Dashboard extends Component
         ];
 
         foreach ($allCurrentEntries as $entry) {
-            $sat = strtoupper(trim((string) $entry->satuan));
+            $sat = strtoupper(trim((string) $entry->displayUnit()));
             $q = (float) $entry->quantity;
             $unitPrice = (float) ($entry->distributorItem?->netsuiteItem?->unit_price ?? 0.0);
             $kpi['total_value'] += ($q * $unitPrice);
@@ -1587,17 +1591,17 @@ class Dashboard extends Component
             // Jika memilih 1 distributor grup, tampilkan komposisi per sediaan yang ada stoknya (> 0)
             if ($this->donutMetric === 'value') {
                 $valBtl = (float) $allCurrentEntries->filter(function ($e) {
-                    $sat = strtoupper(trim((string) $e->satuan));
+                    $sat = strtoupper(trim((string) $e->displayUnit()));
                     return str_contains($sat, 'BTL') || str_contains($sat, 'BOTOL');
                 })->sum(fn ($e) => (float) $e->quantity * (float) ($e->distributorItem?->netsuiteItem?->unit_price ?? 0.0));
 
                 $valAmp = (float) $allCurrentEntries->filter(function ($e) {
-                    $sat = strtoupper(trim((string) $e->satuan));
+                    $sat = strtoupper(trim((string) $e->displayUnit()));
                     return str_contains($sat, 'AMP');
                 })->sum(fn ($e) => (float) $e->quantity * (float) ($e->distributorItem?->netsuiteItem?->unit_price ?? 0.0));
 
                 $valPcs = (float) $allCurrentEntries->filter(function ($e) {
-                    $sat = strtoupper(trim((string) $e->satuan));
+                    $sat = strtoupper(trim((string) $e->displayUnit()));
                     return ! str_contains($sat, 'BTL') && ! str_contains($sat, 'BOTOL') && ! str_contains($sat, 'AMP');
                 })->sum(fn ($e) => (float) $e->quantity * (float) ($e->distributorItem?->netsuiteItem?->unit_price ?? 0.0));
 
@@ -1689,7 +1693,7 @@ class Dashboard extends Component
 
         if ($this->satuanFilter) {
             $filteredEntries = $filteredEntries->filter(function ($e) {
-                $sat = strtoupper(trim((string) $e->satuan));
+                $sat = strtoupper(trim((string) $e->displayUnit()));
                 if ($this->satuanFilter === 'BTL') {
                     return str_contains($sat, 'BTL') || str_contains($sat, 'BOTOL');
                 }
@@ -1760,8 +1764,8 @@ class Dashboard extends Component
                     $valB = (float) $b->entry->quantity;
                     break;
                 case 'satuan':
-                    $valA = strtolower((string) ($a->entry->satuan ?? ''));
-                    $valB = strtolower((string) ($b->entry->satuan ?? ''));
+                    $valA = strtolower((string) $a->entry->displayUnit());
+                    $valB = strtolower((string) $b->entry->displayUnit());
                     break;
                 case 'distributor':
                     $valA = strtolower((string) ($a->entry->distributor?->name ?? ''));
@@ -1781,8 +1785,8 @@ class Dashboard extends Component
                     break;
                 case 'item_name':
                 default:
-                    $valA = strtolower((string) ($a->entry->distributorItem?->item_name ?? ''));
-                    $valB = strtolower((string) ($b->entry->distributorItem?->item_name ?? ''));
+                    $valA = strtolower($a->entry->displayName());
+                    $valB = strtolower($b->entry->displayName());
                     break;
             }
 
@@ -1815,7 +1819,7 @@ class Dashboard extends Component
 
             if ($this->fefoSatuanFilter) {
                 $fefoAllRows = $fefoAllRows->filter(function ($r) {
-                    $sat = strtoupper(trim((string) $r->entry->satuan));
+                    $sat = strtoupper(trim((string) $r->entry->displayUnit()));
                     if ($this->fefoSatuanFilter === 'BTL') {
                         return str_contains($sat, 'BTL') || str_contains($sat, 'BOTOL');
                     }
@@ -2187,7 +2191,7 @@ class Dashboard extends Component
                     $row->distributorItem?->source_item_id ?? '-',
                     $row->distributorItem?->item_name ?? '-',
                     $row->distributorItem?->netsuiteItem?->netsuite_name ?? '-',
-                    $row->entry->satuan,
+                    $row->entry->displayUnit(),
                     $row->entry->batch_no ?? '-',
                     $row->entry->expired_date ? $row->entry->expired_date->format('d/m/Y') : '-',
                     $row->entry->expiryStatus(),
@@ -2227,7 +2231,7 @@ class Dashboard extends Component
 
         if ($this->fefoSatuanFilter) {
             $fefoRows = $fefoRows->filter(function ($r) {
-                $sat = strtoupper(trim((string) $r->entry->satuan));
+                $sat = strtoupper(trim((string) $r->entry->displayUnit()));
                 if ($this->fefoSatuanFilter === 'BTL') {
                     return str_contains($sat, 'BTL') || str_contains($sat, 'BOTOL');
                 }
@@ -2295,7 +2299,7 @@ class Dashboard extends Component
                     $r->days,
                     $r->label,
                     $e->quantity,
-                    $e->satuan,
+                    $e->displayUnit(),
                     $r->unit_price > 0 ? $r->unit_price : 0,
                     $r->total_value > 0 ? $r->total_value : 0,
                 ]);

@@ -817,7 +817,7 @@
                             </td>
                             <td class="py-3.5 px-4 text-xs">
                                 <div class="font-bold text-slate-900">
-                                    {{ $r->entry->distributorItem?->item_name ?? '—' }}
+                                    {{ $r->entry->displayName() }}
                                     @unless ($r->entry->distributorItem?->isMapped())
                                         <span class="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-mono uppercase bg-amber-50 text-amber-800 border border-amber-200 font-semibold ml-1.5">
                                             Belum Mapping
@@ -832,7 +832,7 @@
                             </td>
                             <td class="py-3.5 px-4 text-center font-mono text-slate-600">
                                 <span class="px-2 py-0.5 rounded-lg bg-slate-100 text-slate-700 font-semibold text-[11px]">
-                                    {{ $r->entry->satuan ?: '—' }}
+                                    {{ $r->entry->displayUnit() ?: '—' }}
                                 </span>
                             </td>
                             <td class="py-3.5 px-4 text-slate-700">
@@ -1250,7 +1250,7 @@
                                 class="text-left py-3.5 px-4 cursor-pointer select-none hover:bg-slate-100 transition group"
                                 title="Klik untuk mengurutkan berdasarkan Nama Produk">
                                 <div class="inline-flex items-center gap-1.5">
-                                    <span class="{{ $fefoSortBy === 'item_name' ? 'font-bold' : '' }}" style="{{ $fefoSortBy === 'item_name' ? 'color: #0d6d5f;' : '' }}">Produk Satoria & Distributor</span>
+                                    <span class="{{ $fefoSortBy === 'item_name' ? 'font-bold' : '' }}" style="{{ $fefoSortBy === 'item_name' ? 'color: #0d6d5f;' : '' }}">Produk</span>
                                     @if ($fefoSortBy === 'item_name')
                                         @if ($fefoSortDir === 'asc')
                                             <svg width="13" height="13" style="width: 13px; height: 13px; min-width: 13px; flex-shrink: 0; color: #0d6d5f;" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1449,9 +1449,9 @@
                                     {{ ($fefoTable->currentPage() - 1) * $perPage + $idx + 1 }}
                                 </td>
                                 <td class="py-3.5 px-4">
-                                    <div class="font-bold text-slate-900 text-xs">{{ $e->distributorItem?->item_name }}</div>
+                                    <div class="font-bold text-slate-900 text-xs">{{ $e->displayName() }}</div>
                                     <div class="font-mono text-[10px] text-slate-500 mt-0.5">
-                                        {{ $ns ? "[{$ns->netsuite_id}] {$ns->netsuite_name}" : 'Belum Ter-mapping' }}
+                                        {{ $ns ? $ns->netsuite_id : 'Belum Ter-mapping' }}
                                     </div>
                                 </td>
                                 <td class="py-3.5 px-4">
@@ -1487,7 +1487,7 @@
                                 </td>
                                 <td class="py-3.5 px-3 text-right font-mono font-extrabold text-slate-900">
                                     {{ number_format($e->quantity, 0, ',', '.') }}
-                                    <span class="block text-[10px] text-slate-400 font-normal">{{ $e->satuan }}</span>
+                                    <span class="block text-[10px] text-slate-400 font-normal">{{ $e->displayUnit() }}</span>
                                 </td>
                                 <td class="py-3.5 px-3 text-right font-mono font-bold text-xs {{ $r->tier === 'expired' || $r->tier === 'critical' ? 'text-rose-700' : 'text-slate-800' }}">
                                     @if ($r->total_value > 0)
@@ -1607,7 +1607,7 @@
                 <div class="bg-white border border-slate-200/80 rounded-2xl p-5 shadow-xs flex flex-col justify-between">
                     <div class="text-[11px] uppercase text-slate-500 font-bold">TOTAL CABANG AKTIF</div>
                     <div class="text-3xl font-extrabold mt-3 text-slate-900 tabular-nums tracking-tight">
-                        {{ $complianceSummary['total_branches'] }} <span class="text-xs font-normal text-slate-500">gudang</span>
+                        {{ $complianceSummary['total_branches'] }} <span class="text-xs font-normal text-slate-500">cabang</span>
                     </div>
                     <div class="text-[11px] text-slate-400 mt-2 pt-2 border-t border-slate-100">Seluruh cabang terdaftar</div>
                 </div>
@@ -2108,15 +2108,10 @@
                         <tr class="hover:bg-amber-50/20 transition-colors">
                             <td class="py-2.5 px-3">
                                 <div class="font-bold text-slate-900 leading-tight">
-                                    {{ $row->distributorItem?->item_name ?? 'Produk Tanpa Nama' }}
+                                    {{ $row->entry->displayName() }}
                                 </div>
-                                <div class="text-[11px] text-slate-500 font-mono mt-0.5 flex items-center gap-1.5">
-                                    @if ($row->distributorItem?->source_item_id)
-                                        <span>Code: {{ $row->distributorItem->source_item_id }}</span>
-                                    @endif
-                                    @if ($row->distributorItem?->netsuiteItem?->netsuite_name)
-                                        &bull; <span class="text-emerald-700 font-semibold">{{ $row->distributorItem->netsuiteItem->netsuite_name }}</span>
-                                    @endif
+                                <div class="text-[11px] text-slate-500 font-mono mt-0.5">
+                                    {{ $row->distributorItem?->netsuiteItem?->netsuite_id ?? 'Belum Ter-mapping' }}
                                 </div>
                             </td>
                             <td class="py-2.5 px-3">
@@ -2125,7 +2120,7 @@
                             </td>
                             <td class="py-2.5 px-2 text-center">
                                 <span class="inline-block px-1.5 py-0.5 rounded-md text-[10px] font-bold font-mono bg-slate-100 text-slate-700">
-                                    {{ $row->entry->satuan }}
+                                    {{ $row->entry->displayUnit() }}
                                 </span>
                                 @if ($row->entry->batch_no)
                                     <div class="text-[10px] font-mono text-slate-500 mt-0.5">{{ $row->entry->batch_no }}</div>

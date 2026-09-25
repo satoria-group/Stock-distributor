@@ -212,6 +212,9 @@
         </div>
     </div>
 
+    @include('partials.app-dialog')
+    @include('partials.app-toast')
+
     @livewireScripts
 
     <script>

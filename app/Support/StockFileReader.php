@@ -448,6 +448,7 @@ class StockFileReader
     {
         $headerRow = $resolved['header_row'];
         $headerSignature = $this->signature($rows[$headerRow] ?? []);
+        $headerCells = $this->mappedHeaderCells($rows[$headerRow] ?? [], $resolved);
 
         $fillDownIndexes = [];
         foreach ($group?->fillDownColumns() ?? [] as $canonical) {
@@ -468,6 +469,14 @@ class StockFileReader
             }
 
             if ($headerSignature !== '' && $this->signature($row) === $headerSignature) {
+                continue;
+            }
+
+            // Judul berulang yang tidak persis sama — berkas SDL menambahkan
+            // nama gudang di ujung baris judul keduanya, sehingga pembanding
+            // seluruh baris di atas meloloskannya dan "Nama Barang" terbaca
+            // sebagai item.
+            if ($this->repeatsHeader($row, $headerCells)) {
                 continue;
             }
 
@@ -508,6 +517,47 @@ class StockFileReader
 
             $buckets[$code][] = ['row' => $row, 'excel_row' => $excelRow, 'reader' => $reader];
         }
+    }
+
+    /**
+     * Judul kolom pada kolom-kolom yang dipetakan, index => judul ternormalisasi.
+     *
+     * @param  array<int, mixed>  $header
+     * @return array<int, string>
+     */
+    private function mappedHeaderCells(array $header, array $resolved): array
+    {
+        $out = [];
+        foreach ($resolved['col'] ?? [] as $idx) {
+            $text = mb_strtolower(trim((string) ($header[$idx] ?? '')));
+            if ($idx >= 0 && $text !== '') {
+                $out[$idx] = $text;
+            }
+        }
+
+        return $out;
+    }
+
+    /**
+     * Baris ini mengulang judul kolom? Semua kolom yang dipetakan harus berisi
+     * judulnya sendiri — cukup ketat supaya baris data tak pernah terbuang.
+     *
+     * @param  array<int, mixed>  $row
+     * @param  array<int, string>  $headerCells
+     */
+    private function repeatsHeader(array $row, array $headerCells): bool
+    {
+        if (count($headerCells) < 2) {
+            return false;
+        }
+
+        foreach ($headerCells as $idx => $text) {
+            if (mb_strtolower(trim((string) ($row[$idx] ?? ''))) !== $text) {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     /** Sidik jari isi satu baris, dipakai mengenali judul kolom yang berulang. */

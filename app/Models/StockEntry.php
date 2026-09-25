@@ -55,6 +55,23 @@ class StockEntry extends Model
         return $this->belongsTo(User::class, 'uploaded_by');
     }
 
+    /**
+     * Nama produk untuk laporan: nama NetSuite. Nama versi distributor hanya
+     * dipakai bila itemnya belum ter-mapping (belum ada padanan NetSuite).
+     */
+    public function displayName(): string
+    {
+        return $this->distributorItem?->netsuiteItem?->netsuite_name
+            ?? $this->distributorItem?->item_name
+            ?? '—';
+    }
+
+    /** Satuan untuk laporan: Satuan Default NetSuite, bila kosong satuan baris ini. */
+    public function displayUnit(): ?string
+    {
+        return $this->distributorItem?->netsuiteItem?->default_satuan ?: ($this->satuan ?: null);
+    }
+
     public function daysToExpiry(): ?int
     {
         if (! $this->expired_date) {

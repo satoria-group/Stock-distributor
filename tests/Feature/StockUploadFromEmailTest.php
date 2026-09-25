@@ -107,6 +107,7 @@ class StockUploadFromEmailTest extends TestCase
         Livewire::actingAs($user)
             ->withQueryParams(['from_email_uid' => '101'])
             ->test(\App\Livewire\Stock\Upload::class)
+            ->call('startQueue')
             ->assertSet('distributorId', $dist->id)
             ->assertSet('tanggal', '2026-09-14')
             ->assertCount('rows', 1)
@@ -173,6 +174,7 @@ class StockUploadFromEmailTest extends TestCase
             ->test(\App\Livewire\Stock\Upload::class)
             // Tidak diblokir meski pengirim di luar whitelist.
             ->assertHasNoErrors('file')
+            ->call('startQueue')
             ->assertCount('rows', 1)
             // Tapi asal-usulnya tercatat.
             ->assertSet('sourceEmailFrom', 'orang-luar@gmail.com')

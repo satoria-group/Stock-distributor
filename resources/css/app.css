@@ -8,6 +8,8 @@
 @tailwind components;
 @tailwind utilities;
 
+[x-cloak] { display: none !important; }
+
 :root {
     --brand-teal: #0d6d5f;
     --brand-teal-dark: #07352d;
