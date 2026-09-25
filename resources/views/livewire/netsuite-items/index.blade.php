@@ -1,4 +1,9 @@
 <div>
+    @include('partials.page-tabs', ['tabs' => $pageTabs])
+
+    @if ($tab === 'conversions')
+        <livewire:unit-conversions.index />
+    @else
     @include('partials.flash-alert')
 
     <div class="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 mb-6">
@@ -115,7 +120,8 @@
                                 {{ $item->default_satuan ?: '—' }}
                             </span>
                         </td>
-                        <td class="px-5 py-3.5 text-right space-x-1.5">
+                        <td class="px-5 py-3.5 text-right">
+                            <div class="flex items-center justify-end gap-1.5 whitespace-nowrap">
                             @can('update', $item)
                             <button type="button" wire:click="openEdit({{ $item->id }})"
                                     class="inline-flex items-center justify-center w-8 h-8 rounded-xl text-[#0d6d5f] bg-[#e6f4f1] hover:bg-[#0d6d5f] hover:text-white border border-teal-200/60 transition shadow-2xs cursor-pointer"
@@ -134,6 +140,7 @@
                                 </svg>
                             </button>
                             @endcan
+                            </div>
                         </td>
                     </tr>
                 @empty
@@ -152,6 +159,7 @@
     <div class="mt-4 pt-2">
         {{ $items->links('livewire::tailwind') }}
     </div>
+    @endif
 
     @if ($showModal)
     <div class="fixed inset-0 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center z-50 p-4" wire:click.self="$set('showModal', false)">
@@ -178,7 +186,13 @@
                 </div>
                 <div>
                     <label class="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1.5">Satuan Default</label>
-                    <input type="text" wire:model="default_satuan" placeholder="mis. BOTOL, PCS, BOX" class="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-[#0d6d5f]/25 focus:border-[#0d6d5f]">
+                    <select wire:model="default_satuan" class="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-xs text-slate-800 bg-white focus:outline-none focus:ring-2 focus:ring-[#0d6d5f]/25 focus:border-[#0d6d5f]">
+                        <option value="">— Pilih Satuan —</option>
+                        @foreach ($this->allowedUnits() as $unit)
+                            <option value="{{ $unit }}">{{ $unit }}{{ in_array($unit, \App\Models\NetsuiteItem::UNITS, true) ? '' : ' (satuan lama)' }}</option>
+                        @endforeach
+                    </select>
+                    @error('default_satuan') <p class="text-xs text-rose-600 mt-1">{{ $message }}</p> @enderror
                 </div>
                 <div class="flex justify-end gap-2 pt-3 border-t border-slate-100">
                     <button type="button" wire:click="$set('showModal', false)" class="text-xs font-semibold text-slate-600 px-4 py-2.5 rounded-xl hover:bg-slate-100 cursor-pointer">Batal</button>

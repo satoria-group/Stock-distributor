@@ -4,7 +4,6 @@ namespace App\Livewire\Emails;
 
 use App\Models\DistributorItem;
 use App\Models\StockEmailLog;
-use App\Models\User;
 use App\Services\HtmlSanitizerService;
 use App\Services\ImapService;
 use Illuminate\Support\Facades\Auth;
@@ -96,12 +95,7 @@ class Index extends Component
             abort(401);
         }
 
-        $isAuthorized = $user->hasRole(User::ROLE_ADMIN)
-            || $user->hasRole(User::ROLE_LOGISTIK)
-            || $user->can('stock.upload')
-            || $user->can('stock.view');
-
-        if (! $isAuthorized) {
+        if (! $user->can('emails.view')) {
             abort(403, 'Anda tidak memiliki akses ke Inbox Email Distributor.');
         }
     }

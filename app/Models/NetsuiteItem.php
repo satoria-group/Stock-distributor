@@ -12,6 +12,9 @@ class NetsuiteItem extends Model
 {
     use HasFactory, SoftDeletes;
 
+    /** Pilihan Satuan Default produk NetSuite. */
+    public const UNITS = ['PCS', 'BTL', 'AMP'];
+
     protected $fillable = [
         'internal_id',
         'netsuite_id',

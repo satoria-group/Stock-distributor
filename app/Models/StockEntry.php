@@ -23,6 +23,8 @@ class StockEntry extends Model
         'distributor_item_id',
         'quantity',
         'satuan',
+        'quantity_asli',
+        'satuan_asli',
         'expired_date',
         'batch_no',
         'uploaded_by',
@@ -34,6 +36,7 @@ class StockEntry extends Model
             'tanggal' => 'date',
             'expired_date' => 'date',
             'quantity' => 'decimal:2',
+            'quantity_asli' => 'decimal:2',
         ];
     }
 

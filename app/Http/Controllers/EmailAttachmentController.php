@@ -2,7 +2,6 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\User;
 use App\Services\ImapService;
 use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\Response;
@@ -23,13 +22,7 @@ class EmailAttachmentController extends Controller
             abort(Response::HTTP_UNAUTHORIZED);
         }
 
-        // Authorization check: Admin, Logistik, or user with stock.upload/stock.view permission
-        $isAuthorized = $user->hasRole(User::ROLE_ADMIN)
-            || $user->hasRole(User::ROLE_LOGISTIK)
-            || $user->can('stock.upload')
-            || $user->can('stock.view');
-
-        if (! $isAuthorized) {
+        if (! $user->can('emails.view')) {
             abort(Response::HTTP_FORBIDDEN, 'Anda tidak memiliki izin untuk mengunduh lampiran email.');
         }
 

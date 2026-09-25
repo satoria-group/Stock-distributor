@@ -11,9 +11,22 @@ use App\Livewire\Stock\History as StockHistory;
 use App\Livewire\Stock\Upload as StockUpload;
 use App\Livewire\TemplateGroups\Index as TemplateGroupsIndex;
 use App\Livewire\Users\Index as UsersIndex;
+use App\Support\AccessPages;
 use Illuminate\Support\Facades\Route;
 
-Route::redirect('/', '/dashboard');
+// Halaman awal mengikuti hak akses: role tanpa akses Dashboard diarahkan ke
+// halaman pertama yang boleh dibukanya.
+Route::get('/', function () {
+    if (! auth()->check()) {
+        return redirect()->route('login');
+    }
+
+    $home = AccessPages::homeFor(auth()->user());
+
+    abort_if($home === null, 403, 'Akun Anda belum diberi akses ke halaman mana pun. Hubungi Admin.');
+
+    return redirect($home);
+})->name('home');
 
 Route::middleware('guest')->group(function () {
     Route::get('/login', [AuthController::class, 'create'])->name('login');

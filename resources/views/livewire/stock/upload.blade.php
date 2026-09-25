@@ -766,7 +766,16 @@
                     width: 120,
                     cellClass: 'editable-cell text-right font-bold text-slate-900',
                     valueFormatter: p => (p.value != null ? Number(p.value).toLocaleString('id-ID') : '0'),
-                    valueParser: p => Number(p.newValue) || 0
+                    valueParser: p => Number(p.newValue) || 0,
+                    // Baris hasil konversi (mis. BOX -> PCS) menampilkan nilai
+                    // aslinya dari berkas di sampingnya.
+                    cellRenderer: p => {
+                        const val = p.value != null ? Number(p.value).toLocaleString('id-ID') : '0';
+                        const d = p.data || {};
+                        if (d.quantity_asli == null || !d.satuan_asli) return val;
+                        const asli = `${Number(d.quantity_asli).toLocaleString('id-ID')} ${d.satuan_asli}`;
+                        return `${val} <span class="text-[10px] font-medium text-slate-400">(${asli})</span>`;
+                    }
                 },
                 {
                     field: 'satuan',
@@ -821,6 +830,14 @@
                     singleClickEdit: true,
                     stopEditingWhenCellsLoseFocus: true,
                     onCellValueChanged: function(params) {
+                        // Qty/satuan diubah manual: nilai asli dari berkas tidak
+                        // lagi mewakili baris ini.
+                        const f = params.colDef.field;
+                        if ((f === 'quantity' || f === 'satuan') && params.data) {
+                            params.data.quantity_asli = null;
+                            params.data.satuan_asli = null;
+                            params.api.refreshCells({ rowNodes: [params.node], force: true });
+                        }
                         updateGridSummary();
                     },
                     overlayNoRowsTemplate: '<div class="p-8 text-center text-gray-400 text-sm"><div class="text-2xl mb-1">📋</div>Belum ada baris data. Silakan import file Excel atau pilih distributor & muat data.</div>',

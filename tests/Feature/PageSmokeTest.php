@@ -45,6 +45,19 @@ class PageSmokeTest extends TestCase
         ];
     }
 
+    public function test_tab_dalam_halaman_ikut_ter_render(): void
+    {
+        $this->actingAs($this->admin())
+            ->get(route('netsuite-items.index', ['tab' => 'conversions']))
+            ->assertOk()
+            ->assertSee('Tambah Konversi');
+
+        $this->actingAs($this->admin())
+            ->get(route('users.index', ['tab' => 'roles']))
+            ->assertOk()
+            ->assertSee('Simpan Hak Akses');
+    }
+
     /**
      * @dataProvider routeProvider
      */

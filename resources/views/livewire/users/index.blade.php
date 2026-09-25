@@ -1,6 +1,10 @@
 <div>
-    @include('partials.flash-alert')
+    @include('partials.page-tabs', ['tabs' => ['users' => 'User', 'roles' => 'Hak Akses Role']])
 
+    @if ($tab === 'roles')
+        <livewire:roles.index />
+    @else
+    @include('partials.flash-alert')
     <div class="flex items-center justify-end mb-6">
         @can('users.manage')
         <button wire:click="openCreate" class="inline-flex items-center gap-2 bg-[#0d6d5f] hover:bg-[#07352d] text-white text-xs font-bold rounded-xl px-4 py-2.5 transition shadow-2xs cursor-pointer">
@@ -32,7 +36,8 @@
                                 {{ strtoupper($user->getRoleNames()->first() ?? 'Staff') }}
                             </span>
                         </td>
-                        <td class="px-5 py-3.5 text-right space-x-1.5">
+                        <td class="px-5 py-3.5 text-right">
+                            <div class="flex items-center justify-end gap-1.5 whitespace-nowrap">
                             <button type="button" wire:click="openEdit({{ $user->id }})"
                                     class="inline-flex items-center justify-center w-8 h-8 rounded-xl text-[#0d6d5f] bg-[#e6f4f1] hover:bg-[#0d6d5f] hover:text-white border border-teal-200/60 transition shadow-2xs cursor-pointer"
                                     title="Edit User ({{ $user->name }})">
@@ -49,6 +54,7 @@
                                 </svg>
                             </button>
                             @endif
+                            </div>
                         </td>
                     </tr>
                 @endforeach
@@ -59,6 +65,7 @@
     <div class="mt-4 pt-2">
         {{ $users->links('livewire::tailwind') }}
     </div>
+    @endif
 
     @if ($showModal)
     <div class="fixed inset-0 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center z-50 p-4" wire:click.self="$set('showModal', false)">

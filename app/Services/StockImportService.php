@@ -191,6 +191,12 @@ class StockImportService
             $batch = $this->normalizeBatch($r['batch'] ?? null);
             $save = $r['save'] ?? true;
 
+            // Konversi satuan (mis. BOX -> PCS) sebelum dijumlahkan, supaya
+            // baris BOX dan PCS pada batch yang sama terjumlah dengan benar.
+            $converted = \App\Models\UnitConversion::apply((float) $r['qty'], $r['satuan'] ?? null);
+            $r['qty'] = $converted['quantity'];
+            $r['satuan'] = $converted['satuan'];
+
             if ($batch === '') {
                 $missingBatch[] = "baris {$r['excel_row']} ({$r['item_name']})";
 
@@ -214,6 +220,8 @@ class StockImportService
                     'batch_no' => trim((string) $r['batch']),
                     'excel_row' => $r['excel_row'],
                     'save' => $save,
+                    'quantity_asli' => $converted['quantity_asli'],
+                    'satuan_asli' => $converted['satuan_asli'],
                 ];
 
                 continue;
@@ -231,6 +239,20 @@ class StockImportService
             }
 
             $grouped[$key]['quantity'] += $r['qty'];
+
+            // Nilai asli hanya bermakna bila semua baris yang dijumlah
+            // berasal dari satuan berkas yang sama.
+            $sameOrigin = $grouped[$key]['satuan_asli'] !== null
+                && $converted['satuan_asli'] !== null
+                && \App\Models\UnitConversion::normalizeUnit($grouped[$key]['satuan_asli'])
+                    === \App\Models\UnitConversion::normalizeUnit($converted['satuan_asli']);
+
+            if ($sameOrigin) {
+                $grouped[$key]['quantity_asli'] += $converted['quantity_asli'];
+            } else {
+                $grouped[$key]['quantity_asli'] = null;
+                $grouped[$key]['satuan_asli'] = null;
+            }
         }
 
         $errors = [];
@@ -755,6 +777,8 @@ class StockImportService
                             'distributor_id' => $distributor->id,
                             'quantity' => $row['quantity'],
                             'satuan' => $row['satuan'],
+                            'quantity_asli' => $row['quantity_asli'],
+                            'satuan_asli' => $row['satuan_asli'],
                             'expired_date' => $row['expired_date'],
                             'batch_no' => $row['batch_no'],
                             'uploaded_by' => $uploadedBy,

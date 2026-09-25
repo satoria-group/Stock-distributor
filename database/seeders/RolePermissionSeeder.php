@@ -17,15 +17,7 @@ class RolePermissionSeeder extends Seeder
      */
     public function run(): void
     {
-        $permissions = [
-            'distributors.view', 'distributors.manage',
-            'template-groups.view', 'template-groups.manage',
-            'netsuite-items.view', 'netsuite-items.manage',
-            'distributor-items.view', 'distributor-items.manage',
-            'stock.view', 'stock.upload',
-            'dashboard.view',
-            'users.manage',
-        ];
+        $permissions = \App\Support\AccessPages::permissions();
 
         foreach ($permissions as $permission) {
             Permission::firstOrCreate(['name' => $permission, 'guard_name' => 'web']);
@@ -41,6 +33,7 @@ class RolePermissionSeeder extends Seeder
         $logistik->syncPermissions([
             'distributor-items.view',
             'template-groups.view',
+            'emails.view',
             'stock.view',
             'stock.upload',
             'dashboard.view',

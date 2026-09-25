@@ -50,6 +50,7 @@
                 <!-- Navigation -->
                 <nav class="p-3.5 space-y-1.5 text-xs">
                     <!-- Dashboard -->
+                    @can('dashboard.view')
                     <a href="{{ route('dashboard') }}"
                        class="flex items-center gap-3 px-3.5 py-2.5 rounded-xl transition duration-150 {{ request()->routeIs('dashboard') ? 'font-bold shadow-2xs' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50 font-medium' }}"
                        style="{{ request()->routeIs('dashboard') ? 'background: #eaf4f2; color: #07352d;' : '' }}">
@@ -58,6 +59,7 @@
                         </svg>
                         <span>Dashboard</span>
                     </a>
+                    @endcan
 
                     <!-- Master Distributor -->
                     @can('viewAny', \App\Models\Distributor::class)
@@ -83,8 +85,8 @@
                     </a>
                     @endcan
 
-                    <!-- Master Netsuite -->
-                    @can('viewAny', \App\Models\NetsuiteItem::class)
+                    <!-- Master Netsuite (tab Produk & Konversi Satuan) -->
+                    @if (auth()->user()?->can('viewAny', \App\Models\NetsuiteItem::class) || auth()->user()?->can('unit-conversions.view'))
                     <a href="{{ route('netsuite-items.index') }}"
                        class="flex items-center gap-3 px-3.5 py-2.5 rounded-xl transition duration-150 {{ request()->routeIs('netsuite-items.*') ? 'font-bold shadow-2xs' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50 font-medium' }}"
                        style="{{ request()->routeIs('netsuite-items.*') ? 'background: #eaf4f2; color: #07352d;' : '' }}">
@@ -93,7 +95,7 @@
                         </svg>
                         <span>Master Produk (Netsuite)</span>
                     </a>
-                    @endcan
+                    @endif
 
                     <!-- Mapping Item -->
                     @can('viewAny', \App\Models\DistributorItem::class)
@@ -108,7 +110,7 @@
                     @endcan
 
                     <!-- Inbox Email Distributor -->
-                    @if (auth()->user()?->hasRole(\App\Models\User::ROLE_ADMIN) || auth()->user()?->hasRole(\App\Models\User::ROLE_LOGISTIK) || auth()->user()?->can('stock.upload') || auth()->user()?->can('stock.view'))
+                    @if (auth()->user()?->can('emails.view'))
                     <a href="{{ route('emails.index') }}"
                        class="flex items-center gap-3 px-3.5 py-2.5 rounded-xl transition duration-150 {{ request()->routeIs('emails.*') ? 'font-bold shadow-2xs' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50 font-medium' }}"
                        style="{{ request()->routeIs('emails.*') ? 'background: #eaf4f2; color: #07352d;' : '' }}">

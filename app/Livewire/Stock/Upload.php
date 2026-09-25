@@ -315,6 +315,8 @@ class Upload extends Component
             'item_name' => $e->distributorItem?->item_name ?? ('Item ID #'.$e->distributor_item_id),
             'satuan' => $e->satuan ?: null,
             'quantity' => (float) $e->quantity,
+            'quantity_asli' => $e->quantity_asli !== null ? (float) $e->quantity_asli : null,
+            'satuan_asli' => $e->satuan_asli,
             'expired_date' => optional($e->expired_date)->format('d/m/Y'),
             'batch_no' => $e->batch_no,
             'mapped' => $e->distributorItem?->isMapped() ?? false,
@@ -580,6 +582,8 @@ class Upload extends Component
                 'item_name' => $g['item_name'],
                 'satuan' => $g['satuan'],
                 'quantity' => $g['quantity'],
+                'quantity_asli' => $g['quantity_asli'],
+                'satuan_asli' => $g['satuan_asli'],
                 'expired_date' => $g['expired_date'] ? \Carbon\Carbon::parse($g['expired_date'])->format('d/m/Y') : null,
                 'batch_no' => $g['batch_no'],
                 'mapped' => true,
@@ -754,12 +758,17 @@ class Upload extends Component
                 if (isset($mergedRows[$key])) {
                     // Batch identik -> satu tumpukan stok yang sama, dijumlah.
                     $mergedRows[$key]['quantity'] += (float) $entry->quantity;
+                    // Hasil gabungan dua sumber tidak lagi punya satu nilai asli.
+                    $mergedRows[$key]['quantity_asli'] = null;
+                    $mergedRows[$key]['satuan_asli'] = null;
                 } else {
                     $mergedRows[$key] = [
                         'distributor_item_id' => $itemId,
                         'item_name' => $entry->distributorItem?->item_name ?? ('Item ID #'.$itemId),
                         'satuan' => $entry->satuan ?: null,
                         'quantity' => (float) $entry->quantity,
+                        'quantity_asli' => $entry->quantity_asli !== null ? (float) $entry->quantity_asli : null,
+                        'satuan_asli' => $entry->satuan_asli,
                         'expired_date' => optional($entry->expired_date)->format('d/m/Y'),
                         'batch_no' => $entry->batch_no,
                         'mapped' => true,
@@ -1021,6 +1030,17 @@ class Upload extends Component
 
                 $batchNo = ! empty($row['batch_no']) ? trim((string) $row['batch_no']) : null;
 
+                // Baris yang belum dikonversi (mis. satuan BOX diketik manual di
+                // grid) dikonversi di sini; yang sudah dikonversi saat impor
+                // membawa satuan_asli dan dilewati.
+                if (empty($row['satuan_asli'])) {
+                    $c = \App\Models\UnitConversion::apply((float) ($row['quantity'] ?? 0), ($row['satuan'] ?? null) ?: null);
+                    $row['quantity'] = $c['quantity'];
+                    $row['satuan'] = $c['satuan'];
+                    $row['quantity_asli'] = $c['quantity_asli'];
+                    $row['satuan_asli'] = $c['satuan_asli'];
+                }
+
                 StockEntry::updateOrCreate(
                     [
                         'tanggal' => $this->tanggal,
@@ -1037,6 +1057,8 @@ class Upload extends Component
                         'distributor_id' => $this->distributorId,
                         'quantity' => (float) ($row['quantity'] ?? 0),
                         'satuan' => ($row['satuan'] ?? null) ?: null,
+                        'quantity_asli' => isset($row['quantity_asli']) && $row['quantity_asli'] !== '' ? (float) $row['quantity_asli'] : null,
+                        'satuan_asli' => ($row['satuan_asli'] ?? null) ?: null,
                         // Kalau tidak terbaca, simpan NULL — JANGAN teruskan
                         // string mentahnya. Kolomnya bertipe `date`, sehingga
                         // nilai seperti "ED menyusul" membuat seluruh transaksi
