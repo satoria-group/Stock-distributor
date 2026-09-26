@@ -218,11 +218,116 @@ class ProcessStockEmailsCommandTest extends TestCase
             ],
         ]);
 
+        // Email yang dilewati tetap ditandai terbaca, dan lampirannya tidak diunduh.
+        $mock->shouldReceive('markAsRead')->with('9903')->once()->andReturn(true);
+        $mock->shouldNotReceive('getExcelAttachment');
+
         $this->app->instance(ImapService::class, $mock);
 
         $this->artisan('stock:process-emails')
-            ->expectsOutputToContain('sudah pernah sukses diproses')
+            ->expectsOutputToContain('sudah pernah diproses (success)')
             ->assertSuccessful();
+    }
+
+    /**
+     * D1: email yang sebagian datanya sudah masuk (partial_unmapped) atau
+     * sudah diimpor manual tidak boleh diproses ulang otomatis.
+     *
+     * @dataProvider importedStatusProvider
+     */
+    public function test_command_skips_email_whose_data_already_entered(string $status): void
+    {
+        StockEmailLog::create([
+            'email_uid' => '9950',
+            'message_id' => '<partial-'.$status.'@dist.com>',
+            'from_email' => 'dist@test.com',
+            'subject' => 'Satoria Daily Stock Partial',
+            'status' => $status,
+            'imported_rows' => 3,
+        ]);
+
+        $mock = Mockery::mock(ImapService::class);
+        $mock->shouldReceive('isConfigured')->andReturn(true);
+        $mock->shouldReceive('getUnreadMessages')->andReturn([[
+            'uid' => '9950',
+            'message_id' => '<partial-'.$status.'@dist.com>',
+            'from_name' => 'Dist',
+            'from_email' => 'dist@test.com',
+            'subject' => 'Satoria Daily Stock Partial',
+            'date' => now(),
+            'is_daily_stock' => true,
+            'has_attachments' => true,
+        ]]);
+        $mock->shouldReceive('markAsRead')->with('9950')->once()->andReturn(true);
+        $mock->shouldNotReceive('getExcelAttachment');
+        $this->app->instance(ImapService::class, $mock);
+
+        $this->artisan('stock:process-emails')
+            ->expectsOutputToContain("sudah pernah diproses ({$status})")
+            ->assertSuccessful();
+
+        // Tidak ada log baru (mis. data_already_exists palsu) yang tercipta.
+        $this->assertSame(1, StockEmailLog::where('email_uid', '9950')->count());
+    }
+
+    public static function importedStatusProvider(): array
+    {
+        return [
+            'partial_unmapped' => ['partial_unmapped'],
+            'manual_import' => ['manual_import'],
+        ];
+    }
+
+    /** D1: email yang hanya dilewati tidak menghabiskan jatah --limit. */
+    public function test_skipped_email_does_not_consume_limit(): void
+    {
+        $dist = Distributor::create([
+            'distributor_code' => 'DIST_LIMIT_'.strtoupper(substr(uniqid(), -5)),
+            'name' => 'Distributor Limit',
+            'sender_email' => 'limit@dist.com',
+            'is_active' => true,
+        ]);
+        $ns = NetsuiteItem::create(['netsuite_id' => 'NS-LIM-'.uniqid(), 'netsuite_name' => 'Cefotaxime']);
+        DistributorItem::create([
+            'distributor_id' => $dist->id,
+            'item_name' => 'Cefotaxime 1g',
+            'satuan' => 'BTL',
+            'netsuite_item_id' => $ns->id,
+        ]);
+
+        StockEmailLog::create([
+            'email_uid' => '9960',
+            'from_email' => 'limit@dist.com',
+            'subject' => 'Satoria Daily Stock Lama',
+            'status' => 'success',
+        ]);
+
+        $msg = fn (string $uid) => [
+            'uid' => $uid,
+            'message_id' => null,
+            'from_name' => 'Limit',
+            'from_email' => 'limit@dist.com',
+            'subject' => 'Satoria Daily Stock '.$uid,
+            'date' => now(),
+            'is_daily_stock' => true,
+            'has_attachments' => true,
+        ];
+
+        $mock = Mockery::mock(ImapService::class);
+        $mock->shouldReceive('isConfigured')->andReturn(true);
+        // Yang lama (sudah diproses) datang lebih dulu.
+        $mock->shouldReceive('getUnreadMessages')->andReturn([$msg('9960'), $msg('9961')]);
+        $mock->shouldReceive('getExcelAttachment')->with('9961')->once()->andReturn([
+            'filename' => 'baru.xlsx',
+            'content' => $this->createSampleExcel($dist->distributor_code),
+        ]);
+        $mock->shouldReceive('markAsRead')->andReturn(true);
+        $this->app->instance(ImapService::class, $mock);
+
+        $this->artisan('stock:process-emails', ['--limit' => 1])->assertSuccessful();
+
+        $this->assertSame('success', StockEmailLog::where('email_uid', '9961')->value('status'));
+        $this->assertSame(1, StockEntry::where('distributor_id', $dist->id)->count());
     }
 
     public function test_command_rejects_corrupt_template_cleanly(): void

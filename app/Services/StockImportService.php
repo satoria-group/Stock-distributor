@@ -32,6 +32,19 @@ class StockImportService
     ];
 
     /**
+     * Status cabang yang tidak menyimpan apa pun tetapi BUKAN kesalahan berkas,
+     * sehingga tidak boleh membatalkan cabang lain dalam berkas yang sama.
+     *
+     *  - data_already_exists: padanan tombol "Lewati" di halaman Upload.
+     *    Otomasi tidak boleh memutuskan Gabung/Timpa, tapi cabang lain yang
+     *    belum punya data tetap berhak masuk.
+     *  - all_unmapped: item barunya harus tetap tercatat di antrean mapping.
+     *    Dulu status ini memicu rollback, sehingga antrean yang baru dibuat
+     *    ikut terhapus dan Admin tidak pernah melihat item yang harus dipetakan.
+     */
+    private const SKIPPABLE_BRANCH_STATUSES = ['data_already_exists', 'all_unmapped'];
+
+    /**
      * Parse date value from Excel into Y-m-d string.
      */
     public function parseExcelDate(mixed $value): ?string
@@ -339,7 +352,8 @@ class StockImportService
         ?int $uploadedBy = null,
         bool $dryRun = false,
         bool $isEmailAutomation = false,
-        ?string $originalName = null
+        ?string $originalName = null,
+        array $sourceMeta = []
     ): array {
         if (! file_exists($filePath) || ! is_readable($filePath)) {
             return [
@@ -429,11 +443,15 @@ class StockImportService
         // tengah jalan, cabang yang sudah tersimpan ikut dibatalkan. Berkas
         // yang separuh masuk jauh lebih merepotkan daripada berkas yang
         // ditolak utuh dengan sebab yang jelas.
+        //
+        // "Gagal" di sini hanya KESALAHAN BERKAS (tanggal, batch, ED bentrok).
+        // Dua kondisi berikut adalah keadaan wajar per cabang dan TIDAK boleh
+        // membatalkan cabang lain — lihat SKIPPABLE_BRANCH_STATUSES.
         $branchResults = [];
         $failure = null;
 
         try {
-            DB::transaction(function () use ($buckets, $distributors, $fromEmail, $uploadedBy, $dryRun, $isEmailAutomation, &$branchResults, &$failure) {
+            DB::transaction(function () use ($buckets, $distributors, $fromEmail, $uploadedBy, $dryRun, $isEmailAutomation, $sourceMeta, &$branchResults, &$failure) {
                 foreach ($buckets as $code => $branchRows) {
                     $result = $this->importBranchRows(
                         $distributors[$code],
@@ -441,10 +459,11 @@ class StockImportService
                         $fromEmail,
                         $uploadedBy,
                         $dryRun,
-                        $isEmailAutomation
+                        $isEmailAutomation,
+                        $sourceMeta
                     );
 
-                    if (! $result['success']) {
+                    if (! $result['success'] && ! in_array($result['status'], self::SKIPPABLE_BRANCH_STATUSES, true)) {
                         $failure = $result;
                         throw new \RuntimeException('branch_import_failed');
                     }
@@ -560,9 +579,9 @@ class StockImportService
             return $results[0];
         }
 
-        $first = $results[0];
         $skippedItems = [];
         $branches = [];
+        $existingSkipped = [];
         $totalRows = 0;
         $importedRows = 0;
         $anySkipped = false;
@@ -575,46 +594,66 @@ class StockImportService
             $anySkipped = $anySkipped || $r['skipped_rows'] > 0;
             $anyImported = $anyImported || $r['imported_rows'] > 0;
 
+            if ($r['status'] === 'data_already_exists') {
+                $existingSkipped[] = $r;
+            }
+
             $branches[] = [
                 'distributor_code' => $r['distributor_code'],
                 'distributor_id' => $r['distributor_id'],
+                'distributor_name' => $r['distributor']?->name,
                 'tanggal' => $r['tanggal'],
                 'imported_rows' => $r['imported_rows'],
                 'skipped_rows' => $r['skipped_rows'],
                 'status' => $r['status'],
+                'existing_count' => $r['details']['existing_count'] ?? null,
             ];
         }
 
+        // Cabang yang dilewati karena datanya sudah ada tidak membuat berkas
+        // "gagal" selama ada cabang lain yang masuk — padanan tombol "Lewati"
+        // di halaman Upload. Statusnya tetap memakai kosakata yang sudah
+        // dikenali halaman Emails & command.
         $status = match (true) {
-            ! $anyImported && $anySkipped => 'all_unmapped',
-            $anySkipped => 'partial_unmapped',
-            default => 'success',
+            $anyImported && ($anySkipped || $existingSkipped !== []) => 'partial_unmapped',
+            $anyImported => 'success',
+            $anySkipped => 'all_unmapped',
+            default => 'data_already_exists',
         };
 
-        $codes = array_column($branches, 'distributor_code');
+        $notes = [];
+        if ($skippedItems !== []) {
+            $notes[] = count(array_unique(array_column($skippedItems, 'item_name'))).' item belum ter-mapping (sudah diajukan ke antrean mapping).';
+        }
+        foreach ($existingSkipped as $r) {
+            $notes[] = "Cabang {$r['distributor']?->name} ({$r['distributor_code']}) dilewati: data tanggal {$r['tanggal']} sudah ada ({$r['details']['existing_count']} baris). Upload manual jika ingin memperbarui.";
+        }
+
+        // Log hanya punya satu kolom distributor: yang dicatat cabang pertama
+        // yang benar-benar masuk, selebihnya ada di details['branches'].
+        $primary = collect($results)->first(fn ($r) => $r['imported_rows'] > 0) ?? $results[0];
+        $uniqueSkippedNames = array_values(array_unique(array_column($skippedItems, 'item_name')));
 
         return [
             'success' => $anyImported,
             'status' => $status,
-            // Log hanya punya satu kolom distributor; cabang pertama yang
-            // dicatat, selebihnya ada di details['branches'].
-            'distributor' => $first['distributor'],
-            'distributor_code' => $first['distributor_code'],
-            'distributor_id' => $first['distributor_id'],
-            'tanggal' => $first['tanggal'],
+            'distributor' => $primary['distributor'],
+            'distributor_code' => $primary['distributor_code'],
+            'distributor_id' => $primary['distributor_id'],
+            'tanggal' => $primary['tanggal'],
             'total_rows' => $totalRows,
             'imported_rows' => $importedRows,
             'skipped_rows' => count($skippedItems),
             'skipped_items' => $skippedItems,
-            'error' => $status === 'success'
-                ? null
-                : count($skippedItems).' item belum ter-mapping pada berkas berisi '.count($branches).' cabang.',
+            'error' => $notes === [] ? null : implode(' ', $notes),
             'details' => [
                 'branch_count' => count($branches),
                 'branches' => $branches,
-                'distributor_codes' => $codes,
+                'distributor_codes' => array_column($branches, 'distributor_code'),
+                'skipped_existing_codes' => array_column($existingSkipped, 'distributor_code'),
                 'imported_count' => $importedRows,
                 'skipped_count' => count($skippedItems),
+                'unique_skipped_names' => $uniqueSkippedNames,
             ],
         ];
     }
@@ -631,7 +670,8 @@ class StockImportService
         ?string $fromEmail,
         ?int $uploadedBy,
         bool $dryRun,
-        bool $isEmailAutomation
+        bool $isEmailAutomation,
+        array $sourceMeta = []
     ): array {
         $distributorCode = $distributor->distributor_code;
         $firstRow = $branchRows[0]['row'];
@@ -690,7 +730,88 @@ class StockImportService
             ];
         }
 
-        return $this->importNormalizedRows($distributor, $tanggal, $rows, $uploadedBy, $dryRun, 'email');
+        return $this->importNormalizedRows($distributor, $tanggal, $rows, $uploadedBy, $dryRun, 'email', false, $sourceMeta);
+    }
+
+    /**
+     * Cocokkan baris mentah satu cabang dengan Master Mapping.
+     *
+     * SATU-SATUNYA tempat penyusunan baris untuk jalur manual (halaman Upload)
+     * maupun otomatis (email/API). Dulu keduanya menulis ulang loop yang sama
+     * dengan perbedaan halus: kunci validasi item belum ter-mapping berbeda
+     * (spasi ganda dinormalisasi di satu jalur saja), dan nama item yang
+     * dipakai berbeda (nama master vs nama mentah berkas) — sehingga satu
+     * berkas bisa lolos di satu jalur dan ditolak di jalur lain.
+     *
+     * @param  array<int, array{item_name: string, qty: float, satuan: ?string, ed: ?string, batch: ?string, excel_row: int}>  $rows
+     * @return array{
+     *     parsed: array<int, array<string, mixed>>,
+     *     skipped: array<int, array{key: string, item_name: string, satuan: ?string, quantity: float, expired_date: ?string, batch_no: ?string, queued: bool}>
+     * }
+     *   parsed  -> masukan groupRowsByItemAndBatch()
+     *   skipped -> satu entri per BARIS yang itemnya belum ter-mapping;
+     *              'queued' = namanya sudah ada di Master Mapping, tinggal dipetakan
+     */
+    public function mapRows(Distributor $distributor, array $rows): array
+    {
+        // Pemetaan milik GRUP berlaku untuk seluruh cabangnya; baris milik
+        // cabang hanya ada sebagai pengecualian dan menimpa yang segrup.
+        $knownItems = DistributorItem::lookupFor($distributor);
+
+        $parsed = [];
+        $skipped = [];
+
+        foreach ($rows as $entry) {
+            $itemName = $entry['item_name'];
+            $key = DistributorItem::normalizeName($itemName);
+            $distItem = $knownItems->get($key);
+
+            $satuan = $entry['satuan'] ?: null;
+            $batch = $entry['batch'] ?: null;
+
+            if (! $distItem || ! $distItem->isMapped()) {
+                $skipped[] = [
+                    'key' => $key,
+                    'item_name' => $itemName,
+                    'satuan' => $satuan,
+                    'quantity' => $entry['qty'],
+                    'expired_date' => $entry['ed'],
+                    'batch_no' => $batch,
+                    'queued' => $distItem !== null,
+                ];
+
+                // Ikut divalidasi walau tidak disimpan — lihat catatan pada
+                // groupRowsByItemAndBatch().
+                $parsed[] = [
+                    'item_id' => 'x'.$key,
+                    'item_name' => $itemName,
+                    'qty' => $entry['qty'],
+                    'satuan' => $satuan,
+                    'ed' => $entry['ed'],
+                    'batch' => $entry['batch'],
+                    'excel_row' => $entry['excel_row'],
+                    'save' => false,
+                ];
+
+                continue;
+            }
+
+            $parsed[] = [
+                'item_id' => $distItem->id,
+                // Nama master, bukan ejaan berkas: nama inilah yang tampil di
+                // grid, pesan error, dan laporan.
+                'item_name' => $distItem->item_name,
+                'qty' => $entry['qty'],
+                // Satuan hanya dari berkas ini sendiri — tidak meminjam satuan
+                // master item yang berasal dari berkas lain.
+                'satuan' => $satuan,
+                'ed' => $entry['ed'],
+                'batch' => $entry['batch'],
+                'excel_row' => $entry['excel_row'],
+            ];
+        }
+
+        return ['parsed' => $parsed, 'skipped' => $skipped];
     }
 
     /**
@@ -711,65 +832,13 @@ class StockImportService
         ?int $uploadedBy,
         bool $dryRun,
         string $source,
-        bool $replaceExisting = false
+        bool $replaceExisting = false,
+        array $sourceMeta = []
     ): array {
-        // Pemetaan milik GRUP berlaku untuk seluruh cabangnya; baris milik
-        // cabang hanya ada sebagai pengecualian dan menimpa yang segrup.
-        $knownItems = DistributorItem::lookupFor($distributor);
-
-        $parsedRows = [];
-        $skippedItems = [];
-        $totalValidDataRows = 0;
-
-        foreach ($rows as $entry) {
-            $itemName = $entry['item_name'];
-            $totalValidDataRows++;
-
-            $key = mb_strtolower(trim(preg_replace('/\s+/', ' ', $itemName)));
-            $distItem = $knownItems->get($key);
-
-            $qty = $entry['qty'];
-            $satuan = $entry['satuan'];
-            $ed = $entry['ed'];
-            $batch = $entry['batch'];
-
-            if (! $distItem || ! $distItem->isMapped()) {
-                $skippedItems[] = [
-                    'item_name' => $itemName,
-                    'satuan' => $satuan ?: null,
-                    'quantity' => $qty,
-                    'expired_date' => $ed,
-                    'batch_no' => $batch ?: null,
-                ];
-
-                // Ikut divalidasi walau tidak disimpan — lihat catatan pada
-                // groupRowsByItemAndBatch().
-                $parsedRows[] = [
-                    'item_id' => 'x'.mb_strtolower($itemName),
-                    'item_name' => $itemName,
-                    'qty' => $qty,
-                    'satuan' => $satuan,
-                    'ed' => $ed,
-                    'batch' => $batch,
-                    'excel_row' => $entry['excel_row'],
-                    'save' => false,
-                ];
-
-                continue;
-            }
-
-            $parsedRows[] = [
-                'item_id' => $distItem->id,
-                'item_name' => $itemName,
-                'qty' => $qty,
-                // Satuan hanya dari berkas ini sendiri — tidak meminjam satuan
-                // master item yang berasal dari berkas lain.
-                'satuan' => $satuan ?: null,
-                'ed' => $ed,
-                'batch' => $batch,
-                'excel_row' => $entry['excel_row'],
-            ];
-        }
+        $mapped = $this->mapRows($distributor, $rows);
+        $parsedRows = $mapped['parsed'];
+        $skippedItems = $mapped['skipped'];
+        $totalValidDataRows = count($rows);
 
         // Pengelompokan per (item, batch) + dua aturan penolakan.
         $grouping = $this->groupRowsByItemAndBatch($parsedRows);
@@ -793,7 +862,7 @@ class StockImportService
         $importedCount = 0;
 
         if (! $dryRun && count($validRowsToSave) > 0) {
-            DB::transaction(function () use ($validRowsToSave, $distributor, $tanggal, $uploadedBy, $skippedItems, $source, $replaceExisting, &$importedCount) {
+            DB::transaction(function () use ($validRowsToSave, $distributor, $tanggal, $uploadedBy, $skippedItems, $source, $replaceExisting, $sourceMeta, &$importedCount) {
                 $replacedCount = 0;
                 if ($replaceExisting) {
                     // Kiriman terbaru menggantikan snapshot cabang ini seutuhnya:
@@ -833,13 +902,34 @@ class StockImportService
                     $importedCount++;
                 }
 
+                // Kunci metadata sama dengan upload manual (Upload::saveRows()
+                // + sourceMetadata()), supaya halaman Riwayat bisa membaca
+                // asal-usul snapshot dengan cara yang sama apa pun jalurnya.
+                // sku_count & skipped_count dipertahankan untuk data lama.
+                $unmappedCount = count(array_unique(array_column($skippedItems, 'key')));
                 $metadata = [
+                    'mapped_count' => $importedCount,
+                    'unmapped_count' => $unmappedCount,
+                    'deleted_count' => $replacedCount,
                     'sku_count' => $importedCount,
-                    'source' => $source,
                     'skipped_count' => count($skippedItems),
-                ];
+                    'source' => $source,
+                ] + $sourceMeta;
                 if ($replaceExisting) {
                     $metadata['replaced_count'] = $replacedCount;
+                }
+
+                $description = match (true) {
+                    $source === 'api' => "Import otomatis via API ({$importedCount} SKU)",
+                    $uploadedBy !== null => 'Upload dari email oleh '.(\App\Models\User::find($uploadedBy)?->name ?? 'User')." ({$importedCount} SKU)",
+                    default => "Import otomatis via Email ({$importedCount} SKU)",
+                };
+
+                // Sebutkan asal emailnya di deskripsi, bukan hanya di metadata:
+                // inilah teks yang dibaca orang di halaman Riwayat.
+                if (! empty($sourceMeta['email_uid'])) {
+                    $description .= ' — dari email '.(($sourceMeta['from_email'] ?? '') ?: 'pengirim tidak diketahui')
+                        .' (UID #'.$sourceMeta['email_uid'].')';
                 }
 
                 StockSnapshotActivity::create([
@@ -847,11 +937,9 @@ class StockImportService
                     'distributor_id' => $distributor->id,
                     'user_id' => $uploadedBy,
                     'action' => $uploadedBy ? 'upload' : 'automation',
-                    'description' => match (true) {
-                        $source === 'api' => "Import otomatis via API ({$importedCount} SKU)",
-                        $uploadedBy !== null => 'Upload dari email oleh '.(\App\Models\User::find($uploadedBy)?->name ?? 'User')." ({$importedCount} SKU)",
-                        default => "Import otomatis via Email ({$importedCount} SKU)",
-                    },
+                    // Kolom description hanya varchar(255); versi utuhnya ada
+                    // di metadata.
+                    'description' => \Illuminate\Support\Str::limit($description, 250),
                     'metadata' => $metadata,
                 ]);
             });
@@ -883,12 +971,26 @@ class StockImportService
 
             // Item baru didaftarkan ke antrean mapping supaya operator tinggal
             // memetakannya, bukan mengetik ulang namanya.
+            //
+            // Sekali per NAMA (sudah dinormalisasi), bukan per baris: satu item
+            // dengan lima batch cukup satu baris antrean — sama seperti modal
+            // ringkasan di halaman Upload. Satuan yang dipakai adalah yang
+            // terakhir terisi, mengikuti aturan "satuan ikut berkas terbaru"
+            // di queueFor().
             if (! $dryRun) {
+                $toQueue = [];
                 foreach ($skippedItems as $skip) {
+                    $toQueue[$skip['key']] = [
+                        'item_name' => $toQueue[$skip['key']]['item_name'] ?? $skip['item_name'],
+                        'satuan' => $skip['satuan'] ?: ($toQueue[$skip['key']]['satuan'] ?? null),
+                    ];
+                }
+
+                foreach ($toQueue as $q) {
                     // Satu pintu untuk semua jalur yang menemukan item baru —
                     // termasuk aturan bahwa baris yang pernah dihapus dipulihkan
                     // TANPA pemetaan lamanya.
-                    DistributorItem::queueFor($distributor, $skip['item_name'], $skip['satuan'] ?: null);
+                    DistributorItem::queueFor($distributor, $q['item_name'], $q['satuan']);
                 }
             }
         }
@@ -1014,7 +1116,12 @@ class StockImportService
         file_put_contents($tempFile, $binaryContent);
 
         try {
-            $result = $this->parseAndImportSpreadsheet($tempFile, $fromEmail, null, $dryRun, true, $filename);
+            $result = $this->parseAndImportSpreadsheet($tempFile, $fromEmail, null, $dryRun, true, $filename, [
+                'email_uid' => $emailUid !== null ? (string) $emailUid : null,
+                'from_email' => $fromEmail,
+                'subject' => $subject !== '' ? $subject : null,
+                'filename' => $filename,
+            ]);
 
             // Record to StockEmailLog
             StockEmailLog::create([

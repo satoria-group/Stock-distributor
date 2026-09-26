@@ -4,6 +4,7 @@ namespace App\Livewire\Stock;
 
 use App\Models\Distributor;
 use App\Models\DistributorItem;
+use App\Models\StockEmailLog;
 use App\Models\StockEntry;
 use App\Models\StockSnapshotActivity;
 use App\Support\StockFileReader;
@@ -127,6 +128,9 @@ class Upload extends Component
 
     public ?string $sourceFilename = null;
 
+    /** Log StockEmailLog milik sesi impor manual dari email ini (lihat recordManualEmailImport()). */
+    public ?int $manualEmailLogId = null;
+
     /**
      * Pengguna memilih "Timpa/Revisi" pada modal konflik, artinya berkas baru
      * dianggap sebagai kebenaran UTUH untuk tanggal + distributor tersebut.
@@ -218,11 +222,11 @@ class Upload extends Component
         }
 
         try {
-            $success = $this->processSpreadsheetPath($tempClean, "Lampiran Email ({$filename})");
-            if ($success) {
-                // Tandai email sebagai terbaca setelah berhasil diproses
-                $imapService->markAsRead($emailUid);
-            }
+            // Email BELUM ditandai terbaca di sini: berkas baru dibaca, belum
+            // tentu disimpan (operator bisa membatalkan di modal ringkasan).
+            // Penandaan + log dilakukan saat cabang pertama benar-benar
+            // tersimpan — lihat recordManualEmailImport().
+            $this->processSpreadsheetPath($tempClean, "Lampiran Email ({$filename})");
         } finally {
             @unlink($tempClean);
             @unlink($tempBase);
@@ -240,6 +244,72 @@ class Upload extends Component
         $this->sourceEmailFrom = null;
         $this->sourceEmailSubject = null;
         $this->sourceFilename = null;
+        $this->manualEmailLogId = null;
+    }
+
+    /**
+     * Catat bahwa email ini sudah diimpor MANUAL oleh operator.
+     *
+     * Tanpa ini halaman Emails tetap menampilkan hasil otomasi terakhir
+     * (mis. "Data Sudah Ada" atau "Semua Belum Ter-mapping") walau datanya
+     * sudah masuk lewat halaman Upload, sehingga operator lain bisa
+     * mengerjakan email yang sama dua kali.
+     *
+     * Satu baris log per sesi impor: cabang pertama yang tersimpan membuat
+     * log dan menandai email terbaca; cabang berikutnya menambah rinciannya.
+     */
+    private function recordManualEmailImport(int $mappedCount, int $unmappedCount): void
+    {
+        if ($this->sourceEmailUid === null) {
+            return;
+        }
+
+        $dist = Distributor::find($this->distributorId);
+        $branch = [
+            'distributor_code' => $dist?->distributor_code,
+            'distributor_id' => $this->distributorId,
+            'distributor_name' => $dist?->name,
+            'tanggal' => $this->tanggal,
+            'imported_rows' => $mappedCount,
+            'skipped_rows' => $unmappedCount,
+            'status' => 'manual_import',
+            'user' => Auth::user()?->name,
+        ];
+
+        $log = $this->manualEmailLogId ? StockEmailLog::find($this->manualEmailLogId) : null;
+
+        if (! $log) {
+            $log = StockEmailLog::create([
+                'email_uid' => $this->sourceEmailUid,
+                'from_email' => $this->sourceEmailFrom ?? '',
+                'subject' => $this->sourceEmailSubject,
+                'distributor_id' => $this->distributorId,
+                'distributor_code' => $dist?->distributor_code,
+                'tanggal_snapshot' => $this->tanggal,
+                'filename' => $this->sourceFilename,
+                'status' => 'manual_import',
+                'imported_rows' => $mappedCount,
+                'skipped_rows' => $unmappedCount,
+                'error_message' => 'Diimpor manual oleh '.(Auth::user()?->name ?? 'User').' lewat halaman Upload.',
+                'details' => ['user_id' => Auth::id(), 'branch_count' => 1, 'branches' => [$branch]],
+            ]);
+            $this->manualEmailLogId = $log->id;
+
+            // Baru sekarang email dianggap selesai dikerjakan.
+            app(\App\Services\ImapService::class)->markAsRead($this->sourceEmailUid);
+
+            return;
+        }
+
+        $details = $log->details ?? [];
+        $details['branches'][] = $branch;
+        $details['branch_count'] = count($details['branches']);
+
+        $log->update([
+            'imported_rows' => $log->imported_rows + $mappedCount,
+            'skipped_rows' => $log->skipped_rows + $unmappedCount,
+            'details' => $details,
+        ]);
     }
 
     /**
@@ -685,81 +755,55 @@ class Upload extends Component
             return null;
         }
 
-        // Pemetaan milik GRUP berlaku untuk seluruh cabangnya; baris milik
-        // cabang hanya ada sebagai pengecualian dan menimpa yang segrup.
-        $knownItems = DistributorItem::lookupFor($distributor);
-
-        $skipped = [];
-        $skippedRowsData = [];
-        $parsedRows = [];
-
+        $rawRows = [];
         foreach ($branchRows as $entry) {
-            $r = $entry['row'];
-            $excelRow = $entry['excel_row'];
             // Tiap baris membawa pembacanya sendiri: satu berkas SDL memuat
             // beberapa sheet, masing-masing dengan baris header sendiri.
             $reader = $entry['reader'];
-
-            $itemName = $reader->itemName($r);
-            $key = mb_strtolower(trim(preg_replace('/\s+/', ' ', $itemName)));
-            $distItem = $knownItems->get($key);
-
-            $qty = $reader->quantity($r);
-            $satuan = $reader->satuan($r);
-            $ed = $reader->expiredDate($r);
-            $edFormatted = $ed ? \Carbon\Carbon::parse($ed)->format('d/m/Y') : null;
-            $batch = $reader->batchNo($r);
-
-            if (! $distItem || ! $distItem->isMapped()) {
-                $skipped[] = $itemName;
-
-                if (! isset($skippedRowsData[$key])) {
-                    $skippedRowsData[$key] = [
-                        'item_name' => $itemName,
-                        'satuan' => $satuan ?: null,
-                        'quantity' => $qty,
-                        'expired_date' => $edFormatted,
-                        'batch_no' => $batch ?: null,
-                        // Sudah ada di Master Mapping, tinggal dipetakan Admin.
-                        'queued' => $distItem !== null,
-                    ];
-                } else {
-                    $skippedRowsData[$key]['quantity'] += $qty;
-                    $skippedRowsData[$key]['batch_no'] = $this->mergeBatchNumbers($skippedRowsData[$key]['batch_no'] ?? null, $batch);
-                    $skippedRowsData[$key]['expired_date'] = $this->mergeExpiredDates($skippedRowsData[$key]['expired_date'] ?? null, $edFormatted);
-                }
-
-                // Ikut divalidasi walau tidak disimpan — lihat catatan pada
-                // StockImportService::groupRowsByItemAndBatch().
-                $parsedRows[] = [
-                    'item_id' => 'x'.$key,
-                    'item_name' => $itemName,
-                    'qty' => $qty,
-                    'satuan' => $satuan,
-                    'ed' => $ed,
-                    'batch' => $batch,
-                    'excel_row' => $excelRow,
-                    'save' => false,
-                ];
-
-                continue;
-            }
-
-            $parsedRows[] = [
-                'item_id' => $distItem->id,
-                'item_name' => $distItem->item_name,
-                'qty' => $qty,
-                'satuan' => $satuan ?: null,
-                'ed' => $ed,
-                'batch' => $batch,
-                'excel_row' => $excelRow,
-                'mapped' => $distItem->isMapped(),
+            $r = $entry['row'];
+            $rawRows[] = [
+                'item_name' => $reader->itemName($r),
+                'qty' => $reader->quantity($r),
+                'satuan' => $reader->satuan($r),
+                'ed' => $reader->expiredDate($r),
+                'batch' => $reader->batchNo($r),
+                'excel_row' => $entry['excel_row'],
             ];
+        }
+
+        // Pencocokan dengan Master Mapping dikerjakan di tempat yang SAMA
+        // dengan jalur otomasi email/API — lihat StockImportService::mapRows().
+        $mapped = $importService->mapRows($distributor, $rawRows);
+
+        // Item belum ter-mapping digabung per nama untuk panel & modal
+        // pengajuan: satu nama cukup satu baris walau muncul di banyak batch.
+        $skipped = [];
+        $skippedRowsData = [];
+        foreach ($mapped['skipped'] as $s) {
+            $key = $s['key'];
+            $edFormatted = $s['expired_date'] ? \Carbon\Carbon::parse($s['expired_date'])->format('d/m/Y') : null;
+            $skipped[] = $s['item_name'];
+
+            if (! isset($skippedRowsData[$key])) {
+                $skippedRowsData[$key] = [
+                    'item_name' => $s['item_name'],
+                    'satuan' => $s['satuan'],
+                    'quantity' => $s['quantity'],
+                    'expired_date' => $edFormatted,
+                    'batch_no' => $s['batch_no'],
+                    // Sudah ada di Master Mapping, tinggal dipetakan Admin.
+                    'queued' => $s['queued'],
+                ];
+            } else {
+                $skippedRowsData[$key]['quantity'] += $s['quantity'];
+                $skippedRowsData[$key]['batch_no'] = $this->mergeBatchNumbers($skippedRowsData[$key]['batch_no'] ?? null, $s['batch_no']);
+                $skippedRowsData[$key]['expired_date'] = $this->mergeExpiredDates($skippedRowsData[$key]['expired_date'] ?? null, $edFormatted);
+            }
         }
 
         // Pengelompokan per (item, batch) memakai definisi yang sama persis
         // dengan jalur otomasi email — termasuk dua aturan penolakannya.
-        $grouping = $importService->groupRowsByItemAndBatch($parsedRows);
+        $grouping = $importService->groupRowsByItemAndBatch($mapped['parsed']);
 
         if (! $grouping['ok']) {
             foreach ($grouping['errors'] as $err) {
@@ -1372,6 +1416,10 @@ class Upload extends Component
                 ]);
             }
         });
+
+        if ($mappedCount > 0 || $deletedCount > 0) {
+            $this->recordManualEmailImport($mappedCount, $unmappedCount);
+        }
 
         $dist = Distributor::find($this->distributorId);
         $tanggalLabel = \Illuminate\Support\Carbon::parse($this->tanggal)->translatedFormat('d M Y');

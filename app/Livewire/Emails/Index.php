@@ -201,16 +201,20 @@ class Index extends Component
         }
 
         $uids = $emails->pluck('uid')->map(fn ($u) => (string) $u)->all();
-        $emailLogs = \App\Models\StockEmailLog::whereIn('email_uid', $uids)->get()->keyBy('email_uid');
+        // Satu email bisa punya beberapa log (mis. otomasi menolak, lalu
+        // operator mengimpor manual). Diurutkan naik supaya keyBy() menyisakan
+        // log TERBARU untuk tiap email.
+        $emailLogs = \App\Models\StockEmailLog::whereIn('email_uid', $uids)->orderBy('id')->get()->keyBy('email_uid');
 
         // Satu query agregat menggantikan 5 query terpisah (3x COUNT berkondisi,
         // 1x COUNT total, 1x ambil baris terakhir) yang sebelumnya dijalankan
         // pada SETIAP render halaman ini.
         $agg = \App\Models\StockEmailLog::query()
             ->selectRaw('COUNT(*) as total')
-            ->selectRaw("SUM(CASE WHEN status = 'success' THEN 1 ELSE 0 END) as success")
+            // manual_import = email yang akhirnya diimpor operator; bukan gagal.
+            ->selectRaw("SUM(CASE WHEN status IN ('success', 'manual_import') THEN 1 ELSE 0 END) as success")
             ->selectRaw("SUM(CASE WHEN status = 'partial_unmapped' THEN 1 ELSE 0 END) as partial")
-            ->selectRaw("SUM(CASE WHEN status NOT IN ('success', 'partial_unmapped') THEN 1 ELSE 0 END) as failed")
+            ->selectRaw("SUM(CASE WHEN status NOT IN ('success', 'partial_unmapped', 'manual_import') THEN 1 ELSE 0 END) as failed")
             ->selectRaw('MAX(created_at) as last_run')
             ->first();
 

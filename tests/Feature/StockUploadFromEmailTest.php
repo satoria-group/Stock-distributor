@@ -97,14 +97,16 @@ class StockUploadFromEmailTest extends TestCase
                 'from_email' => 'gudang@distributor-uji.co.id',
                 'from_name' => 'Gudang Distributor Uji',
             ]);
-        $mockImap->shouldReceive('markAsRead')
-            ->with('101')
-            ->once()
-            ->andReturn(true);
+        $markedRead = 0;
+        $mockImap->shouldReceive('markAsRead')->with('101')->andReturnUsing(function () use (&$markedRead) {
+            $markedRead++;
+
+            return true;
+        });
 
         $this->app->instance(ImapService::class, $mockImap);
 
-        Livewire::actingAs($user)
+        $component = Livewire::actingAs($user)
             ->withQueryParams(['from_email_uid' => '101'])
             ->test(\App\Livewire\Stock\Upload::class)
             ->call('startQueue')
@@ -113,6 +115,22 @@ class StockUploadFromEmailTest extends TestCase
             ->assertCount('rows', 1)
             ->assertSet('sourceEmailUid', '101')
             ->assertSet('sourceEmailFrom', 'gudang@distributor-uji.co.id');
+
+        // Membaca berkas BELUM berarti email selesai dikerjakan.
+        $this->assertSame(0, $markedRead);
+        $this->assertNull(\App\Models\StockEmailLog::where('email_uid', '101')->first());
+
+        // Baru saat disimpan: email ditandai terbaca SEKALI dan tercatat di log.
+        $component->call('saveRows', $component->get('rows'));
+        $this->assertSame(1, $markedRead);
+
+        $log = \App\Models\StockEmailLog::where('email_uid', '101')->first();
+        $this->assertNotNull($log);
+        $this->assertSame('manual_import', $log->status);
+        $this->assertSame(1, $log->imported_rows);
+        $this->assertSame($dist->id, $log->distributor_id);
+        $this->assertSame('daily_stock.xlsx', $log->filename);
+        $this->assertSame('gudang@distributor-uji.co.id', $log->from_email);
     }
 
     /**

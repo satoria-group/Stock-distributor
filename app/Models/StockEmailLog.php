@@ -10,6 +10,16 @@ class StockEmailLog extends Model
 {
     use HasFactory;
 
+    /**
+     * Status yang berarti data email ini SUDAH masuk ke database (seluruhnya
+     * atau sebagian). Email berstatus ini tidak boleh diproses ulang otomatis.
+     *
+     * partial_unmapped termasuk di sini: sebagian cabang/item sudah tersimpan,
+     * dan sisanya (item belum ter-mapping, cabang yang datanya sudah ada)
+     * adalah keputusan manusia di halaman Upload, bukan tugas cron.
+     */
+    public const IMPORTED_STATUSES = ['success', 'partial_unmapped', 'manual_import'];
+
     protected $fillable = [
         'email_uid',
         'message_id',

@@ -315,6 +315,11 @@
                                                     <svg width="10" height="10" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7"/></svg>
                                                     <span>Auto-Imported ({{ $log->imported_rows }})</span>
                                                 </span>
+                                            @elseif ($log->status === 'manual_import')
+                                                <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-700 text-[10px] font-bold border border-emerald-200 shrink-0 shadow-2xs whitespace-nowrap" title="{{ $log->error_message }}">
+                                                    <svg width="10" height="10" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7"/></svg>
+                                                    <span>Diimpor Manual ({{ $log->imported_rows }})</span>
+                                                </span>
                                             @elseif ($log->status === 'partial_unmapped')
                                                 <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-amber-50 text-amber-800 text-[10px] font-bold border border-amber-300 shrink-0 shadow-2xs whitespace-nowrap" title="{{ $log->error_message ?: ($log->imported_rows . ' baris masuk, ' . $log->skipped_rows . ' item belum ter-mapping') }}">
                                                     <span>⚠️ Auto: Sebagian ({{ $log->imported_rows }}/{{ $log->total_rows }})</span>
@@ -520,7 +525,7 @@
                 <!-- Banner Status Otomasi Email -->
                 @php $selectedLog = $emailLogs[$selectedEmail['uid']] ?? null; @endphp
                 @if ($selectedLog)
-                    <div class="px-6 py-3.5 border-b {{ $selectedLog->status === 'success' ? 'bg-emerald-50/80 border-emerald-200' : ($selectedLog->status === 'partial_unmapped' ? 'bg-amber-50/80 border-amber-200' : 'bg-rose-50/80 border-rose-200') }} shrink-0">
+                    <div class="px-6 py-3.5 border-b {{ in_array($selectedLog->status, ['success', 'manual_import'], true) ? 'bg-emerald-50/80 border-emerald-200' : ($selectedLog->status === 'partial_unmapped' ? 'bg-amber-50/80 border-amber-200' : 'bg-rose-50/80 border-rose-200') }} shrink-0">
                         <div class="flex items-center justify-between text-xs">
                             <div class="flex items-center gap-2.5">
                                 @if ($selectedLog->status === 'success')
@@ -533,13 +538,29 @@
                                             <b>{{ $selectedLog->imported_rows }} baris</b> tersimpan ke database.
                                         </div>
                                     </div>
+                                @elseif ($selectedLog->status === 'manual_import')
+                                    <span class="w-6 h-6 rounded-full bg-emerald-600 text-white flex items-center justify-center font-bold text-xs shrink-0">✓</span>
+                                    <div>
+                                        <div class="font-bold text-emerald-950">Sudah Diimpor Manual lewat Halaman Upload</div>
+                                        <div class="text-[11px] text-emerald-700">
+                                            {{ $selectedLog->error_message }} &bull;
+                                            <b>{{ $selectedLog->imported_rows }} baris</b> tersimpan ke database.
+                                        </div>
+                                    </div>
                                 @elseif ($selectedLog->status === 'partial_unmapped')
                                     <span class="w-6 h-6 rounded-full bg-amber-500 text-white flex items-center justify-center font-bold text-xs shrink-0">!</span>
                                     <div class="flex-1">
-                                        <div class="font-bold text-amber-950">Terimpor Sebagian (Ada Produk Belum Terpetakan ke NetSuite)</div>
-                                        <div class="text-[11px] text-amber-800">
-                                            <b>{{ $selectedLog->imported_rows }}</b> baris masuk database, <b>{{ $selectedLog->skipped_rows }}</b> baris dilewati karena item belum di-mapping.
-                                        </div>
+                                        @if ($selectedLog->skipped_rows > 0)
+                                            <div class="font-bold text-amber-950">Terimpor Sebagian (Ada Produk Belum Terpetakan ke NetSuite)</div>
+                                            <div class="text-[11px] text-amber-800">
+                                                <b>{{ $selectedLog->imported_rows }}</b> baris masuk database, <b>{{ $selectedLog->skipped_rows }}</b> baris dilewati karena item belum di-mapping.
+                                            </div>
+                                        @else
+                                            <div class="font-bold text-amber-950">Terimpor Sebagian (Ada Cabang yang Dilewati)</div>
+                                            <div class="text-[11px] text-amber-800">
+                                                <b>{{ $selectedLog->imported_rows }}</b> baris masuk database. Cabang yang datanya sudah ada tidak diubah.
+                                            </div>
+                                        @endif
                                         @if (! empty($selectedLog->details['unique_skipped_names']))
                                             <div class="mt-2 pt-2 border-t border-amber-200/70">
                                                 <div class="text-[11px] font-bold text-amber-900 mb-1 flex items-center gap-1.5">
@@ -590,6 +611,11 @@
                                                         <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3"/></svg>
                                                     </button>
                                                 @endif
+                                                {{-- Setelah Admin memetakan item, stoknya dimasukkan lewat Upload. --}}
+                                                <a href="{{ route('stock.upload', ['from_email_uid' => $selectedEmail['uid']]) }}"
+                                                   class="ml-1.5 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#0d6d5f] hover:bg-[#0b5c50] text-white text-xs font-bold shadow-2xs transition cursor-pointer">
+                                                    <span>Sudah Dipetakan? Upload Ulang Lampiran Ini</span>
+                                                </a>
                                             </div>
                                         @endif
                                     </div>
@@ -622,11 +648,57 @@
                                     <div>
                                         <div class="font-bold text-rose-950">Gagal Diimpor Otomatis: {{ ucfirst(str_replace('_', ' ', $selectedLog->status)) }}</div>
                                         <div class="text-[11px] text-rose-700">{{ $selectedLog->error_message }}</div>
+                                        {{-- Otomasi tidak mengulang email yang sudah ditandai terbaca: setelah berkasnya
+                                             diperbaiki / pengirimnya didaftarkan, operator melanjutkan lewat Upload. --}}
+                                        @if (collect($selectedEmail['attachments'] ?? [])->contains('is_excel', true))
+                                            <a href="{{ route('stock.upload', ['from_email_uid' => $selectedEmail['uid']]) }}"
+                                               class="mt-2.5 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#0d6d5f] hover:bg-[#0b5c50] text-white text-xs font-bold shadow-2xs transition cursor-pointer">
+                                                <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/></svg>
+                                                <span>Proses Manual lewat Halaman Upload</span>
+                                            </a>
+                                        @endif
                                     </div>
                                 @endif
                             </div>
                             <span class="text-[10px] text-slate-500 font-mono shrink-0">Diproses: {{ $selectedLog->created_at->format('d/m/Y H:i') }}</span>
                         </div>
+
+                        {{-- Rincian per cabang: satu berkas bisa sebagian masuk, sebagian dilewati. --}}
+                        @if (($selectedLog->details['branch_count'] ?? 0) > 1)
+                            <div class="mt-2.5 pt-2.5 border-t border-slate-200/70 text-[11px]">
+                                <div class="font-bold text-slate-700 mb-1.5">Rincian per Cabang ({{ $selectedLog->details['branch_count'] }} cabang)</div>
+                                <div class="flex flex-col gap-1">
+                                    @foreach ($selectedLog->details['branches'] as $branch)
+                                        @php
+                                            [$branchLabel, $branchClass] = match ($branch['status']) {
+                                                'success' => ['Masuk', 'bg-emerald-100 text-emerald-800'],
+                                                'partial_unmapped' => ['Sebagian', 'bg-amber-100 text-amber-800'],
+                                                'all_unmapped' => ['Menunggu Mapping', 'bg-amber-100 text-amber-800'],
+                                                'data_already_exists' => ['Dilewati · Data Sudah Ada', 'bg-slate-200 text-slate-700'],
+                                                default => [strtoupper($branch['status']), 'bg-rose-100 text-rose-800'],
+                                            };
+                                        @endphp
+                                        <div class="flex items-center gap-2">
+                                            <span class="px-1.5 py-0.5 rounded {{ $branchClass }} text-[10px] font-bold whitespace-nowrap">{{ $branchLabel }}</span>
+                                            <span class="text-slate-800 font-medium">{{ $branch['distributor_name'] ?? $branch['distributor_code'] }}</span>
+                                            <span class="text-slate-500 font-mono">({{ $branch['distributor_code'] }})</span>
+                                            <span class="text-slate-500">
+                                                &bull; {{ $branch['imported_rows'] }} baris masuk
+                                                @if ($branch['skipped_rows'] > 0) &bull; {{ $branch['skipped_rows'] }} belum ter-mapping @endif
+                                                @if (! empty($branch['existing_count'])) &bull; {{ $branch['existing_count'] }} baris lama tidak diubah @endif
+                                            </span>
+                                        </div>
+                                    @endforeach
+                                </div>
+                                @if (! empty($selectedLog->details['skipped_existing_codes']) && $selectedLog->status !== 'data_already_exists')
+                                    <a href="{{ route('stock.upload', ['from_email_uid' => $selectedEmail['uid']]) }}"
+                                       class="mt-2 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#0d6d5f] hover:bg-[#0b5c50] text-white text-xs font-bold shadow-2xs transition cursor-pointer">
+                                        <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/></svg>
+                                        <span>Perbarui Cabang yang Dilewati lewat Upload Manual</span>
+                                    </a>
+                                @endif
+                            </div>
+                        @endif
                     </div>
                 @endif
 
@@ -800,6 +872,8 @@
                                             <td class="py-2.5 px-3 text-center whitespace-nowrap">
                                                 @if ($log->status === 'success')
                                                     <span class="px-2 py-0.5 rounded-md bg-emerald-100 text-emerald-800 text-[10px] font-bold">SUKSES</span>
+                                                @elseif ($log->status === 'manual_import')
+                                                    <span class="px-2 py-0.5 rounded-md bg-emerald-100 text-emerald-800 text-[10px] font-bold">MANUAL</span>
                                                 @elseif ($log->status === 'partial_unmapped')
                                                     <span class="px-2 py-0.5 rounded-md bg-amber-100 text-amber-800 text-[10px] font-bold">SEBAGIAN</span>
                                                 @elseif ($log->status === 'inactive_distributor')

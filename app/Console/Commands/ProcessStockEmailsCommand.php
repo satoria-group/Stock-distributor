@@ -75,6 +75,36 @@ class ProcessStockEmailsCommand extends Command
                 continue;
             }
 
+            // Anti-duplikasi: email yang datanya sudah masuk (otomatis penuh,
+            // sebagian, atau diimpor manual operator) tidak diproses lagi.
+            //
+            // Diperiksa SEBELUM jatah --limit dihitung: email yang hanya
+            // dilewati tidak boleh menghabiskan jatah laporan yang baru.
+            if (! $force) {
+                $alreadyLogged = StockEmailLog::query()
+                    ->whereIn('status', StockEmailLog::IMPORTED_STATUSES)
+                    ->where(function ($q) use ($uid, $messageId) {
+                        $q->where('email_uid', $uid);
+                        if ($messageId) {
+                            $q->orWhere('message_id', $messageId);
+                        }
+                    })
+                    ->first();
+
+                if ($alreadyLogged) {
+                    $this->warn("Email UID #{$uid} sudah pernah diproses ({$alreadyLogged->status}) pada {$alreadyLogged->created_at->format('d/m/Y H:i')}. Dilewati.");
+
+                    // Tandai terbaca supaya tidak terambil lagi setiap menit dan
+                    // terus memakan jatah --limit, menahan laporan yang baru.
+                    if (! $dryRun) {
+                        $imapService->markAsRead($uid);
+                    }
+
+                    $summaryTable[] = [$uid, $fromEmail, $subject, 'SKIPPED (Already Processed)', 0, 0];
+                    continue;
+                }
+            }
+
             // Batas dihitung dari email yang BENAR-BENAR diproses, bukan dari
             // jumlah yang diambil: jalur cadangan di ImapService memindai
             // jendela lebih lebar, dan email non-stok tidak boleh ikut
@@ -87,25 +117,6 @@ class ProcessStockEmailsCommand extends Command
             $processedCount++;
             $this->line("--------------------------------------------------");
             $this->line("Memproses Email UID #{$uid}: \"{$subject}\" dari {$fromEmail}");
-
-            // Anti-duplikasi / Idempotency check: jika sudah pernah sukses diproses sebelumnya
-            if (! $force) {
-                $alreadyLogged = StockEmailLog::query()
-                    ->where('status', 'success')
-                    ->where(function ($q) use ($uid, $messageId) {
-                        $q->where('email_uid', $uid);
-                        if ($messageId) {
-                            $q->orWhere('message_id', $messageId);
-                        }
-                    })
-                    ->first();
-
-                if ($alreadyLogged) {
-                    $this->warn("Email UID #{$uid} sudah pernah sukses diproses pada {$alreadyLogged->created_at->format('d/m/Y H:i')}. Dilewati.");
-                    $summaryTable[] = [$uid, $fromEmail, $subject, 'SKIPPED (Already Processed)', 0, 0];
-                    continue;
-                }
-            }
 
             if (! $hasAttachments) {
                 $this->error("Email UID #{$uid} tidak memiliki berkas lampiran.");
@@ -208,7 +219,7 @@ class ProcessStockEmailsCommand extends Command
         }
 
         $this->line("==================================================");
-        if ($processedCount === 0) {
+        if ($processedCount === 0 && $summaryTable === []) {
             $this->info('Tidak ada email dengan subject laporan stok harian yang perlu diproses.');
         } else {
             $this->table(
